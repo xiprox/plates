@@ -185,6 +185,10 @@ impl Rack {
             s.state = to;
             s.state_since = now;
             s.read = false;
+            // A reminder for tomorrow is for when you're back, so the session's turns leave it.
+            if timer.is_tomorrow() {
+                return;
+            }
             *timer = match to {
                 SessionState::YourTurn | SessionState::NeedsApproval => {
                     Timer::start(now, DEFAULT_MINUTES)
@@ -299,7 +303,7 @@ impl Rack {
                 SessionState::Unread => set_state(s, &mut tile.timer, SessionState::Done),
                 SessionState::YourTurn if !s.read => {
                     s.read = true;
-                    tile.timer = Timer::Idle;
+                    tile.timer.stop();
                 }
                 _ => {}
             },
@@ -423,12 +427,33 @@ impl Rack {
     /// changes, needs you from the first tick.
     pub fn tick(&mut self, now: SystemTime) -> bool {
         let before = self.tiles.len();
+        // An ended tile with a reminder for tomorrow, or one that's run out and you haven't
+        // clicked, stays until you have (user, 2026-11-16).
         self.tiles.retain(|t| {
-            t.session()
-                .and_then(|s| s.ended_at)
-                .is_none_or(|ended| now < ended + ENDED_CLEARS_AFTER)
+            t.timer.is_tomorrow()
+                || t.timer.is_time_up()
+                || t.session()
+                    .and_then(|s| s.ended_at)
+                    .is_none_or(|ended| now < ended + ENDED_CLEARS_AFTER)
         });
         let mut changed = self.tiles.len() != before;
+        // A dismissed session whose reminder for tomorrow runs out comes back, as one that needs
+        // you does.
+        let mut i = 0;
+        while i < self.hidden.len() {
+            let timer = self.hidden[i].timer.at(now);
+            if timer.is_time_up() {
+                let mut tile = self.hidden.remove(i);
+                tile.timer = timer;
+                tile.refresh_need(now);
+                let parent = tile.session().and_then(|s| s.app_parent.clone());
+                let index = self.session_slot(parent.as_deref());
+                self.tiles.insert(index, tile);
+                changed = true;
+            } else {
+                i += 1;
+            }
+        }
         for tile in &mut self.tiles {
             let (timer, need) = (tile.timer, tile.need);
             tile.timer = tile.timer.at(now);
@@ -674,8 +699,29 @@ impl Rack {
             // stops.
             SessionState::YourTurn if !s.read => {
                 s.read = true;
-                tile.timer = Timer::Idle;
+                tile.timer.stop();
             }
+            _ => return false,
+        }
+        tile.refresh_need(now);
+        true
+    }
+
+    /// Marks a finished session's turn unread again, so it needs you as it did before you read
+    /// it, without its timer (user, 2026-11-16). A done tile goes back to unread, and a your-turn
+    /// tile you'd read goes back to unread. It keeps its `state_since`, so the tile's age still
+    /// counts from when the turn ended, or from when you read it. It returns whether the tile
+    /// changed.
+    pub fn mark_unread(&mut self, id: TileId, now: SystemTime) -> bool {
+        let Some(tile) = self.tile_mut(id) else {
+            return false;
+        };
+        let Body::Session(s) = &mut tile.body else {
+            return false;
+        };
+        match s.state {
+            SessionState::Done => s.state = SessionState::Unread,
+            SessionState::YourTurn if s.read => s.read = false,
             _ => return false,
         }
         tile.refresh_need(now);
@@ -725,7 +771,7 @@ impl Rack {
             if s.state == SessionState::Unread {
                 s.state = SessionState::Done;
             }
-            tile.timer = Timer::Idle;
+            tile.timer.stop();
             tile.need = None;
             self.hidden.push(tile.clone());
         }
@@ -768,8 +814,31 @@ impl Rack {
         }
     }
 
+    /// Brightens every time-up tile again, as it did when its time ran out, for when you're back
+    /// at the PC after you were away and might have missed it, such as a reminder for tomorrow
+    /// that ran out overnight (user, 2026-11-16). It returns whether any tile brightens.
+    pub fn welcome_back(&mut self, now: SystemTime) -> bool {
+        let mut any = false;
+        for tile in &mut self.tiles {
+            if let Some((Need::TimeUp, _)) = tile.need {
+                tile.need = Some((Need::TimeUp, now));
+                any = true;
+            }
+        }
+        any
+    }
+
+    /// Sets a reminder for tomorrow, over any timer running, where the local time is
+    /// `utc_offset` seconds ahead of UTC.
+    pub fn remind_tomorrow(&mut self, id: TileId, now: SystemTime, utc_offset: i64) {
+        if let Some(tile) = self.tile_mut(id) {
+            tile.timer = Timer::tomorrow(now, utc_offset);
+            tile.refresh_need(now);
+        }
+    }
+
     pub fn cancel_timer(&mut self, id: TileId, now: SystemTime) {
-        if let Some(tile) = self.tile_mut(id).filter(|t| t.timer.is_running()) {
+        if let Some(tile) = self.tile_mut(id).filter(|t| t.timer.is_set()) {
             tile.timer = Timer::Idle;
             tile.refresh_need(now);
         }
@@ -1469,6 +1538,77 @@ mod tests {
         let t = rack.tile(a).unwrap();
         assert_eq!(t.session().unwrap().state, SessionState::YourTurn);
         assert_eq!(t.need, Some((Need::YourTurn, at(7))));
+    }
+
+    #[test]
+    fn a_reminder_for_tomorrow_outlasts_turns_dismissal_and_the_ended_tile_clearing() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(&mut rack, "a", stop("Done for today."), 5);
+        rack.remind_tomorrow(id, at(10), 0);
+        let Timer::Tomorrow { ends } = rack.tile(id).unwrap().timer else {
+            panic!("the tile should have a reminder for tomorrow");
+        };
+
+        // A turn and a read leave it.
+        apply(&mut rack, "a", prompt("One more thing"), 20);
+        apply(&mut rack, "a", stop("Done."), 30);
+        rack.mark_read(id, at(31));
+        assert!(rack.tile(id).unwrap().timer.is_tomorrow());
+
+        // Dismissed, the session comes back when the reminder runs out.
+        rack.remove(id);
+        assert!(rack.tile(id).is_none());
+        assert!(rack.tick(ends + Duration::from_secs(1)));
+        let tile = rack.tile(id).unwrap();
+        assert_eq!(tile.timer, Timer::TimeUp { since: ends });
+        assert_eq!(tile.need.map(|(n, _)| n), Some(Need::TimeUp));
+
+        // Back at the PC, the time-up tile brightens again, from now.
+        assert!(rack.welcome_back(at(9_999_999)));
+        assert_eq!(
+            rack.tile(id).unwrap().need,
+            Some((Need::TimeUp, at(9_999_999)))
+        );
+
+        // An ended tile stays while it's time-up, and clears once you've clicked it.
+        apply(&mut rack, "a", SessionEvent::Ended, 40);
+        rack.remind_tomorrow(id, at(41), 0);
+        let later = ends + ENDED_CLEARS_AFTER + Duration::from_secs(3 * 86_400);
+        rack.tick(later);
+        assert!(rack.tile(id).unwrap().timer.is_time_up());
+        rack.clear_time_up(id, later);
+        rack.tick(later);
+        assert!(rack.tile(id).is_none());
+    }
+
+    #[test]
+    fn a_read_turn_can_be_marked_unread_and_needs_you_again() {
+        let mut rack = Rack::new();
+        let done = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(&mut rack, "a", wrapped(false), 4);
+        apply(&mut rack, "a", stop("Pushed."), 5);
+        rack.mark_read(done, at(6));
+        assert_eq!(session(&rack, done).state, SessionState::Done);
+        assert!(rack.mark_unread(done, at(7)));
+        assert_eq!(session(&rack, done).state, SessionState::Unread);
+        assert_eq!(
+            rack.tile(done).unwrap().need.map(|(n, _)| n),
+            Some(Need::Unread)
+        );
+
+        let yours = apply(&mut rack, "b", prompt("Go"), 0);
+        apply(&mut rack, "b", stop("Commit it?"), 5);
+        rack.mark_read(yours, at(6));
+        assert!(rack.mark_unread(yours, at(7)));
+        let tile = rack.tile(yours).unwrap();
+        assert!(!tile.session().unwrap().read);
+        assert_eq!(tile.need.map(|(n, _)| n), Some(Need::YourTurn));
+        assert_eq!(tile.timer, Timer::Idle, "marking it unread starts no timer");
+
+        assert!(!rack.mark_unread(yours, at(8)), "it's unread already");
+        let working = apply(&mut rack, "c", prompt("Go"), 0);
+        assert!(!rack.mark_unread(working, at(8)));
     }
 
     #[test]

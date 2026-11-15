@@ -3,7 +3,7 @@
 ```text
 Purpose:     What the rack's window is, how it moves and docks, and when it takes keyboard focus.
 Depends on:  01-aims (../product/01-aims.md), and 02-tiles (02-tiles.md) for the markers the docked strip copies.
-Decides:     The window's shape, the drag, throw, and dock gestures, the docked strip, the focus rules, and where the rack opens and how you quit it.
+Decides:     The window's shape, the drag, throw, and dock gestures, the docked strip, the focus rules, where the rack opens, how you quit it, and whether Plates starts at login.
 ```
 
 The rack is Plates' one window: a 304px-wide rounded panel that stays on top of every other window and holds the tiles [02-tiles](02-tiles.md) describes.
@@ -41,7 +41,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   Letting go before the bar fills leaves the rack where it is.
 - The strip is 22px wide, with one 8px mark per tile, called a pip, in the tiles' order.
   A session's pip is a circle colored as its tile's marker is.
-  Your own tile's pip is a gray square, outlined in yellow while the tile's timer runs and solid yellow once the tile is time-up ([02-tiles](02-tiles.md#the-timer)), since the strip has no room for the timer, and time-up needs you where a running timer doesn't (user, 2026-11-15).
+  Your own tile's pip is a gray square, outlined in yellow while the tile's timer runs or is set for tomorrow, and solid yellow once the tile is time-up ([02-tiles](02-tiles.md#the-timer)), since the strip has no room for the timer, and time-up needs you where a running timer doesn't (user, 2026-11-15).
 - When a tile starts needing you, the strip nudges 12px out of the edge once, then sits still.
 - Hovering the strip peeks it 6px out of the edge and lists the tiles that need you, with their pips.
 - Clicking the strip slides the rack back out of the edge over 200ms, to sit flush with it (user, 2026-11-15).
@@ -59,8 +59,15 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 - On Windows, starting Plates from Explorer or a shortcut opens no console window, because `tools/build-release.ps1` gives `plates.exe` a console allocation policy of `detached` ([product log](../product/log.md#2026-11-15-the-detached-console-policy-keeps-plates-console-window-away-when-explorer-starts-it)).
   The policy needs Windows 11 24H2 (build 26100) or later (documented, [console allocation policy](https://learn.microsoft.com/en-us/windows/console/console-allocation-policy), as of 2026-11-15).
   That an earlier Windows ignores it and opens the console window is unverified, and starting the release build on Windows 11 23H2 would settle it.
-- Right-clicking the grip band at the rack's top opens a menu with "Quit Plates", in a popup at the pointer like the timer's menu (user, 2026-11-15).
+- Right-clicking the grip band at the rack's top opens a menu with "Start at login" and "Quit Plates", in a popup at the pointer like the timer's menu (user, 2026-11-15 and 2026-11-16).
   While the rack is docked, you click the strip to slide the rack out, and then right-click the grip band.
+- "Start at login" is off until you click it, since it adds Plates to what Windows runs when you sign in, and a check mark shows while it's on (user, 2026-11-16).
+  On Windows, it writes a value named "Plates", holding the program's path in quotes, under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`, and clicking it again deletes the value.
+  Windows runs each value under that key every time you sign in (documented, [Run and RunOnce registry keys](https://learn.microsoft.com/windows/win32/setupapi/run-and-runonce-registry-keys), as of 2026-11-16), and we haven't measured that: signing out and back in with Start at login on would settle it.
+  The value names the program you turned it on from, so a build in another folder needs it turned on again.
+  A Plates started from a Claude Code shell in the Claude desktop app runs inside the app's package, and files it wrote to `%APPDATA%\Plates\` landed in the package's own folder ([product log](../product/log.md#2026-11-15-a-plates-started-from-a-shell-inside-the-claude-desktop-app-keeps-its-data-in-the-apps-package)).
+  Whether its registry writes land in the package too is unverified, and reading the `Run` key from a terminal that Explorer started, after turning it on from such a Plates, would settle it.
+  Until then, turn it on from a Plates started from Explorer.
 - A menu opens below and to the right of the pointer, to its left where the monitor's work area leaves no room on the right, and above the pointer where it leaves no room below (user, 2026-11-15).
 - Each menu fades in over 120ms.
   On Windows, the menu turns on DWM's shadow only once the fade ends, since DWM draws the shadow at full strength from the moment it's on (unverified; watching a menu open with its shadow on from the start would settle it).
@@ -72,6 +79,7 @@ On Windows, the OS started no move loop on the rack over 8,282 moves by hand (me
 
 ## Left open
 
+- How Start at login adds Plates to what macOS opens at login.
 - Whether the rack also docks to the top and bottom edges.
 - Whether the rack keeps a place for each arrangement of monitors, so that when you unplug a laptop from its external monitors, the rack goes back to where it sat on the laptop's own screen.
 - Whether the rack hides from screen capture.

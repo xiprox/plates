@@ -20,7 +20,7 @@ None of it is GPUI code, as [decision 001](../../decisions/001-rust-and-gpui.md)
 - A session's hook events reach the model as `SessionEvent` values, one per Claude Code hook event that changes a tile.
   `hooks::parse` makes them from the hooks' JSON, so `Rack` never sees JSON.
   An interrupt or a denial reaches the model as `SessionEvent::Interrupted`, which `Cuts` makes from the session's transcript, since no hook event carries it.
-- The app calls `Rack::tick` once a second and on every event, which turns a timer that has run out into time-up and clears an ended tile once [02-tiles](../rack/02-tiles.md#session-tiles) says it clears itself.
+- The app calls `Rack::tick` once a second and on every event, which turns a timer that has run out into time-up, brings back a dismissed session whose timer set for tomorrow has run out, and clears an ended tile once [02-tiles](../rack/02-tiles.md#session-tiles) says it clears itself.
 
 ## Tiles
 
@@ -42,18 +42,19 @@ None of it is GPUI code, as [decision 001](../../decisions/001-rust-and-gpui.md)
 
 ## The timer
 
-A timer is idle, running until a time, or time-up since a time.
-[02-tiles](../rack/02-tiles.md#the-timer) gives its lengths.
+A timer is idle, running until a time, set for tomorrow until a time, or time-up since a time.
+[02-tiles](../rack/02-tiles.md#the-timer) gives its lengths, and when a timer set for tomorrow runs out.
 
 | From | What happens | To |
 | --- | --- | --- |
 | idle, or time-up | you start a timer | running |
-| running | you start a timer | running, from now |
-| running | you cancel it | idle |
-| running | its time passes, at the next tick | time-up, since the time it ran out |
+| running, or set for tomorrow | you start a timer | running, from now |
+| any | you pick Tomorrow | set for tomorrow |
+| running, or set for tomorrow | you cancel it | idle |
+| running, or set for tomorrow | its time passes, at the next tick | time-up, since the time it ran out |
 | time-up | you click the tile | idle |
-| any | a session tile moves to your turn or needs approval | running for the default length |
-| any | a session tile moves to working, or ends | idle |
+| idle, running, or time-up | a session tile moves to your turn or needs approval | running for the default length |
+| idle, running, or time-up | a session tile moves to working, or ends, or you read a your-turn tile, or dismiss it | idle |
 
 A timer runs on the wall clock, so a timer that runs out while Plates is closed, or the PC sleeps, is time-up at the first tick after.
 

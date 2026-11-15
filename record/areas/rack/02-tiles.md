@@ -3,11 +3,11 @@
 ```text
 Purpose:     What each tile in the rack shows, and how you act on it.
 Depends on:  01-window (01-window.md), and 01-claude-code-hooks (../hooks/01-claude-code-hooks.md) for where a session's state comes from.
-Decides:     The tiles' layout and states, the hover card, the timer, how a tile asks for attention, adding, renaming, and removing tiles, the hotkey, what Plates saves, and the tiles' colors and type.
+Decides:     The tiles' layout and states, marking a turn read or unread, the hover card, the timer and setting it for tomorrow, how a tile asks for attention, adding, renaming, and removing tiles, the hotkey, what Plates saves, and the tiles' colors and type.
 ```
 
 A tile is one 60px row of the rack: a session tile for each Claude Code session, and your own tiles for anything else you want kept in view.
-On every tile, the marker on the left is its status, and the timer slot on the right shows an hourglass, or a draining ring while a timer runs (user, 2026-11-15).
+On every tile, the marker on the left is its status, and the timer slot on the right shows an hourglass, a draining ring while a timer runs, or a moon while it's set for tomorrow (user, 2026-11-15 and 2026-11-16).
 [The mockups](https://claude.ai/artifact/A81TcK3BfzDVyQ2qaCqgNd) draw every state on this page.
 
 ## Layout
@@ -34,9 +34,9 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 | --- | --- | --- |
 | New | the session starts | the tile grows in, and its background then brightens blue once |
 | Working | Claude starts a turn, such as when you send a prompt | a blue dot that breathes on a 2.4s cycle, and a blue summary line of what Claude last wrote or is doing, such as "Reading plan.md" ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries)) |
-| Your turn | Claude finishes a turn that asks you something, or you interrupt Claude or deny a tool | an amber dot, an amber summary line, and a timer that starts on its own; the summary line is the first line of Claude's last message, or "Interrupted", or "Denied: " and what you denied, such as "Denied: rm -rf target"; once you've read the turn, by opening the session in the Claude desktop app or clicking its tile, the dot becomes an amber ring, the summary line takes the secondary text color, and the timer stops, since the reply is still yours but the turn no longer needs your attention (user, 2026-11-15) |
-| Unread | Claude finishes a turn that asks you nothing, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) tells | a green dot, the first line of Claude's last message in the text color, as a new message would be, and a background that brightens green once, with no timer, since the turn wants reading but no response (user, 2026-11-15) |
-| Done | you open an unread session in the Claude desktop app, or click its tile | a gray dot, and the first line of Claude's last message in the secondary text color, with no timer and no tint, since the session doesn't need you (user, 2026-11-15) |
+| Your turn | Claude finishes a turn that asks you something, or you interrupt Claude or deny a tool | an amber dot, an amber summary line, and a timer that starts on its own; the summary line is the first line of Claude's last message, or "Interrupted", or "Denied: " and what you denied, such as "Denied: rm -rf target"; once you've read the turn, by opening the session in the Claude desktop app, clicking its tile, or marking it read, the dot becomes an amber ring, the summary line takes the secondary text color, and the timer stops, since the reply is still yours but the turn no longer needs your attention (user, 2026-11-15 and 2026-11-16) |
+| Unread | Claude finishes a turn that asks you nothing, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) tells, or you mark a done tile unread | a green dot, the first line of Claude's last message in the text color, as a new message would be, and a background that brightens green once, with no timer, since the turn wants reading but no response (user, 2026-11-15 and 2026-11-16) |
+| Done | you open an unread session in the Claude desktop app, click its tile, or mark it read | a gray dot, and the first line of Claude's last message in the secondary text color, with no timer and no tint, since the session doesn't need you (user, 2026-11-15 and 2026-11-16) |
 | Needs approval | Claude asks you to approve a tool | an orange dot, what Claude wants to do as an orange summary line, such as "Wants to run: cargo test -p collector", and a timer that starts on its own |
 | Ended | the session ends | a dimmed ring for its marker, "Ended · clears in 27m" as its summary line in the muted color, and an × on hover that clears the tile (user, 2026-11-15) |
 
@@ -46,10 +46,16 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   It stays working because an agent's report starts a new turn ([hooks log](../hooks/log.md#2026-11-15-stop-lists-the-tasks-still-running-and-a-background-agents-report-starts-a-new-turn)), and its summary line counts the agents, as in "Waiting on 2 background tasks".
   [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#background-tasks) says which tasks count.
 - On Windows, clicking a session tile opens that session in the Claude desktop app, and clicking the tile of a session the app doesn't keep, such as one in a terminal, does nothing ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session)).
+- Right-clicking the text of a tile at your turn, unread, or done opens a menu with one item, in a popup at the pointer like the timer's menu (user, 2026-11-16).
+  On a turn you haven't read, the item is "Mark as read", which marks the turn read as opening the session would, and leaves the session closed.
+  On a turn you've read, it's "Mark as unread": a done tile goes back to unread, a your-turn tile's amber ring goes back to an amber dot, and the tile brightens once, as a tile that needs you does, and starts no timer.
+  Right-clicking the text of any other tile opens nothing, and right-clicking the timer slot opens the timer's menu on every tile.
 - A summary line draws text between backticks in a monospace font on a background of 8% white, and text between double asterisks in bold, and leaves out the backticks and asterisks (user, 2026-11-15).
   It draws a markdown link, `[text](target)`, as its text with a 1px underline in the line's color at 45% opacity, and the link can't be clicked (user, 2026-11-15).
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
 - An ended tile clears itself 30 minutes after the session ends, and its × clears it at once.
+  A timer holds it past the 30 minutes while the timer is set for tomorrow, and once a timer has run out, until you click the tile (user, 2026-11-16).
+  While a timer holds it, its summary line says only "Ended".
 - Every other session tile shows an × on hover too, which dismisses the session: its tile shrinks out, with an Undo button for 5s, and the session is read and its timer stops (user, 2026-11-15).
   A dismissed session stays off the rack while it works, compacts, or is opened, and comes back once it needs you again, with an approval, a question, an unread turn, or an MCP server's request, or once you send it a new prompt (user, 2026-11-15).
   It comes back after the last session tile, or for a sub-session where [01-core](../core/01-core.md#tiles) says.
@@ -72,9 +78,8 @@ From the top, the card shows:
 2. What the session's state calls for, as the table below gives it, in a part that scrolls once it's taller than 300px, so a long message can be read whole while the rest of the card stays in place (user, 2026-11-15).
 3. For a tile at your turn, unread, done, or ended whose turn called the wrap-up, the wrap-up's box, which the bullets below describe.
 4. For a sub-session whose parent's tile is on the rack, "Started from" and the parent's title in quotation marks.
-5. The session's folder and its branch, such as "plates · main".
-6. The timer's controls, except on an ended tile: a chip for each length the timer's menu offers, or, while a timer runs, the time left and a Cancel chip.
-   Beside them, an Open button, for a session the Claude desktop app keeps.
+5. The session's folder and its branch, such as "plates · main", and at the end of that line, an Open button, for a session the Claude desktop app keeps.
+6. The timer's controls, except on an ended tile: a chip for each length the timer's menu offers and one for Tomorrow, or, while a timer runs or is set for tomorrow, the time left, such as "Reminder in 4m", or "Reminder tomorrow", and a Cancel chip.
 
 | State | The scrolling part shows |
 | --- | --- |
@@ -83,7 +88,9 @@ From the top, the card shows:
 | Needs approval | the summary line, and below it the whole command, for a shell command |
 | Your turn, unread, done, or ended | Claude's last message, or for a turn with neither a message nor a wrap-up, the summary line |
 
-- The card shows at most 12,000 characters of Claude's last message, cut at a space, with "…" where it stops, and draws it as paragraphs: a heading loses its #s, a list item's - or * becomes •, and a fenced code block is in the monospace font.
+- The card shows at most 12,000 characters of Claude's last message, cut at a space, with "…" where it stops, and draws it as paragraphs: a heading loses its #s and is 12.5px semibold, and a fenced code block is in the monospace font.
+- A list item's marker, a • for a `-`, `*`, or `+` item, or the item's number, such as "2.", sits in a gutter of its own, so the item's wrapped lines line up with its text, as the Claude desktop app draws a list (user, 2026-11-16).
+  Each two spaces of indent nest an item 14px further in, up to 28px, and an item indented further sits at 28px.
 - The card runs in the order the Claude desktop app draws a session, with what came first at the top, so it reads like the session it opens (user, 2026-11-15).
 - The wrap-up's box holds what the app draws under Claude's last message, in its order: the recap in the secondary text color, then the question in the your-turn text color, then its choices, one for each of the wrap-up's `actions` (user, 2026-11-15; read in the wrap-up tool's own description, Claude desktop app 5.11492.5.0, which says the app draws its box under the message Claude writes after the call).
   It sits below the scrolling part, so the question stays in view however far the message scrolls (user, 2026-11-15).
@@ -106,7 +113,7 @@ From the top, the card shows:
 ## The timer
 
 - Clicking the hourglass starts a 5-minute timer.
-  Right-clicking it opens a menu of 5, 10, 15, 20, and 30 minutes, and 1 hour, in a popup at the pointer that can reach past the rack's edges, and picking one while a timer runs starts it over (user, 2026-11-15).
+  Right-clicking it opens a menu of 5, 10, 15, 20, and 30 minutes, 1 hour, and Tomorrow, in a popup at the pointer that can reach past the rack's edges, and picking one while a timer runs starts it over (user, 2026-11-15 and 2026-11-16).
 - While a timer runs, the timer slot shows a yellow ring that drains.
   Hovering the ring shows a faint ×, at 55% opacity, and clicking the ring cancels the timer.
 - A session tile starts a 5-minute timer on its own when it moves to your turn or needs approval, and the timer stops when the session moves to working or ends.
@@ -117,10 +124,27 @@ From the top, the card shows:
 - A timer runs on the wall clock, whether or not anyone is at the desk.
 - The timer slot's icon, divider, and hover highlight are translucent white, so they take on a tile's tint without adding a color of their own (user, 2026-11-15).
 
+### Tomorrow
+
+Picking Tomorrow sets the tile's timer for tomorrow, for a tile you mean to deal with when you're back the next day (user, 2026-11-16):
+
+- A timer set for tomorrow runs out at 4:00 the next morning, local time, so the tile is time-up whenever you sit down.
+  Before 4:00, a night that went past midnight still counts as the day before, so it then runs out at the coming 4:00.
+  Plates takes the offset from UTC when you pick Tomorrow, so on a night the clocks change, the timer runs out at 3:00 or 5:00 by the new time.
+- The timer slot shows a yellow moon in place of the ring, which hovering dims behind the same faint ×, and clicking it cancels the timer.
+- No change in the session touches it: moving to your turn or needing approval starts no 5-minute timer over it, and moving to working, the session ending, a read, and a dismissal all leave it set.
+  A dismissed session comes back when its timer set for tomorrow runs out, and an ended tile stays, as the ended-tile bullet above says.
+- Your own tile's timer menu offers Tomorrow too.
+
 ## Attention
 
 - Nothing flashes or pulses, and the only motion that repeats is a working session's breathing dot (user, 2026-11-15).
 - When a tile starts needing you, or needs you for a new reason, such as its timer running out on your turn, its background brightens once in its status color over 1.4s, then settles back.
+- Every time-up tile brightens again at your first input after you've been away, since one that ran out while you were away, such as a timer set for tomorrow, brightened with nobody there (user, 2026-11-16).
+  On Windows, Plates counts you away after 30 minutes without input, by the time of the last input that `GetLastInputInfo` reports (documented, [GetLastInputInfo](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo), as of 2026-11-16).
+  It also counts you away after a gap of 30 minutes or more on the wall clock between two of its once-a-second ticks, which it takes as the PC having slept (unverified).
+  We haven't measured either, and leaving a time-up tile on the rack while the PC sits idle for 30 minutes, then while it sleeps for 30 minutes, would settle both.
+  On macOS, how Plates learns you were away is unverified until the plan's step 7.
 - A tile needs you when it's an approval, your turn, unread, or time-up.
   An unread tile needs your attention but no response, so it starts no timer.
 - Plates plays no sounds and has no quiet mode ([01-aims](../product/01-aims.md#non-goals)).

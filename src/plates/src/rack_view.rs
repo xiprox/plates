@@ -33,6 +33,11 @@ pub const POPOVER_W: f32 = 176.;
 pub const POPOVER_GAP: f32 = 12.;
 pub const TOAST_H: f32 = 44.;
 const TOAST_FOR: Duration = Duration::from_secs(5);
+/// How long without input, or asleep, counts as being away from the PC, after which your next
+/// input brightens every time-up tile again (user, 2026-11-16).
+const AWAY: Duration = Duration::from_secs(30 * 60);
+/// How recent an input counts as you being back.
+const BACK: Duration = Duration::from_secs(5);
 
 /// The rack's height: a 28px band, a 60px row for each tile and for the phantom tile with 6px
 /// between rows, the Undo row while it shows, 12px of padding below, and a 1px border.
@@ -133,6 +138,10 @@ pub struct RackView {
     rest: Option<(TileId, Instant)>,
     /// Filled in by the tiles' layout each frame.
     pub(crate) spots: Rc<RefCell<HashMap<TileId, Spot>>>,
+    /// Whether you've been away from the PC since the last input Plates saw.
+    away: bool,
+    /// The wall-clock time of the last tick, which a long gap shows the PC slept since.
+    last_tick: SystemTime,
     pub(crate) toast: Option<Toast>,
     pub(crate) docked: Option<Side>,
     dock_area: Rect,
@@ -259,6 +268,8 @@ impl RackView {
             card: None,
             rest: None,
             spots: Rc::default(),
+            away: false,
+            last_tick: SystemTime::now(),
             toast: None,
             docked: None,
             dock_area: Rect::default(),
@@ -295,6 +306,22 @@ impl RackView {
         if self.rack.tick(now) {
             self.save();
             self.after_change(cx);
+        }
+        // A tile brightens once as its time runs out, which nobody sees if you're away, so the
+        // first input after you were away brightens every time-up tile again.
+        let idle = native::idle_for();
+        let slept = now
+            .duration_since(self.last_tick)
+            .is_ok_and(|gap| gap >= AWAY);
+        self.last_tick = now;
+        if idle >= AWAY || slept {
+            self.away = true;
+        }
+        if self.away && idle < BACK {
+            self.away = false;
+            if self.rack.welcome_back(now) {
+                self.after_change(cx);
+            }
         }
         if self
             .toast
@@ -753,7 +780,7 @@ impl RackView {
             return;
         }
         let now = SystemTime::now();
-        match self.rack.tile(id).map(|t| t.timer.is_running()) {
+        match self.rack.tile(id).map(|t| t.timer.is_set()) {
             Some(true) => self.rack.cancel_timer(id, now),
             Some(false) => self.rack.start_timer(id, DEFAULT_MINUTES, now),
             None => return,
@@ -774,6 +801,36 @@ impl RackView {
         self.open_tile(id, cx);
         if let Some(title) = title {
             crate::press::press_choice(title, choice.to_string());
+        }
+    }
+
+    /// Right-clicking a finished session's text opens a menu that marks its turn read, without
+    /// opening the session, or unread again once you've read it (user, 2026-11-16). Other tiles
+    /// have nothing to mark, so the click opens nothing.
+    pub(crate) fn open_tile_menu(&mut self, id: TileId, at: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some(s) = self.rack.tile(id).and_then(|t| t.session()) else {
+            return;
+        };
+        let read = match s.state {
+            SessionState::Unread => true,
+            SessionState::YourTurn => !s.read,
+            SessionState::Done => false,
+            _ => return,
+        };
+        self.open_menu(MenuKind::Tile(id, read), at, cx);
+    }
+
+    /// Marks a session's turn read or unread, from the tile's menu.
+    pub(crate) fn set_read(&mut self, id: TileId, read: bool, cx: &mut Context<Self>) {
+        self.menu = None;
+        let now = SystemTime::now();
+        let changed = if read {
+            self.rack.mark_read(id, now)
+        } else {
+            self.rack.mark_unread(id, now)
+        };
+        if changed {
+            self.after_change(cx);
         }
     }
 
@@ -978,6 +1035,16 @@ impl RackView {
     pub(crate) fn pick_minutes(&mut self, id: TileId, minutes: u32, cx: &mut Context<Self>) {
         self.menu = None;
         self.rack.start_timer(id, minutes, SystemTime::now());
+        self.save();
+        self.after_change(cx);
+    }
+
+    /// Sets a reminder for when you're back tomorrow, from the timer's menu or the hover card
+    /// (user, 2026-11-16).
+    pub(crate) fn pick_tomorrow(&mut self, id: TileId, cx: &mut Context<Self>) {
+        self.menu = None;
+        self.rack
+            .remind_tomorrow(id, SystemTime::now(), native::utc_offset());
         self.save();
         self.after_change(cx);
     }

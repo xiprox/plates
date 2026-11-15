@@ -57,4 +57,4 @@ If GPUI can't give the rack its window on macOS, we weigh the options then.
 
 ## Later
 
-Packaging as an installer and an app bundle, launching at login, and the questions [01-window](../rack/01-window.md#left-open) leaves open.
+Packaging as an installer and an app bundle, launching at login on macOS, and the questions [01-window](../rack/01-window.md#left-open) leaves open.

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use gpui_kit::component::input::Input;
 use gpui_kit::*;
-use plates_core::{Need, Session, SessionState, Tile, rack::ENDED_CLEARS_AFTER};
+use plates_core::{Need, SessionState, Tile, rack::ENDED_CLEARS_AFTER};
 
 use crate::{
     markup::{self, Mark},
@@ -120,6 +120,17 @@ fn nested_row(tile: AnyElement) -> AnyElement {
 // A line Claude wrote, with its `code` in the monospace font on a faint background and its
 // **bold** in bold, and the marks around each left out.
 pub(crate) fn styled_line(line: &str, color: impl Into<Hsla>) -> StyledText {
+    styled_line_weighted(line, color, FontWeight::NORMAL)
+}
+
+// A styled line at a weight of its own, such as a heading's. Each run of the line carries its
+// whole font, so a parent element's font weight doesn't reach the text, and the weight has to be
+// the runs'. (read in gpui-pre 0.3.12, src/elements/text.rs, StyledText::with_runs)
+pub(crate) fn styled_line_weighted(
+    line: &str,
+    color: impl Into<Hsla>,
+    weight: FontWeight,
+) -> StyledText {
     let color: Hsla = color.into();
     let (text, spans) = markup::parse(line);
     // A link's text holds marks of its own, so the line splits into runs at every span's edges,
@@ -141,6 +152,7 @@ pub(crate) fn styled_line(line: &str, color: impl Into<Hsla>) -> StyledText {
             };
             let code = has(Mark::Code);
             let mut f = font(if code { MONO } else { SANS });
+            f.weight = weight;
             if has(Mark::Bold) {
                 f = f.bold();
             }
@@ -286,7 +298,7 @@ pub(crate) fn marker(t: &Tile, pip: bool) -> AnyElement {
         ),
     };
     let dot = match color {
-        Some(c) if pip && t.is_own() && t.timer.is_running() => {
+        Some(c) if pip && t.is_own() && t.timer.is_set() => {
             shape.bg(rgb(c)).shadow(vec![ring(rgb(YELLOW).into(), 1.5)])
         }
         Some(c) => shape.bg(rgb(c)),
@@ -308,10 +320,16 @@ pub(crate) fn marker(t: &Tile, pip: bool) -> AnyElement {
     .into_any_element()
 }
 
-/// A session's state in words, with how long it has been in it, such as "Your turn · waiting
-/// 12m", for the hover card and an ended tile's summary line.
-pub(crate) fn session_words(s: &Session, now: SystemTime) -> String {
+/// A session tile's state in words, with how long it has been in it, such as "Your turn ·
+/// waiting 12m", for the hover card and an ended tile's summary line.
+pub(crate) fn session_words(t: &Tile, now: SystemTime) -> String {
+    let Some(s) = t.session() else {
+        return String::new();
+    };
     let in_state = since(s.state_since, now);
+    // A timer set for tomorrow, or one that's run out, holds an ended tile past the time it would
+    // clear, so the tile then says only that the session ended.
+    let held = t.timer.is_tomorrow() || t.timer.is_time_up();
     match s.state {
         SessionState::New => "New".into(),
         SessionState::Working => format!("Working for {}", minutes(in_state)),
@@ -322,6 +340,7 @@ pub(crate) fn session_words(s: &Session, now: SystemTime) -> String {
         SessionState::YourTurn => format!("Your turn · waiting {}", minutes(in_state)),
         SessionState::Unread => format!("Finished {} ago · not read yet", minutes(in_state)),
         SessionState::Done => format!("Done · read {} ago", minutes(in_state)),
+        SessionState::Ended if held || in_state >= ENDED_CLEARS_AFTER => "Ended".into(),
         SessionState::Ended => {
             let left = ENDED_CLEARS_AFTER.saturating_sub(in_state);
             format!(
@@ -379,7 +398,7 @@ impl RackView {
                 .map(|s| (s, TEXT2)),
             // An ended tile says when it clears itself, which a tooltip alone hid (user,
             // 2026-11-15).
-            Some(SessionState::Ended) => t.session().map(|s| (session_words(s, now), MUTED)),
+            Some(SessionState::Ended) => Some((session_words(t, now), MUTED)),
             // A working tile shows Claude's newest text and the tool it used after it, as the
             // core's Session::line picks them (user, 2026-11-15).
             Some(SessionState::Working) => t
@@ -440,6 +459,12 @@ impl RackView {
             main = main
                 .on_mouse_move(
                     cx.listener(move |this, _: &MouseMoveEvent, _, cx| this.pointer_moved(id, cx)),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                        this.open_tile_menu(id, e.position, cx)
+                    }),
                 )
                 .child(
                     canvas(
@@ -527,6 +552,29 @@ impl RackView {
         let id = t.id;
         let hg_group: SharedString = format!("hg-{i}").into();
         let icon = match t.timer.left(now) {
+            // A reminder for tomorrow shows a moon, since a ring that drained over the night
+            // wouldn't visibly move, and hovering it shows the × that cancels it, as on the ring
+            // (user, 2026-11-16).
+            None if t.timer.is_tomorrow() => {
+                let layer =
+                    |path: SharedString| svg().absolute().top_0().left_0().size(px(20.)).path(path);
+                let mut dim: Hsla = rgb(YELLOW).into();
+                dim.a = 0.25;
+                div()
+                    .relative()
+                    .size(px(20.))
+                    .child(
+                        layer("plates/moon.svg".into())
+                            .text_color(rgb(YELLOW))
+                            .group_hover(hg_group.clone(), move |s| s.text_color(dim)),
+                    )
+                    .child(
+                        layer("plates/ring-x.svg".into())
+                            .text_color(text(0.))
+                            .group_hover(hg_group.clone(), |s| s.text_color(text(0.55))),
+                    )
+                    .into_any_element()
+            }
             Some(left) => {
                 let layer =
                     |path: SharedString| svg().absolute().top_0().left_0().size(px(20.)).path(path);
@@ -756,7 +804,8 @@ impl RackView {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|this, e: &MouseDownEvent, _, cx| {
-                    this.open_menu(MenuKind::Rack, e.position, cx)
+                    let login = crate::native::starts_at_login();
+                    this.open_menu(MenuKind::Rack { login }, e.position, cx)
                 }),
             )
             .child(

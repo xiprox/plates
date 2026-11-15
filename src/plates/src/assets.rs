@@ -54,6 +54,15 @@ fn icon(name: &str) -> Option<String> {
             "0 0 24 24",
             format!(r#"<path d="M7 7l10 10M17 7L7 17" {STROKE} stroke-width="1.8"/>"#),
         ),
+        "check.svg" => svg(
+            "0 0 24 24",
+            format!(r#"<path d="M5 12.5l4.5 4.5L19 7.5" {STROKE} stroke-width="1.8"/>"#),
+        ),
+        // A crescent, for a reminder for tomorrow.
+        "moon.svg" => svg(
+            "0 0 24 24",
+            r#"<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.6 6.6 0 0 0 10.5 10.5z"/>"#.into(),
+        ),
         "plus.svg" => svg(
             "0 0 24 24",
             format!(r#"<path d="M12 5v14M5 12h14" {STROKE} stroke-width="1.8"/>"#),

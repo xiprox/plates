@@ -4,18 +4,30 @@
 
 use std::ops::Range;
 
-/// One block of a message as the hover card draws it.
+/// One block of a message as the hover card draws it, with its inline marks still in its text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Block {
-    /// A paragraph, a heading, or a list item, with its inline marks still in it.
+    /// A paragraph, or a quote without its >.
     Text(String),
+    /// A heading without its #s.
+    Heading(String),
+    /// A list item: its marker, "•" for a - or * item or the number for a numbered one, such as
+    /// "2.", how many levels its indent nests it, and its text.
+    Item {
+        marker: String,
+        depth: usize,
+        text: String,
+    },
     /// The lines of a fenced code block.
     Code(Vec<String>),
 }
 
+/// The deepest a list item nests, counted from 0 for an item with no indent, so the card draws
+/// items at three indents, and an item indented further sits at the last.
+const MAX_DEPTH: usize = 2;
+
 /// A message's blocks, up to about `budget` characters, cut at a space with "…" after it.
-/// A heading loses its #s, a list item's - or * becomes a bullet, and a table's rule rows and
-/// blank lines go.
+/// A table's rule rows and blank lines go.
 pub fn blocks(message: &str, budget: usize) -> Vec<Block> {
     let mut out: Vec<Block> = Vec::new();
     let mut left = budget;
@@ -36,17 +48,26 @@ pub fn blocks(message: &str, budget: usize) -> Vec<Block> {
             mark_cut(&mut out);
             break;
         }
-        let text = if fenced {
-            line.trim_end().to_string()
-        } else {
-            plain(trimmed)
-        };
-        let (text, cut) = cut_to(&text, left);
-        left = left.saturating_sub(text.chars().count());
-        match out.last_mut() {
-            Some(Block::Code(lines)) if fenced => lines.push(text),
-            _ => out.push(Block::Text(text)),
+        if fenced {
+            let (text, cut) = cut_to(line.trim_end(), left);
+            left = left.saturating_sub(text.chars().count());
+            if let Some(Block::Code(lines)) = out.last_mut() {
+                lines.push(text);
+            }
+            if cut {
+                break;
+            }
+            continue;
         }
+        let mut block = classify(line);
+        let text = match &mut block {
+            Block::Text(t) | Block::Heading(t) | Block::Item { text: t, .. } => t,
+            Block::Code(_) => unreachable!("classify makes no code block"),
+        };
+        let (cut_text, cut) = cut_to(text, left);
+        left = left.saturating_sub(cut_text.chars().count());
+        *text = cut_text;
+        out.push(block);
         if cut {
             break;
         }
@@ -55,22 +76,46 @@ pub fn blocks(message: &str, budget: usize) -> Vec<Block> {
     out
 }
 
+// What kind of block one line outside a code block is. A list item nests a level for every two
+// spaces of indent, as Claude indents a nested list.
+fn classify(line: &str) -> Block {
+    let indent = line.len() - line.trim_start().len();
+    let trimmed = line.trim();
+    if trimmed.starts_with('#') {
+        return Block::Heading(trimmed.trim_start_matches('#').trim_start().to_string());
+    }
+    let depth = (indent / 2).min(MAX_DEPTH);
+    let bullet = ["- ", "* ", "+ "]
+        .iter()
+        .find_map(|p| trimmed.strip_prefix(p));
+    if let Some(text) = bullet {
+        return Block::Item {
+            marker: "•".to_string(),
+            depth,
+            text: text.to_string(),
+        };
+    }
+    let digits = trimmed.chars().take_while(char::is_ascii_digit).count();
+    if digits > 0
+        && let Some(text) = trimmed[digits..]
+            .strip_prefix(". ")
+            .or_else(|| trimmed[digits..].strip_prefix(") "))
+    {
+        return Block::Item {
+            marker: format!("{}.", &trimmed[..digits]),
+            depth,
+            text: text.to_string(),
+        };
+    }
+    Block::Text(trimmed.strip_prefix("> ").unwrap_or(trimmed).to_string())
+}
+
 // A table's rule row, such as |---|:--:|, or a horizontal rule, such as ---.
 fn is_rule(line: &str) -> bool {
     line.contains(['-', '*'])
         && line
             .chars()
             .all(|c| matches!(c, '|' | '-' | ':' | '*' | ' '))
-}
-
-fn plain(line: &str) -> String {
-    if line.starts_with('#') {
-        return line.trim_start_matches('#').trim_start().to_string();
-    }
-    if let Some(item) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
-        return format!("• {item}");
-    }
-    line.strip_prefix("> ").unwrap_or(line).to_string()
 }
 
 fn cut_to(text: &str, max: usize) -> (String, bool) {
@@ -87,7 +132,7 @@ fn cut_to(text: &str, max: usize) -> (String, bool) {
 
 fn mark_cut(out: &mut [Block]) {
     match out.last_mut() {
-        Some(Block::Text(text)) => text.push('…'),
+        Some(Block::Text(text) | Block::Heading(text) | Block::Item { text, .. }) => text.push('…'),
         Some(Block::Code(lines)) => lines.push("…".to_string()),
         None => {}
     }
@@ -205,18 +250,29 @@ mod tests {
 
     #[test]
     fn a_message_becomes_blocks_without_its_markdown_scaffolding() {
-        let message = "## Done\n\nThe card opens after 400ms.\n\n- grows in\n* closes on leave\n\n| a | b |\n|---|:-:|\n\n```rust\nlet x = 1;\n```\n> quoted";
+        let message = "## Done\n\nThe card opens after 400ms.\n\n- grows in\n  * closes on leave\n2. Then **this**\n\n| a | b |\n|---|:-:|\n\n```rust\nlet x = 1;\n```\n> quoted";
+        let item = |marker: &str, depth: usize, text: &str| Block::Item {
+            marker: marker.into(),
+            depth,
+            text: text.into(),
+        };
         assert_eq!(
             blocks(message, 500),
             vec![
-                Block::Text("Done".into()),
+                Block::Heading("Done".into()),
                 Block::Text("The card opens after 400ms.".into()),
-                Block::Text("• grows in".into()),
-                Block::Text("• closes on leave".into()),
+                item("•", 0, "grows in"),
+                item("•", 1, "closes on leave"),
+                item("2.", 0, "Then **this**"),
                 Block::Text("| a | b |".into()),
                 Block::Code(vec!["let x = 1;".into()]),
                 Block::Text("quoted".into()),
             ]
+        );
+        assert_eq!(
+            blocks("2026 was a year.", 500),
+            vec![Block::Text("2026 was a year.".into())],
+            "digits alone don't make a numbered item"
         );
     }
 

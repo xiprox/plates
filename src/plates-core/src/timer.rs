@@ -1,7 +1,7 @@
 //! A tile's timer, which runs on the wall clock, so a timer that runs out while Plates is closed
 //! or the PC sleeps is time-up at the first tick after.
 
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +11,12 @@ pub const DEFAULT_MINUTES: u32 = 5;
 /// The lengths the hourglass's menu offers, in minutes.
 pub const MENU_MINUTES: [u32; 6] = [5, 10, 15, 20, 30, 60];
 
+/// When a reminder for tomorrow runs out: 4:00 local time. Before 4:00, a night that went past
+/// midnight still counts as the day before, so tomorrow is the coming 4:00 (user, 2026-11-16).
+pub const MORNING: Duration = Duration::from_secs(4 * 3600);
+
+const DAY: i64 = 24 * 3600;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum Timer {
@@ -19,6 +25,12 @@ pub enum Timer {
     Running {
         #[serde(with = "unix_ms")]
         started: SystemTime,
+        #[serde(with = "unix_ms")]
+        ends: SystemTime,
+    },
+    /// A reminder for tomorrow, which runs out at `MORNING`. Unlike a running timer, a session's
+    /// change of state doesn't stop or replace it, since it's for when you're back.
+    Tomorrow {
         #[serde(with = "unix_ms")]
         ends: SystemTime,
     },
@@ -36,17 +48,52 @@ impl Timer {
         }
     }
 
-    /// The timer as it stands at `now`: a running timer whose time has passed is time-up since
-    /// the time it ran out, not since `now`.
+    /// A reminder for tomorrow, from `now`, where the local time is `utc_offset` seconds ahead
+    /// of UTC, as 10,800 is for UTC+3.
+    pub fn tomorrow(now: SystemTime, utc_offset: i64) -> Self {
+        let secs = now
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let morning = MORNING.as_secs() as i64;
+        // Counted from the morning, the local day that's still going, and then the next one.
+        let today = (secs + utc_offset - morning).div_euclid(DAY);
+        let ends = (today + 1) * DAY + morning - utc_offset;
+        Timer::Tomorrow {
+            ends: UNIX_EPOCH + Duration::from_secs(ends.max(0) as u64),
+        }
+    }
+
+    /// The timer as it stands at `now`: a running timer or a reminder for tomorrow whose time has
+    /// passed is time-up since the time it ran out, not since `now`.
     pub fn at(self, now: SystemTime) -> Self {
         match self {
-            Timer::Running { ends, .. } if ends <= now => Timer::TimeUp { since: ends },
+            Timer::Running { ends, .. } | Timer::Tomorrow { ends } if ends <= now => {
+                Timer::TimeUp { since: ends }
+            }
             other => other,
         }
     }
 
     pub fn is_running(&self) -> bool {
         matches!(self, Timer::Running { .. })
+    }
+
+    pub fn is_tomorrow(&self) -> bool {
+        matches!(self, Timer::Tomorrow { .. })
+    }
+
+    /// Stops a running timer, or ends time-up, as reading or dismissing a session does, and
+    /// leaves a reminder for tomorrow, which is for when you're back.
+    pub fn stop(&mut self) {
+        if !self.is_tomorrow() {
+            *self = Timer::Idle;
+        }
+    }
+
+    /// Whether a timer or a reminder for tomorrow is counting down, which a click on the timer
+    /// slot cancels.
+    pub fn is_set(&self) -> bool {
+        self.is_running() || self.is_tomorrow()
     }
 
     pub fn is_time_up(&self) -> bool {
@@ -68,10 +115,12 @@ impl Timer {
         })
     }
 
-    /// The time left on a running timer at `now`, for its tooltip.
+    /// The time left on a running timer or a reminder for tomorrow at `now`.
     pub fn remaining(&self, now: SystemTime) -> Option<Duration> {
         match *self {
-            Timer::Running { ends, .. } => Some(ends.duration_since(now).unwrap_or_default()),
+            Timer::Running { ends, .. } | Timer::Tomorrow { ends } => {
+                Some(ends.duration_since(now).unwrap_or_default())
+            }
             _ => None,
         }
     }
@@ -126,6 +175,35 @@ mod tests {
         assert_eq!(t.at(at(300)), Timer::TimeUp { since: at(300) });
         // A tick hours later, after the PC slept, still dates time-up from when it ran out.
         assert_eq!(t.at(at(9_000)), Timer::TimeUp { since: at(300) });
+    }
+
+    #[test]
+    fn tomorrow_runs_out_at_the_coming_morning_after_today() {
+        // 2026-11-15T20:00:00Z is 23:00 in UTC+3.
+        let utc = |text: &str| crate::transcript::parse_timestamp(text).unwrap();
+        let plus3 = 3 * 3600;
+        let ends = |now: &str| match Timer::tomorrow(utc(now), plus3) {
+            Timer::Tomorrow { ends } => ends,
+            other => panic!("expected a reminder for tomorrow, got {other:?}"),
+        };
+        // 4:00 local on the 16th is 01:00Z.
+        assert_eq!(ends("2026-11-15T20:00:00Z"), utc("2026-11-16T01:00:00Z"));
+        assert_eq!(
+            ends("2026-11-15T23:30:00Z"),
+            utc("2026-11-16T01:00:00Z"),
+            "02:30 local is still the night of the 15th"
+        );
+        assert_eq!(
+            ends("2026-11-16T01:00:00Z"),
+            utc("2026-11-17T01:00:00Z"),
+            "from 4:00 local on, tomorrow is the next day"
+        );
+        assert_eq!(
+            Timer::tomorrow(utc("2026-11-15T20:00:00Z"), plus3).at(utc("2026-11-16T06:00:00Z")),
+            Timer::TimeUp {
+                since: utc("2026-11-16T01:00:00Z")
+            }
+        );
     }
 
     #[test]

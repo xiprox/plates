@@ -23,17 +23,25 @@ const FADE: Duration = Duration::from_millis(120);
 pub enum MenuKind {
     /// The timer lengths, from a tile's hourglass.
     Timer(TileId),
-    /// Plates itself, from the grip band at the rack's top.
-    Rack,
+    /// Plates itself, from the grip band at the rack's top, with whether Plates starts at login,
+    /// which the rack reads from the registry as it opens the menu.
+    Rack { login: bool },
+    /// A finished session's tile, from its text: whether to mark its turn read or unread, which
+    /// the rack works out as it opens the menu, since the menu's first frame is drawn while the
+    /// rack is still handling the click. (read in gpui-pre 0.3.12, src/app.rs, App::open_window)
+    Tile(TileId, bool),
 }
 
 impl MenuKind {
     pub fn height(self) -> f32 {
         match self {
-            // A 6px pad top and bottom, a 23px heading, six 32px rows, and a 1px border.
-            MenuKind::Timer(_) => 230.,
+            // A 6px pad top and bottom, a 23px heading, seven 32px rows, six of minutes and one
+            // for tomorrow, and a 1px border.
+            MenuKind::Timer(_) => 262.,
+            // A 6px pad top and bottom, two 32px rows, and a 1px border.
+            MenuKind::Rack { .. } => 78.,
             // A 6px pad top and bottom, one 32px row, and a 1px border.
-            MenuKind::Rack => 46.,
+            MenuKind::Tile(..) => 46.,
         }
     }
 }
@@ -117,13 +125,59 @@ impl MenuView {
                 }))
                 .into_any_element()
         });
-        std::iter::once(heading).chain(rows).collect()
+        let tomorrow = Self::row("tomorrow", "Tomorrow")
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.rack
+                    .update(cx, |rack, cx| rack.pick_tomorrow(tile, cx))
+                    .ok();
+                window.remove_window();
+            }))
+            .into_any_element();
+        std::iter::once(heading)
+            .chain(rows)
+            .chain(std::iter::once(tomorrow))
+            .collect()
     }
 
-    fn rack_items(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn rack_items(&self, login: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        // Plates starts at login only once you turn it on here, since it adds Plates to what
+        // Windows runs when you sign in (user, 2026-11-16).
+        let check = login.then(|| {
+            svg()
+                .path("plates/check.svg")
+                .size(px(16.))
+                .text_color(rgb(TEXT))
+        });
         vec![
+            Self::row("login", "Start at login")
+                .children(check)
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    if !native::set_start_at_login(!login) {
+                        eprintln!("Couldn't change whether Plates starts at login.");
+                    }
+                    this.close(window, cx);
+                }))
+                .into_any_element(),
             Self::row("quit", "Quit Plates")
                 .on_click(cx.listener(|_, _: &ClickEvent, _, cx| cx.quit()))
+                .into_any_element(),
+        ]
+    }
+
+    fn tile_items(&self, tile: TileId, read: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let label = if read {
+            "Mark as read"
+        } else {
+            "Mark as unread"
+        };
+        vec![
+            Self::row("read", label)
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.rack
+                        .update(cx, |rack, cx| rack.set_read(tile, read, cx))
+                        .ok();
+                    this.close(window, cx);
+                }))
                 .into_any_element(),
         ]
     }
@@ -149,7 +203,8 @@ impl Render for MenuView {
 
         let items = match self.kind {
             MenuKind::Timer(tile) => self.timer_items(tile, cx),
-            MenuKind::Rack => self.rack_items(cx),
+            MenuKind::Rack { login } => self.rack_items(login, cx),
+            MenuKind::Tile(tile, read) => self.tile_items(tile, read, cx),
         };
         let shown = (self.opened.elapsed().as_secs_f32() / FADE.as_secs_f32()).min(1.);
         div()

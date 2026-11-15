@@ -24,11 +24,21 @@ use windows::Win32::{
             MONITORINFO, MonitorFromPoint,
         },
     },
-    System::Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx},
+    System::{
+        Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx},
+        Registry::{
+            HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW,
+            RegSetKeyValueW,
+        },
+        SystemInformation::GetTickCount,
+        Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION},
+    },
     UI::{
         Accessibility::{HWINEVENTHOOK, SetWinEventHook},
         Controls::MARGINS,
-        Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON},
+        Input::KeyboardAndMouse::{
+            GetAsyncKeyState, GetLastInputInfo, LASTINPUTINFO, VK_LBUTTON, VK_RBUTTON,
+        },
         Shell::{DefSubclassProc, SetWindowSubclass, ShellExecuteW},
         WindowsAndMessaging::{
             ASFW_ANY, AllowSetForegroundWindow, EVENT_SYSTEM_FOREGROUND, GW_HWNDPREV, GWL_EXSTYLE,
@@ -387,6 +397,96 @@ unsafe extern "system" fn on_foreground(
     if let Some(tx) = FOREGROUND.get() {
         let _ = tx.try_send(());
     }
+}
+
+/// How long since the last keyboard or mouse input to the PC, from any program.
+/// (documented, https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo)
+pub fn idle_for() -> std::time::Duration {
+    let mut info = LASTINPUTINFO {
+        cbSize: size_of::<LASTINPUTINFO>() as u32,
+        dwTime: 0,
+    };
+    if !unsafe { GetLastInputInfo(&mut info) }.as_bool() {
+        return std::time::Duration::ZERO;
+    }
+    // Both counts are milliseconds since Windows started, and wrap after 49.7 days.
+    let now = unsafe { GetTickCount() };
+    std::time::Duration::from_millis(u64::from(now.wrapping_sub(info.dwTime)))
+}
+
+/// Whether Plates starts when you sign in to Windows: a value named "Plates" under the current
+/// user's `Run` key that names this program.
+/// (documented, https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)
+pub fn starts_at_login() -> bool {
+    let Some(want) = run_command() else {
+        return false;
+    };
+    let mut buf = [0u16; 1024];
+    let mut size = (buf.len() * 2) as u32;
+    let read = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            RUN_KEY,
+            w!("Plates"),
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr() as *mut c_void),
+            Some(&mut size),
+        )
+    };
+    let len = (size as usize / 2).saturating_sub(1);
+    read.is_ok() && String::from_utf16_lossy(&buf[..len.min(buf.len())]) == want
+}
+
+/// Adds or removes the `Run` value that starts Plates when you sign in, and returns whether
+/// Windows took the change.
+pub fn set_start_at_login(on: bool) -> bool {
+    let result = if on {
+        let Some(command) = run_command() else {
+            return false;
+        };
+        let wide: Vec<u16> = command.encode_utf16().chain(Some(0)).collect();
+        unsafe {
+            RegSetKeyValueW(
+                HKEY_CURRENT_USER,
+                RUN_KEY,
+                w!("Plates"),
+                REG_SZ.0,
+                Some(wide.as_ptr() as *const c_void),
+                (wide.len() * 2) as u32,
+            )
+        }
+    } else {
+        unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, RUN_KEY, w!("Plates")) }
+    };
+    result.is_ok()
+}
+
+const RUN_KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
+
+// The command the `Run` value holds: this program's path, in quotes, since it can hold spaces.
+fn run_command() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    Some(format!("\"{}\"", exe.display()))
+}
+
+/// How far the local time is ahead of UTC, in seconds, by Windows' time zone setting, with
+/// daylight saving time when it's in effect.
+/// (documented, https://learn.microsoft.com/en-us/windows/win32/api/timezoneapi/nf-timezoneapi-gettimezoneinformation)
+pub fn utc_offset() -> i64 {
+    // The values GetTimeZoneInformation returns, which the windows crate defines only under its
+    // Win32_System_SystemServices feature, which Plates doesn't enable.
+    const TIME_ZONE_ID_STANDARD: u32 = 1;
+    const TIME_ZONE_ID_DAYLIGHT: u32 = 2;
+    let mut zone = TIME_ZONE_INFORMATION::default();
+    let id = unsafe { GetTimeZoneInformation(&mut zone) };
+    // UTC is the local time plus Bias, plus StandardBias or DaylightBias, all in minutes.
+    let extra = match id {
+        TIME_ZONE_ID_STANDARD => zone.StandardBias,
+        TIME_ZONE_ID_DAYLIGHT => zone.DaylightBias,
+        _ => 0,
+    };
+    -i64::from(zone.Bias + extra) * 60
 }
 
 /// Opens a link with the program Windows has for its scheme, such as the Claude desktop app for

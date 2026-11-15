@@ -23,7 +23,8 @@ use crate::{
     rack_view::RackView,
     view::{
         APPROVAL_TEXT, BORDER, MONO, MUTED, SANS, TEXT, TEXT2, TILE, WORKING_TEXT, YELLOW,
-        YOUR_TURN_TEXT, marker, minutes, session_words, styled_line, text, white,
+        YOUR_TURN_TEXT, marker, minutes, session_words, styled_line, styled_line_weighted, text,
+        white,
     },
 };
 
@@ -182,7 +183,7 @@ impl CardView {
                         div()
                             .text_size(px(12.))
                             .text_color(rgb(MUTED))
-                            .child(session_words(s, now)),
+                            .child(session_words(t, now)),
                     ),
             );
         // The middle scrolls once it reaches BODY_MAX_H, so a long message can be read whole
@@ -237,7 +238,7 @@ impl CardView {
         let ask = w
             .ask
             .as_deref()
-            .map(|a| paragraph(a, YOUR_TURN_TEXT).font_weight(FontWeight::SEMIBOLD));
+            .map(|a| paragraph_weighted(a, YOUR_TURN_TEXT, FontWeight::SEMIBOLD));
         // A choice answers the session as its button in the app does, by opening the session and
         // pressing that button (user, 2026-11-15). A session the app doesn't keep has no button
         // to press, so there the choices only say what they are.
@@ -313,7 +314,7 @@ impl CardView {
                 .child(text)
         };
         let started = parent.map(|p| meta(format!("Started from \u{201c}{p}\u{201d}")));
-        let place = meta(self.place.clone());
+        let place = meta(self.place.clone()).flex_1().min_w_0();
         let timer = (s.state != SessionState::Ended).then(|| self.timer_row(t, cx));
         let open = link.then(|| {
             div()
@@ -341,35 +342,42 @@ impl CardView {
             .border_t_1()
             .border_color(white(0.06))
             .children(started)
-            .child(place)
+            // The folder line holds Open at its end, so the timer's chips get a row of their own.
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .children(timer)
-                    .child(div().flex_1())
+                    .child(place)
                     .children(open),
             )
+            .children(timer)
     }
 
-    // The tile's timer: a chip for each length the timer menu offers, or while a timer runs, how
-    // long it has left and a chip that cancels it.
+    // The tile's timer: a chip for each length the timer menu offers, and one for tomorrow, or
+    // while a timer or a reminder for tomorrow is set, what's left and a chip that cancels it.
     fn timer_row(&self, t: &Tile, cx: &mut Context<Self>) -> Div {
         let id = self.tile;
         let row = div().flex().items_center().gap(px(4.));
-        if t.timer.is_running() {
-            let left = t.timer.remaining(SystemTime::now()).unwrap_or_default();
+        let set = match t.timer {
+            Timer::Running { .. } => {
+                let left = t.timer.remaining(SystemTime::now()).unwrap_or_default();
+                Some(format!(
+                    "Reminder in {}",
+                    minutes(left + Duration::from_secs(59))
+                ))
+            }
+            Timer::Tomorrow { .. } => Some("Reminder tomorrow".to_string()),
+            _ => None,
+        };
+        if let Some(words) = set {
             return row
                 .child(
                     div()
                         .mr(px(4.))
                         .text_size(px(11.5))
                         .text_color(rgb(YELLOW))
-                        .child(format!(
-                            "Reminder in {}",
-                            minutes(left + Duration::from_secs(59))
-                        )),
+                        .child(words),
                 )
                 .child(chip("cancel", "Cancel").on_click(cx.listener(
                     move |this, _: &ClickEvent, _, cx| {
@@ -388,20 +396,29 @@ impl CardView {
             } else {
                 text(0.5)
             });
-        row.child(hourglass).children(MENU_MINUTES.iter().map(|&m| {
-            let label = if m == 60 {
-                "1h".to_string()
-            } else {
-                format!("{m}m")
-            };
-            chip(("minutes", m as u64), &label).on_click(cx.listener(
-                move |this, _: &ClickEvent, _, cx| {
-                    this.rack
-                        .update(cx, |rack, cx| rack.pick_minutes(id, m, cx))
-                        .ok();
-                },
-            ))
-        }))
+        let tomorrow = chip("tomorrow", "Tomorrow").on_click(cx.listener(
+            move |this, _: &ClickEvent, _, cx| {
+                this.rack
+                    .update(cx, |rack, cx| rack.pick_tomorrow(id, cx))
+                    .ok();
+            },
+        ));
+        row.child(hourglass)
+            .children(MENU_MINUTES.iter().map(|&m| {
+                let label = if m == 60 {
+                    "1h".to_string()
+                } else {
+                    format!("{m}m")
+                };
+                chip(("minutes", m as u64), &label).on_click(cx.listener(
+                    move |this, _: &ClickEvent, _, cx| {
+                        this.rack
+                            .update(cx, |rack, cx| rack.pick_minutes(id, m, cx))
+                            .ok();
+                    },
+                ))
+            }))
+            .child(tomorrow)
     }
 }
 
@@ -521,11 +538,15 @@ fn chip(id: impl Into<ElementId>, label: &str) -> Stateful<Div> {
 }
 
 fn paragraph(line: &str, color: u32) -> Div {
+    paragraph_weighted(line, color, FontWeight::NORMAL)
+}
+
+fn paragraph_weighted(line: &str, color: u32, weight: FontWeight) -> Div {
     div()
         .text_size(px(12.))
         .text_color(rgb(color))
         .line_height(relative(1.35))
-        .child(styled_line(line, rgb(color)))
+        .child(styled_line_weighted(line, rgb(color), weight))
 }
 
 // What the card shows below its title, by the session's state, in the order the session's
@@ -623,12 +644,38 @@ fn task_kind(kind: &str) -> String {
         .unwrap_or_default()
 }
 
+// A message as paragraphs: a heading in semibold, and a list item with its marker in a gutter of
+// its own, so the item's wrapped lines line up with its text rather than with its marker, as the
+// Claude desktop app draws a list (user, 2026-11-16).
 fn message_blocks(message: &str, color: u32) -> Div {
     div().flex().flex_col().gap(px(6.)).children(
         markup::blocks(message, MESSAGE_CHARS)
             .into_iter()
             .map(|b| match b {
                 Block::Text(line) => paragraph(&line, color),
+                Block::Heading(line) => {
+                    paragraph_weighted(&line, color, FontWeight::SEMIBOLD).text_size(px(12.5))
+                }
+                Block::Item {
+                    marker,
+                    depth,
+                    text,
+                } => {
+                    let bullet = marker == "•";
+                    div()
+                        .flex()
+                        .pl(px(depth as f32 * 14.))
+                        .child(
+                            div()
+                                .flex_none()
+                                .w(px(if bullet { 14. } else { 20. }))
+                                .text_size(px(12.))
+                                .line_height(relative(1.35))
+                                .text_color(rgb(if bullet { TEXT2 } else { color }))
+                                .child(marker),
+                        )
+                        .child(div().flex_1().min_w_0().child(paragraph(&text, color)))
+                }
                 Block::Code(lines) => code(&lines),
             }),
     )
