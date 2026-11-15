@@ -1,0 +1,29 @@
+Plates' panic.log after the user clicked a session tile, 2026-11-15, Windows 11 25H2.
+The release build of commit 9d947a7, with paths under the user's home folder shortened to <cargo>.
+
+panicked at <cargo>\gpui-pre-0.3.12\src\app\async_context.rs:66:27:
+called `Result::unwrap()` on an `Err` value: RefCell already borrowed: attempted mutable App
+borrow at <cargo>\gpui-pre-0.3.12\src\app\async_context.rs:66:27; existing mutable borrow group
+began at <cargo>\gpui-pre-0.3.12\src\window.rs:2245:22
+
+The backtrace's frames from the click inward, with the backtrace machinery left out. A release
+build has no line numbers, and frame names come from public symbols, so a name such as
+file_save_dialog is the nearest symbol rather than the function that ran.
+
+  47: plates::main
+  46: <gpui_windows::platform::WindowsPlatform as gpui::platform::Platform>::run
+  31: gpui::window::Window::dispatch_event
+  29: gpui::window::Window::on_mouse_event::{{closure}}
+  27: gpui::app::context::invoke_listener
+  26: gpui::app::App::update_entity_erased
+  23: plates::native::open_url
+  22: ShellExecuteW
+  21: ShellExecuteExW
+  18: RealShellExecuteExW
+  15: CallWindowProcW
+  13: async_task::raw::RawTask<F,T,S,M>::run
+  11: gpui::app::AppCell::borrow_mut
+  10: core::result::unwrap_failed
+
+Windows' Application log recorded the crash as exception code 0xc0000409, as it did the crash at
+20:06:18 that day, which left no panic text.

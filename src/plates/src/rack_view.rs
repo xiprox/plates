@@ -692,9 +692,8 @@ impl RackView {
             .session()
             .and_then(|s| s.app_id.as_deref())
             .and_then(desktop::session_link)
-            && !native::open_url(&link)
         {
-            eprintln!("Couldn't open {link}");
+            native::open_url(&link);
         }
         if tile.timer.is_time_up() {
             self.rack.clear_time_up(id, SystemTime::now());

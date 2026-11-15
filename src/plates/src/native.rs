@@ -24,6 +24,7 @@ use windows::Win32::{
             MONITORINFO, MonitorFromPoint,
         },
     },
+    System::Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx},
     UI::{
         Accessibility::{HWINEVENTHOOK, SetWinEventHook},
         Controls::MARGINS,
@@ -389,24 +390,35 @@ unsafe extern "system" fn on_foreground(
 }
 
 /// Opens a link with the program Windows has for its scheme, such as the Claude desktop app for
-/// `claude://`, and returns whether Windows started it. Windows lets a process bring its window to
-/// the front only with the foreground's leave, and the rack never takes the foreground, so the
-/// rack first gives that leave to any process, which Windows lets the process that got the last
-/// input, the click on the rack, do.
+/// `claude://`. Windows lets a process bring its window to the front only with the foreground's
+/// leave, and the rack never takes the foreground, so the rack first gives that leave to any
+/// process, which Windows lets the process that got the last input, the click on the rack, do.
 /// (documented, https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-allowsetforegroundwindow)
-pub fn open_url(url: &str) -> bool {
-    let wide: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
+pub fn open_url(url: &str) {
     unsafe {
         let _ = AllowSetForegroundWindow(ASFW_ANY);
-        let result = ShellExecuteW(
-            None,
-            w!("open"),
-            PCWSTR(wide.as_ptr()),
-            PCWSTR::null(),
-            PCWSTR::null(),
-            SW_SHOWNORMAL,
-        );
-        // ShellExecuteW returns a value above 32 when it succeeds.
-        result.0 as isize > 32
+    }
+    // ShellExecuteW runs a message loop of its own, which on the rack's thread hands GPUI a task
+    // while the click that called it still holds GPUI's state, and the panic that follows ends
+    // Plates (measured on Windows 11 25H2, 2026-11-15, record/areas/rack/log.md). On a thread
+    // with no windows, its loop has nothing of GPUI's to run. Microsoft asks for COM set up
+    // first, since the shell may hand the link to a COM extension.
+    // (documented, https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecutew)
+    let wide: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
+    let spawned = std::thread::Builder::new()
+        .name("plates-open".into())
+        .spawn(move || unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+            ShellExecuteW(
+                None,
+                w!("open"),
+                PCWSTR(wide.as_ptr()),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                SW_SHOWNORMAL,
+            );
+        });
+    if let Err(e) = spawned {
+        eprintln!("Couldn't start a thread to open a link: {e}");
     }
 }

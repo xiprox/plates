@@ -2,6 +2,22 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-15: ShellExecuteW on the rack's thread lets GPUI run a task mid-click, and Plates crashes
+
+**Asked:** why did Plates vanish when the user clicked a session tile, and at 20:06 that day?
+
+**Expected:** a panic in Plates' own code, now that panic.log records one.
+
+**Found:** panic.log held `RefCell already borrowed: attempted mutable App borrow`, from a GPUI task run inside `ShellExecuteW`, which the click's handler had called through `plates::native::open_url` (measured on Windows 11 25H2, 2026-11-15, [results/2026-11-15-open-url-panic.txt](results/2026-11-15-open-url-panic.txt)).
+
+- `ShellExecuteW` runs a message loop of its own, and on the rack's thread, that loop handed GPUI a queued task while the click's dispatch still held GPUI's app state.
+- The panic happened inside a window procedure, which can't unwind, so Windows ended the process with exception code `0xc0000409`, the code the 20:06 crash left.
+- It needs a GPUI task queued when the click comes, so a click doesn't always crash: a synthetic click on a tile earlier that day didn't.
+
+**Changed:** Plates opens a link with `ShellExecuteW` on a thread of its own, which owns no windows, after the click grants the foreground with `AllowSetForegroundWindow`.
+
+**Affects:** nothing in the design docs, which describe what a click opens and not which thread opens it.
+
 ## 2026-11-15: Another program's topmost window covers the rack until the rack raises itself
 
 **Asked:** why does the rack go behind a game in borderless full screen, and can it stay above?
