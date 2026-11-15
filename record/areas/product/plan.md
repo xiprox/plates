@@ -32,6 +32,8 @@ The hook receiver, `plates hooks install` and `uninstall`, and the transcript re
 Done when every hook event from a real session in the Claude desktop app reaches the receiver, and a session with Plates closed shows no hook error and starts Claude's turn within 100ms of the same prompt with the hooks uninstalled, as the median of 10 prompts each.
 The hooks log then has an entry for what each event carried and for each question the design's Events section leaves to this step, and for the format of a desktop session's transcript.
 
+Done on 2026-11-15.
+
 ## 4. The rack
 
 The interface from [01-window](../rack/01-window.md) and [02-tiles](../rack/02-tiles.md), drawn from the core's state.

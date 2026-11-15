@@ -20,8 +20,7 @@ What we found about Claude Code's hooks and the Claude desktop app, newest entry
 - After the user renamed the session, its next `UserPromptSubmit` carried the name in `session_title`.
 - In this repository's own session, `UserPromptSubmit` also fired for a subagent's report and for a task notification, whose `prompt` started with a tag block, `<agent-message` and `<task-notification`.
 - Every event also carried `scratchpad_dir` and `prompt_id`, and tool events carried `effort`, which the design doesn't use.
-- With nothing listening on port 47231, this session's tool calls brought no hook error into its conversation.
-  Whether the app shows you anything is unverified until the user looks at a session with Plates closed.
+- With nothing listening on port 47231, this session's tool calls brought no hook error into its conversation, and the user saw no hook error in a session in the app (user, 2026-11-15).
 
 **Changed:**
 
