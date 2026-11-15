@@ -192,7 +192,7 @@ fn listen(log: Option<PathBuf>) -> Result<(), String> {
             Received::Event(message, _) => {
                 let short: String = message.session_id.chars().take(8).collect();
                 let name = message.hook.clone();
-                let Some(id) = hooks::apply(&mut rack, message, SystemTime::now()) else {
+                let Some(id) = hooks::apply(&mut rack, *message, SystemTime::now()) else {
                     println!("{name} {short}: ignored");
                     continue;
                 };

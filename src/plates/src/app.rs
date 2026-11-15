@@ -6,7 +6,9 @@ use std::{path::PathBuf, sync::mpsc, thread};
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use plates_core::{
-    Rack, hooks,
+    Rack,
+    desktop::{self, Titles},
+    hooks,
     receiver::{PORT, Received, Receiver},
     store, transcript,
 };
@@ -45,8 +47,8 @@ pub fn run() {
 
     // The receiver hands events on from a thread of its own, and the rack takes them on the UI
     // thread, so a thread between them moves each one onto a channel the UI can await. That
-    // thread also reads each tool event's transcript for the session's status line, so the read
-    // never holds up the rack.
+    // thread also reads each tool event's transcript for the session's status line, and the
+    // desktop app's file for the session's title, so neither read holds up the rack.
     let (tx, rx) = mpsc::channel();
     let receiver = Receiver::start(PORT, tx);
     if let Err(e) = &receiver {
@@ -56,16 +58,18 @@ pub fn run() {
     thread::Builder::new()
         .name("plates-events".into())
         .spawn(move || {
+            let mut titles = Titles::new(desktop::sessions_folder());
             for received in rx {
                 let Received::Event(mut message, _) = received else {
                     continue;
                 };
+                message.app_title = titles.title(&message.session_id);
                 if hooks::wants_status(&message.hook)
                     && let Some(path) = &message.transcript_path
                 {
                     message.status = transcript::latest_status(path).ok().flatten();
                 }
-                if events_tx.send_blocking(message).is_err() {
+                if events_tx.send_blocking(*message).is_err() {
                     break;
                 }
             }

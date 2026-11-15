@@ -16,8 +16,9 @@ What we found about Claude Code's hooks and the Claude desktop app, newest entry
 - It holds `sessionId`, the app's own `local_<id>`, `isArchived`, and `interruptedAwaitingPerson`, which was null in every file (unverified what sets it).
 - None of this is documented, so an update to the app can change it without notice.
 
-**Changed:** nothing yet.
-The files could give a session tile the title the app shows, keep one tile across a `/clear`, and name the session for [the plan's step 6](../product/plan.md#6-opening-a-session-from-its-tile).
+**Changed:** a session tile takes the title the app shows from the session's file, ahead of `session_title` and the first prompt.
+Reading all 332 files took about 205ms on our PC, and the file of this repository's session, which had just fired an event, was the second newest, so Plates searches the newest first.
+The files could also keep one tile across a `/clear`, and name the session for [the plan's step 6](../product/plan.md#6-opening-a-session-from-its-tile).
 
 **Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#titles-and-summaries).
 

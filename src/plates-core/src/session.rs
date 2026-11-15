@@ -86,6 +86,8 @@ impl Tool {
 pub struct Session {
     pub id: String,
     pub folder: PathBuf,
+    /// The title the Claude desktop app shows for the session, from its own file for it.
+    pub app_title: Option<String>,
     pub custom_title: Option<String>,
     pub first_prompt: Option<String>,
     pub state: SessionState,
@@ -103,6 +105,7 @@ impl Session {
         Session {
             id: id.to_string(),
             folder: folder.to_path_buf(),
+            app_title: None,
             custom_title: None,
             first_prompt: None,
             state: SessionState::New,
@@ -114,11 +117,12 @@ impl Session {
         }
     }
 
-    /// The session's custom title, or else the first line of its first prompt, or else, until
-    /// either arrives, the name of its folder.
+    /// The title the Claude desktop app shows for the session, or else its custom title, or else
+    /// the first line of its first prompt, or else, until one arrives, the name of its folder.
     pub fn title(&self) -> String {
-        self.custom_title
+        self.app_title
             .clone()
+            .or_else(|| self.custom_title.clone())
             .or_else(|| self.first_prompt.as_deref().map(prompt_title))
             .filter(|t| !t.is_empty())
             .or_else(|| {
@@ -216,5 +220,7 @@ mod tests {
         assert_eq!(s.title(), "Fix the dock hold");
         s.custom_title = Some("Dock tuning".into());
         assert_eq!(s.title(), "Dock tuning");
+        s.app_title = Some("Tune the dock".into());
+        assert_eq!(s.title(), "Tune the dock");
     }
 }

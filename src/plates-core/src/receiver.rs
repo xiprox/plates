@@ -26,7 +26,8 @@ pub fn url(port: u16) -> String {
 
 /// What the receiver hands on: each event it read, and each body it couldn't read, raw.
 pub enum Received {
-    Event(HookMessage, Vec<u8>),
+    // A HookMessage runs to about 260 bytes, so it's boxed to keep an Unreadable small.
+    Event(Box<HookMessage>, Vec<u8>),
     Unreadable(String, Vec<u8>),
 }
 
@@ -52,7 +53,7 @@ impl Receiver {
                         .map_err(|e| e.to_string())
                         .and_then(|_| hooks::parse(&body).map_err(|e| e.to_string()))
                     {
-                        Ok(message) => Received::Event(message, body),
+                        Ok(message) => Received::Event(Box::new(message), body),
                         Err(e) => Received::Unreadable(e, body),
                     };
                     if sink.send(received).is_err() {

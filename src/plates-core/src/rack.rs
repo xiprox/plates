@@ -344,6 +344,17 @@ impl Rack {
         }
     }
 
+    /// Sets the title the Claude desktop app shows for a session.
+    pub fn set_app_title(&mut self, session_id: &str, title: &str) {
+        let session = self.tiles.iter_mut().find_map(|t| match &mut t.body {
+            Body::Session(s) if s.id == session_id => Some(s),
+            _ => None,
+        });
+        if let Some(s) = session {
+            s.app_title = Some(title.to_string());
+        }
+    }
+
     pub fn knows(&self, session_id: &str) -> bool {
         self.tiles
             .iter()

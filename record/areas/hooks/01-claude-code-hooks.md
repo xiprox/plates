@@ -37,9 +37,12 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 
 ## Titles and summaries
 
-- A tile's title is the session's custom title, which `SessionStart` and `UserPromptSubmit` carry in `session_title` when one is set, such as with `/rename`, and leave out for a title the Claude app generates.
+- A tile's title is the one the Claude desktop app shows for the session, which Plates reads from the app's own file for that session, the file whose `cliSessionId` or `priorCliSessionIds` holds the hook's `session_id` ([hooks log](log.md#2026-11-15-the-claude-desktop-app-keeps-a-file-per-session-with-its-title-and-its-claude-code-session-ids)).
+  Plates reads the file again on any hook event after the app changes it, so a title the app generates or you rename shows with the session's next event.
+  The app doesn't document these files, so for a session with no file, such as one in a terminal, or a file Plates can't read, the title falls through to the ones below.
+- Without the app's title, a tile's title is the session's custom title, which `SessionStart` and `UserPromptSubmit` carry in `session_title` when one is set, such as with `/rename`, and leave out for a title the Claude app generates.
   A title set during a session reaches Plates with your next prompt.
-- A session with no custom title takes the first line of the first prompt you typed in it as its title.
+- A session with neither takes the first line of the first prompt you typed in it as its title.
   The transcript gives it for a session Plates first saw after that prompt, and `UserPromptSubmit`'s `prompt` gives it otherwise.
 - The title skips the blocks of context the Claude desktop app puts before a prompt's text, such as `<artifact-view-context>` ([hooks log](log.md#2026-11-15-desktop-sessions-fire-the-hooks-and-an-http-hook-would-stall-2s-per-event-while-plates-is-closed)).
   A subagent's report or a task notification is nothing but such a block, so it can't name a session.

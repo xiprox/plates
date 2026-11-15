@@ -24,6 +24,9 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
     if let Some(status) = &message.status {
         rack.set_status(&message.session_id, status);
     }
+    if let Some(title) = &message.app_title {
+        rack.set_app_title(&message.session_id, title);
+    }
     if !known
         && let Some(Ok(Some(prompt))) = message
             .transcript_path
@@ -49,6 +52,9 @@ pub struct HookMessage {
     /// The newest text Claude wrote in the turn, which the app reads from the transcript for a
     /// tool event, since no hook event carries it mid-turn.
     pub status: Option<String>,
+    /// The title the Claude desktop app shows for the session, which the app reads from the
+    /// desktop app's own file for it.
+    pub app_title: Option<String>,
 }
 
 /// The hook events after which the app reads the transcript for the session's status line.
@@ -118,6 +124,7 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
         transcript_path,
         event,
         status: None,
+        app_title: None,
     })
 }
 
