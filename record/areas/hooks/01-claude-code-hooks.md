@@ -18,7 +18,7 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 | --- | --- |
 | `SessionStart` | adds the session's tile, as new, and brings back a tile it shows as ended, as new; any other tile it shows stays as it is, since `SessionStart` also fires on a resume, a `/clear`, and a compaction |
 | `UserPromptSubmit` | moves the tile to working, which stops its timer, while a tile already working keeps a timer you started on it |
-| `PreToolUse` | keeps the tool's name and input, for the summary line of an approval that follows |
+| `PreToolUse` | keeps the tool's name and input, for the summary line of an approval that follows, and for what a working tile shows Claude doing |
 | `PermissionRequest` | moves the tile to needs approval as Claude Code is about to ask you, and starts its timer |
 | `Notification` with `notification_type` `permission_prompt` | moves the tile to needs approval if it isn't already, which covers an approval that fired no `PermissionRequest` |
 | `PostToolUse`, or `PostToolUseFailure` for a tool that failed | moves a tile that needed approval back to working, and stops its timer, since the tool ran |
@@ -29,7 +29,11 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 - An event from a `session_id` Plates doesn't show adds that session's tile, in the state the event moves a tile to, and in working for an event that moves none, such as `PreToolUse`.
 - In the Claude desktop app, `/clear` ends the session, with a `SessionEnd` `reason` of `other`, and goes on under a new `session_id`, so its tile ends and a new tile starts ([hooks log](log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)).
 - Plates ignores `Notification` with `notification_type` `idle_prompt`, which arrives about 60s after Claude finishes ([hooks log](log.md#2026-11-15-claude-code-documents-hooks-in-desktop-sessions-and-an-http-hook-type-but-no-link-that-opens-one-desktop-session)), because `Stop` has already moved the tile to your turn.
-- After you interrupt Claude, or deny a tool, no event arrives until the session's next one, so the tile stays working, or needs approval, until then ([hooks log](log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)).
+- After you interrupt Claude, or deny a tool, no event arrives until the session's next one ([hooks log](log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)).
+  Claude Code does write a marker to the transcript: a `user` record whose text is `[Request interrupted by user]` for an interrupt, and for a denial, a tool result with `toolDenialKind` `user-rejected` followed by `[Request interrupted by user for tool use]` ([hooks log](log.md#2026-11-15-an-interrupt-and-a-denial-each-write-a-marker-record-to-the-transcript)).
+  So once a second, Plates reads what the transcript of each working or needs-approval session has gained since your last prompt.
+  If the newest record it read is a marker, Plates moves the tile to your turn and starts its timer, with "Denied: " and the command, file, or tool's name as its summary line when a `user-rejected` result came just before the marker, and "Interrupted" otherwise.
+  How soon after an interrupt the marker reaches the file is unverified, and timing an interrupt against its tile would settle it.
 - After you allow a tool, no event arrives until its `PostToolUse`, once the tool finishes, so a tile you approved for a long `cargo test` shows needs approval until the test ends (same entry).
 - A resumed session keeps its `session_id`, so its tile carries on (same entry).
 - `UserPromptSubmit` also fires for a subagent's report and a task notification, which start a turn as a prompt does, so the tile moves to working (same entry).
@@ -39,18 +43,35 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 
 - A tile's title is the one the Claude desktop app shows for the session, which Plates reads from the app's own file for that session, the file whose `cliSessionId` or `priorCliSessionIds` holds the hook's `session_id` ([hooks log](log.md#2026-11-15-the-claude-desktop-app-keeps-a-file-per-session-with-its-title-and-its-claude-code-session-ids)).
   Plates reads the file again on any hook event after the app changes it, so a title the app generates or you rename shows with the session's next event.
-  The app doesn't document these files, so for a session with no file, such as one in a terminal, or a file Plates can't read, the title falls through to the ones below.
+  A session with no file, such as one in a terminal, takes its title from the sources below, and so does a session whose file Plates can't read.
+  The app doesn't document these files, so an update to the app can make them unreadable.
 - Without the app's title, a tile's title is the session's custom title, which `SessionStart` and `UserPromptSubmit` carry in `session_title` when one is set, such as with `/rename`, and leave out for a title the Claude app generates.
   A title set during a session reaches Plates with your next prompt.
 - A session with neither takes the first line of the first prompt you typed in it as its title.
   The transcript gives it for a session Plates first saw after that prompt, and `UserPromptSubmit`'s `prompt` gives it otherwise.
 - The title skips the blocks of context the Claude desktop app puts before a prompt's text, such as `<artifact-view-context>` ([hooks log](log.md#2026-11-15-desktop-sessions-fire-the-hooks-and-an-http-hook-would-stall-2s-per-event-while-plates-is-closed)).
   A subagent's report or a task notification is nothing but such a block, so it can't name a session.
-- The session's folder, which the tile's tooltip shows ([02-tiles](../rack/02-tiles.md#session-tiles)), comes from `cwd`.
+- The session's folder comes from `cwd`, and its name is the tile's title until another title arrives.
 - An approval's summary line is built from the tool the `PermissionRequest` names, or else from the `PreToolUse` before it: "Wants to run: " and the command for a shell command, "Wants to edit: " and the file for an edit, and "Wants to use: " and the tool's name for any other tool.
   Where neither names a tool, the summary is the `Notification`'s `message`.
 - Your turn's summary line is the first line of `Stop`'s `last_assistant_message`, because the transcript isn't guaranteed to hold Claude's final message when `Stop` fires.
-- A working tile's summary line is the first line of the newest text Claude wrote since your last prompt, which no hook event carries mid-turn, so Plates reads it from the end of the transcript after each tool event, and it can trail Claude by a record or two.
+- A working tile's summary line is the first line of the newest text Claude wrote since your last prompt, for 4s after that text changes, and then, once Claude has used a tool in the turn, what Claude is doing with its newest one, so the text can be read even when a tool follows it at once (user, 2026-11-15).
+  No hook event carries the text mid-turn, so Plates reads it from the end of the transcript after each tool event, and it can trail Claude by a record or two.
+
+What Claude is doing comes from the tool's `PreToolUse`:
+
+| Tool | What the summary line shows |
+| --- | --- |
+| `Read` | "Reading " and the file's name, such as "Reading plan.md" |
+| `Edit`, `MultiEdit`, `NotebookEdit` | "Editing " and the file's name |
+| `Write` | "Writing " and the file's name |
+| `Grep` | "Searching for " and the pattern |
+| `Glob` | "Finding " and the pattern |
+| `WebFetch` | "Fetching " and the URL's host |
+| `WebSearch` | "Searching the web for " and the query |
+| `Skill` | "Using the ", the skill's name, and " skill" |
+| `Bash`, `PowerShell`, `Agent`, `Task` | the description Claude gave it, or "Running " and the command's first line for a shell command with none |
+| any other tool | "Using " and the tool's name, the last part of an MCP tool's `mcp__<server>__<tool>` |
 
 A transcript is JSON Lines, and a prompt you typed is a `user` record with `origin.kind` `human`, outside a subagent ([hooks log](log.md#2026-11-15-a-desktop-sessions-transcript-marks-a-typed-prompt-with-originkind-human-after-a-system-reminder)).
 
@@ -78,5 +99,4 @@ Its one documented link, `claude://code/new`, opens the app's new-session page, 
 
 - What Plates does when another program holds port 47231, which `receiver::PORT` sets.
 - Sessions from before Plates started, which sent their events while no receiver was listening, and whose tiles appear only at their next event.
-- How Plates can tell that you denied a tool or interrupted Claude, since no event says so.
-  `Notification` with `idle_prompt`, which arrives about 60s after Claude finishes, may also arrive after either (unverified), and listening for it would show.
+- Whether Plates keeps one tile across a `/clear`, through the app file's `priorCliSessionIds`, which may hold a session's earlier IDs (unverified).

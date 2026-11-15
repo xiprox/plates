@@ -1,0 +1,26 @@
+Interrupt and denial records in Claude Code transcripts
+Measured on Windows 11 25H2, 2026-11-15, over every transcript under ~/.claude/projects/
+on one PC, all written by the Claude desktop app (entrypoint claude-desktop).
+
+Records whose top level holds toolDenialKind, by value:
+  user-rejected            133
+  permission-rule           75
+  automode-blocked          46
+  automode-unavailable      33
+  interrupted               32
+  cancelled                 31
+  automode-parsing-error    11
+
+Matches of the marker text anywhere in a transcript line:
+  [Request interrupted by user]                 630
+  [Request interrupted by user for tool use]    133
+The 630 include lines that quote the text, such as a tool's output that searched for it,
+so they overcount the records.
+
+A denial, as three transcripts from 2026-09-18 to 2026-11-03 wrote it, in order:
+  1. type user, is_error true, toolDenialKind user-rejected, a tool_result whose text begins
+     "The user doesn't want to proceed with this tool use. The tool use was rejected"
+  2. type user, a text part "[Request interrupted by user for tool use]"
+
+An interrupt in this repository's session, 2026-11-15T16:32:25Z:
+  type user, a text part "[Request interrupted by user]", with no origin

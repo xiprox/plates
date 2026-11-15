@@ -1,5 +1,5 @@
-//! The menu of timer lengths: a popup window of its own beside the hourglass that opened it, so
-//! it can reach past the rack's edges without growing the rack's window.
+//! The rack's menus: a popup window of their own at the pointer that opened them, so they can
+//! reach past the rack's edges without growing the rack's window.
 
 use gpui_kit::*;
 use plates_core::{TileId, timer::MENU_MINUTES};
@@ -12,12 +12,30 @@ use crate::{
 };
 
 pub const MENU_W: f32 = 156.;
-/// A 6px pad top and bottom, a 23px heading, six 32px rows, and a 1px border.
-pub const MENU_H: f32 = 230.;
+
+/// Which menu a right-click opens.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MenuKind {
+    /// The timer lengths, from a tile's hourglass.
+    Timer(TileId),
+    /// Plates itself, from the grip band at the rack's top.
+    Rack,
+}
+
+impl MenuKind {
+    pub fn height(self) -> f32 {
+        match self {
+            // A 6px pad top and bottom, a 23px heading, six 32px rows, and a 1px border.
+            MenuKind::Timer(_) => 230.,
+            // A 6px pad top and bottom, one 32px row, and a 1px border.
+            MenuKind::Rack => 46.,
+        }
+    }
+}
 
 pub struct MenuView {
     rack: WeakEntity<RackView>,
-    tile: TileId,
+    kind: MenuKind,
     hwnd: isize,
     /// Whether the mouse buttons have been up since the menu opened, so the right-click that
     /// opened it doesn't close it.
@@ -27,7 +45,7 @@ pub struct MenuView {
 impl MenuView {
     pub fn new(
         rack: WeakEntity<RackView>,
-        tile: TileId,
+        kind: MenuKind,
         bounds: Rect,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -40,10 +58,68 @@ impl MenuView {
         .detach();
         MenuView {
             rack,
-            tile,
+            kind,
             hwnd,
             armed: false,
         }
+    }
+
+    fn row(id: impl Into<ElementId>, label: &str) -> Stateful<Div> {
+        div()
+            .id(id)
+            .h(px(32.))
+            .px(px(10.))
+            .flex()
+            .items_center()
+            .justify_between()
+            .rounded(px(6.))
+            .text_size(px(13.))
+            .text_color(rgb(TEXT))
+            .hover(|s| s.bg(rgb(BORDER)))
+            .cursor_pointer()
+            .child(label.to_string())
+    }
+
+    fn timer_items(&self, tile: TileId, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let heading = div()
+            .pt(px(6.))
+            .pb(px(4.))
+            .px(px(10.))
+            .text_size(px(11.))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(rgb(MUTED))
+            .child("REMIND ME IN")
+            .into_any_element();
+        let rows = MENU_MINUTES.iter().map(|&m| {
+            let label = if m == 60 {
+                "1 hour".to_string()
+            } else {
+                format!("{m} min")
+            };
+            Self::row(("minutes", m as u64), &label)
+                .children((m == 5).then(|| {
+                    div()
+                        .text_size(px(11.))
+                        .text_color(rgb(MUTED))
+                        .child("click")
+                }))
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.rack
+                        .update(cx, |rack, cx| rack.pick_minutes(tile, m, cx))
+                        .ok();
+                    window.remove_window();
+                }))
+                .into_any_element()
+        });
+        std::iter::once(heading).chain(rows).collect()
+    }
+
+    fn rack_items(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        vec![
+            Self::row("quit", "Quit Plates")
+                .on_click(cx.listener(|_, _: &ClickEvent, _, cx| cx.quit()))
+                .into_any_element(),
+        ]
     }
 
     fn close(&mut self, window: &mut Window, cx: &mut App) {
@@ -65,39 +141,10 @@ impl Render for MenuView {
         }
         window.request_animation_frame();
 
-        let tile = self.tile;
-        let items = MENU_MINUTES.iter().map(|&m| {
-            let label = if m == 60 {
-                "1 hour".to_string()
-            } else {
-                format!("{m} min")
-            };
-            div()
-                .id(("minutes", m as u64))
-                .h(px(32.))
-                .px(px(10.))
-                .flex()
-                .items_center()
-                .justify_between()
-                .rounded(px(6.))
-                .text_size(px(13.))
-                .text_color(rgb(TEXT))
-                .hover(|s| s.bg(rgb(BORDER)))
-                .cursor_pointer()
-                .child(label)
-                .children((m == 5).then(|| {
-                    div()
-                        .text_size(px(11.))
-                        .text_color(rgb(MUTED))
-                        .child("click")
-                }))
-                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.rack
-                        .update(cx, |rack, cx| rack.pick_minutes(tile, m, cx))
-                        .ok();
-                    window.remove_window();
-                }))
-        });
+        let items = match self.kind {
+            MenuKind::Timer(tile) => self.timer_items(tile, cx),
+            MenuKind::Rack => self.rack_items(cx),
+        };
         div()
             .size_full()
             .font_family("Inter")
@@ -109,16 +156,6 @@ impl Render for MenuView {
             .bg(rgb(TILE))
             .border_1()
             .border_color(rgb(0x34363C))
-            .child(
-                div()
-                    .pt(px(6.))
-                    .pb(px(4.))
-                    .px(px(10.))
-                    .text_size(px(11.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(MUTED))
-                    .child("REMIND ME IN"),
-            )
             .children(items)
     }
 }

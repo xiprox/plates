@@ -3,8 +3,12 @@
 
 use std::{
     path::{Path, PathBuf},
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
+
+/// How long a working tile shows Claude's newest text before the tool Claude used after it, so
+/// the text can be read even when a tool follows it at once.
+pub const STATUS_HOLDS: Duration = Duration::from_secs(4);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionState {
@@ -39,6 +43,9 @@ pub enum SessionEvent {
     TurnFailed { error: String, text: Option<String> },
     /// `SessionEnd`.
     Ended,
+    /// You interrupted Claude, or denied the tool it asked about, which no hook event reports, so
+    /// the app reads it from the transcript.
+    Interrupted { denied: bool },
 }
 
 impl SessionEvent {
@@ -51,15 +58,16 @@ impl SessionEvent {
             SessionEvent::ApprovalAsked { .. } | SessionEvent::ApprovalNotified { .. } => {
                 Some(SessionState::NeedsApproval)
             }
-            SessionEvent::TurnEnded { .. } | SessionEvent::TurnFailed { .. } => {
-                Some(SessionState::YourTurn)
-            }
+            SessionEvent::TurnEnded { .. }
+            | SessionEvent::TurnFailed { .. }
+            | SessionEvent::Interrupted { .. } => Some(SessionState::YourTurn),
             SessionEvent::Ended => Some(SessionState::Ended),
         }
     }
 }
 
-/// A tool Claude is about to use, which names what an approval is for.
+/// A tool Claude is about to use, which names what an approval is for and what a working tile
+/// shows Claude doing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tool {
     pub name: String,
@@ -67,17 +75,52 @@ pub struct Tool {
     pub command: Option<String>,
     /// The file, for a tool that edits one.
     pub file: Option<String>,
+    /// What the tool acts on, for its activity line: the file's name for a tool that reads or
+    /// writes one, the pattern or query for a search, the host for a fetch, the skill's name, or
+    /// the description Claude gave a command or an agent.
+    pub target: Option<String>,
 }
 
 impl Tool {
     /// The approval's summary line, as record/areas/hooks/01-claude-code-hooks.md words it.
     pub fn summary(&self) -> String {
-        if let Some(command) = &self.command {
-            format!("Wants to run: {}", first_line(command))
-        } else if let Some(file) = &self.file {
-            format!("Wants to edit: {file}")
+        let verb = if self.command.is_some() {
+            "run"
+        } else if self.file.is_some() {
+            "edit"
         } else {
-            format!("Wants to use: {}", self.name)
+            "use"
+        };
+        format!("Wants to {verb}: {}", self.subject())
+    }
+
+    /// What an approval is for: the command's first line, the file, or the tool's name.
+    pub fn subject(&self) -> String {
+        if let Some(command) = &self.command {
+            first_line(command)
+        } else if let Some(file) = &self.file {
+            file.clone()
+        } else {
+            self.name.clone()
+        }
+    }
+
+    /// What a working tile shows Claude doing with the tool, such as "Reading plan.md".
+    pub fn activity(&self) -> String {
+        let target = self.target.as_deref();
+        match (self.name.as_str(), target) {
+            ("Read", Some(t)) => format!("Reading {t}"),
+            ("Edit" | "MultiEdit" | "NotebookEdit", Some(t)) => format!("Editing {t}"),
+            ("Write", Some(t)) => format!("Writing {t}"),
+            ("Grep", Some(t)) => format!("Searching for {t}"),
+            ("Glob", Some(t)) => format!("Finding {t}"),
+            ("WebFetch", Some(t)) => format!("Fetching {t}"),
+            ("WebSearch", Some(t)) => format!("Searching the web for {t}"),
+            ("Skill", Some(t)) => format!("Using the {t} skill"),
+            ("Bash" | "PowerShell" | "Agent" | "Task", Some(t)) => t.to_string(),
+            ("Bash" | "PowerShell", None) => format!("Running {}", self.subject()),
+            // An MCP tool's name is mcp__<server>__<tool>, and its last part reads best.
+            (name, _) => format!("Using {}", name.rsplit("__").next().unwrap_or(name)),
         }
     }
 }
@@ -94,8 +137,15 @@ pub struct Session {
     /// When the session last changed state, for the hover text, such as "waiting 12m".
     pub state_since: SystemTime,
     pub summary: Option<String>,
-    /// The first line of the newest text Claude wrote in the turn, which a working tile shows.
+    /// The first line of the newest text Claude wrote in the turn.
     pub status: Option<String>,
+    /// When `status` last changed.
+    pub status_at: SystemTime,
+    /// The newest tool Claude used in the turn, in words, such as "Reading plan.md".
+    pub activity: Option<String>,
+    /// What a working tile shows: `status` for `STATUS_HOLDS` after it changes, and then
+    /// `activity`, which `refresh_line` keeps current.
+    pub line: Option<String>,
     pub pending_tool: Option<Tool>,
     pub ended_at: Option<SystemTime>,
 }
@@ -112,9 +162,27 @@ impl Session {
             state_since: now,
             summary: None,
             status: None,
+            status_at: now,
+            activity: None,
+            line: None,
             pending_tool: None,
             ended_at: None,
         }
+    }
+
+    /// Recomputes `line` for `now`, and returns whether it changed.
+    pub fn refresh_line(&mut self, now: SystemTime) -> bool {
+        let fresh = now
+            .duration_since(self.status_at)
+            .is_ok_and(|d| d < STATUS_HOLDS);
+        let line = match (&self.status, &self.activity) {
+            (Some(status), _) if fresh => Some(status.clone()),
+            (_, Some(activity)) => Some(activity.clone()),
+            (status, None) => status.clone(),
+        };
+        let changed = line != self.line;
+        self.line = line;
+        changed
     }
 
     /// The title the Claude desktop app shows for the session, or else its custom title, or else
@@ -184,6 +252,7 @@ mod tests {
             name: "Bash".into(),
             command: command.map(Into::into),
             file: file.map(Into::into),
+            target: None,
         };
         assert_eq!(
             tool(Some("cargo test -p collector\necho done"), None).summary(),
@@ -194,6 +263,48 @@ mod tests {
             "Wants to edit: src/hooks.rs"
         );
         assert_eq!(tool(None, None).summary(), "Wants to use: Bash");
+    }
+
+    #[test]
+    fn a_tools_activity_names_what_it_acts_on() {
+        let tool = |name: &str, target: Option<&str>, command: Option<&str>| Tool {
+            name: name.into(),
+            command: command.map(Into::into),
+            file: None,
+            target: target.map(Into::into),
+        };
+        assert_eq!(
+            tool("Read", Some("plan.md"), None).activity(),
+            "Reading plan.md"
+        );
+        assert_eq!(
+            tool("PowerShell", Some("Restart Plates"), Some("Stop-Process")).activity(),
+            "Restart Plates"
+        );
+        assert_eq!(
+            tool("Bash", None, Some("cargo test\necho done")).activity(),
+            "Running cargo test"
+        );
+        assert_eq!(
+            tool("mcp__ccd_turn__update_plan", None, None).activity(),
+            "Using update_plan"
+        );
+    }
+
+    #[test]
+    fn a_working_line_holds_new_text_then_shows_the_activity() {
+        let t0 = UNIX_EPOCH + Duration::from_secs(100);
+        let mut s = Session::new("a", Path::new("/w"), t0);
+        s.activity = Some("Reading plan.md".into());
+        assert!(s.refresh_line(t0));
+        assert_eq!(s.line.as_deref(), Some("Reading plan.md"));
+        s.status = Some("Now the docs.".into());
+        s.status_at = t0;
+        assert!(s.refresh_line(t0 + Duration::from_secs(1)));
+        assert_eq!(s.line.as_deref(), Some("Now the docs."));
+        assert!(!s.refresh_line(t0 + Duration::from_secs(3)));
+        assert!(s.refresh_line(t0 + STATUS_HOLDS));
+        assert_eq!(s.line.as_deref(), Some("Reading plan.md"));
     }
 
     #[test]

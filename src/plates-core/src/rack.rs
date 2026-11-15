@@ -187,10 +187,12 @@ impl Rack {
                 }
                 s.summary = None;
                 s.status = None;
+                s.activity = None;
                 s.pending_tool = None;
                 set_state(s, &mut tile.timer, SessionState::Working);
             }
             SessionEvent::ToolPending { tool } => {
+                s.activity = Some(tool.activity());
                 s.pending_tool = Some(tool);
             }
             SessionEvent::ApprovalAsked { tool } => {
@@ -240,7 +242,16 @@ impl Rack {
                 s.ended_at = Some(now);
                 set_state(s, &mut tile.timer, SessionState::Ended);
             }
+            SessionEvent::Interrupted { denied } => {
+                s.summary = Some(match (denied, s.pending_tool.take()) {
+                    (true, Some(tool)) => format!("Denied: {}", tool.subject()),
+                    (true, None) => "Denied".to_string(),
+                    (false, _) => "Interrupted".to_string(),
+                });
+                set_state(s, &mut tile.timer, SessionState::YourTurn);
+            }
         }
+        s.refresh_line(now);
         tile.refresh_need(now);
         tile.id
     }
@@ -291,6 +302,9 @@ impl Rack {
             tile.timer = tile.timer.at(now);
             tile.refresh_need(now);
             changed |= tile.timer != timer || tile.need != need;
+            if let Body::Session(s) = &mut tile.body {
+                changed |= s.refresh_line(now);
+            }
         }
         changed
     }
@@ -330,7 +344,7 @@ impl Rack {
 
     /// Sets a session's status line, the first line of the newest text Claude wrote in the turn,
     /// which a working tile shows.
-    pub fn set_status(&mut self, session_id: &str, text: &str) {
+    pub fn set_status(&mut self, session_id: &str, text: &str, now: SystemTime) {
         let line = first_line(text);
         if line.is_empty() {
             return;
@@ -339,8 +353,12 @@ impl Rack {
             Body::Session(s) if s.id == session_id => Some(s),
             _ => None,
         });
-        if let Some(s) = session {
+        if let Some(s) = session
+            && s.status.as_deref() != Some(line.as_str())
+        {
             s.status = Some(line);
+            s.status_at = now;
+            s.refresh_line(now);
         }
     }
 
@@ -491,6 +509,7 @@ mod tests {
                 name: "Bash".into(),
                 command: Some(command.into()),
                 file: None,
+                target: None,
             },
         }
     }
@@ -824,13 +843,68 @@ mod tests {
     fn a_status_line_lasts_until_the_next_prompt() {
         let mut rack = Rack::new();
         let id = apply(&mut rack, "a", prompt("Go"), 0);
-        rack.set_status("a", "Reading the receiver first.\nThen the rest.");
+        rack.set_status("a", "Reading the receiver first.\nThen the rest.", at(0));
         assert_eq!(
             session(&rack, id).status.as_deref(),
             Some("Reading the receiver first.")
         );
         apply(&mut rack, "a", prompt("Next"), 5);
         assert_eq!(session(&rack, id).status, None);
+    }
+
+    #[test]
+    fn a_working_tile_shows_new_text_and_then_the_tool_after_it() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(&mut rack, "a", bash("cargo test"), 10);
+        rack.set_status("a", "Running the tests.", at(10));
+        assert_eq!(
+            session(&rack, id).line.as_deref(),
+            Some("Running the tests.")
+        );
+        assert!(rack.tick(at(14)));
+        assert_eq!(
+            session(&rack, id).line.as_deref(),
+            Some("Running cargo test")
+        );
+        // The same text read again at the next tool doesn't hold the tile a second time.
+        apply(&mut rack, "a", bash("cargo build"), 20);
+        rack.set_status("a", "Running the tests.", at(20));
+        assert_eq!(
+            session(&rack, id).line.as_deref(),
+            Some("Running cargo build")
+        );
+    }
+
+    #[test]
+    fn an_interrupt_or_a_denial_hands_you_the_turn() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(&mut rack, "a", bash("rm -rf target"), 1);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::ApprovalAsked { tool: None },
+            2,
+        );
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::Interrupted { denied: true },
+            3,
+        );
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::YourTurn);
+        assert_eq!(s.summary.as_deref(), Some("Denied: rm -rf target"));
+
+        apply(&mut rack, "a", prompt("Try again"), 4);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::Interrupted { denied: false },
+            5,
+        );
+        assert_eq!(session(&rack, id).summary.as_deref(), Some("Interrupted"));
     }
 
     #[test]

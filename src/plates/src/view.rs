@@ -8,6 +8,8 @@ use gpui_kit::*;
 use plates_core::{Need, SessionState, Tile, rack::ENDED_CLEARS_AFTER, timer::Timer};
 
 use crate::{
+    markup::{self, Mark},
+    menu::MenuKind,
     motion::{PEEK, Side},
     rack_view::{POPOVER_GAP, POPOVER_W, RackView, STRIP_W, TOAST_H, rack_height},
 };
@@ -29,8 +31,44 @@ const BRIGHTEN: Duration = Duration::from_millis(1400);
 /// How long a new session's tile slides in before it brightens.
 const ENTER: Duration = Duration::from_millis(450);
 
+/// The font the rack's text uses. The root of the rack's view sets the same family.
+const SANS: &str = "Inter";
+/// A monospace font each OS ships with, for the code in Claude's lines.
+const MONO: &str = if cfg!(windows) { "Consolas" } else { "Menlo" };
+
 fn white(alpha: f32) -> Hsla {
     hsla(0., 0., 1., alpha)
+}
+
+// A line Claude wrote, with its `code` in the monospace font on a faint background and its
+// **bold** in bold, and the marks around each left out.
+fn styled_line(line: &str, color: impl Into<Hsla>) -> StyledText {
+    let color = color.into();
+    let (text, spans) = markup::parse(line);
+    let run = |len: usize, font: Font, background_color: Option<Hsla>| TextRun {
+        len,
+        font,
+        color,
+        background_color,
+        underline: None,
+        strikethrough: None,
+    };
+    let mut runs = Vec::new();
+    let mut at = 0;
+    for (range, mark) in spans {
+        if range.start > at {
+            runs.push(run(range.start - at, font(SANS), None));
+        }
+        runs.push(match mark {
+            Mark::Code => run(range.len(), font(MONO), Some(white(0.08))),
+            Mark::Bold => run(range.len(), font(SANS).bold(), None),
+        });
+        at = range.end;
+    }
+    if text.len() > at {
+        runs.push(run(text.len() - at, font(SANS), None));
+    }
+    StyledText::new(text).with_runs(runs)
 }
 
 // The mockups' text color, #ECEDEF, at an alpha.
@@ -168,8 +206,8 @@ fn marker(t: &Tile, pip: bool) -> AnyElement {
     .into_any_element()
 }
 
-// A session tile's hover text: its folder, and its state in words.
-fn hover_text(t: &Tile, now: SystemTime) -> Option<String> {
+// A session tile's state in words, for its tooltip.
+fn state_words(t: &Tile, now: SystemTime) -> Option<String> {
     let s = t.session()?;
     let in_state = since(s.state_since, now);
     let words = match t.timer {
@@ -194,7 +232,7 @@ fn hover_text(t: &Tile, now: SystemTime) -> Option<String> {
             }
         },
     };
-    Some(format!("{}\n{words}", s.folder.display()))
+    Some(words)
 }
 
 impl RackView {
@@ -232,13 +270,18 @@ impl RackView {
                 .session()
                 .and_then(|s| s.summary.clone())
                 .map(|s| (s, 0xF2C46A)),
-            // A working tile shows Claude's latest status line (user, 2026-11-15).
+            // A working tile shows Claude's newest text and the tool it used after it, as the
+            // core's Session::line picks them (user, 2026-11-15).
             Some(SessionState::Working) => t
                 .session()
-                .and_then(|s| s.status.clone())
+                .and_then(|s| s.line.clone())
                 .map(|s| (s, 0x9CC4FF)),
             _ => None,
         };
+        // The tile cuts its subtitle to one line, so the tooltip shows it whole, above the
+        // tile's state in words (user, 2026-11-15).
+        let tip =
+            state_words(t, now).map(|words| (summary.as_ref().map(|(s, _)| s.clone()), words));
         let ended = state(t) == Some(SessionState::Ended);
         let title = div()
             .text_size(px(13.5))
@@ -262,7 +305,7 @@ impl RackView {
                     .text_size(px(12.))
                     .text_color(rgb(c))
                     .truncate()
-                    .child(s)
+                    .child(styled_line(&s, rgb(c)))
             }));
         let mut main = div()
             .id(("main", id.0))
@@ -281,8 +324,21 @@ impl RackView {
         if self.drag.is_none() {
             main = main.cursor_pointer();
         }
-        if let Some(words) = hover_text(t, now) {
-            main = main.tooltip(move |window, cx| Tooltip::new(words.clone()).build(window, cx));
+        if let Some((full, words)) = tip {
+            main = main.tooltip(move |window, cx| {
+                let (full, words) = (full.clone(), words.clone());
+                Tooltip::element(move |_, _| {
+                    div()
+                        .max_w(px(260.))
+                        .py(px(2.))
+                        .flex()
+                        .flex_col()
+                        .gap(px(2.))
+                        .children(full.as_deref().map(|f| styled_line(f, rgb(TEXT))))
+                        .child(div().text_color(rgb(MUTED)).child(words.clone()))
+                })
+                .build(window, cx)
+            });
         }
 
         // Your own tile and an ended session's tile both show an × on hover, which removes the
@@ -387,7 +443,7 @@ impl RackView {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, e: &MouseDownEvent, _, cx| {
-                    this.open_menu(id, e.position, cx)
+                    this.open_menu(MenuKind::Timer(id), e.position, cx)
                 }),
             )
     }
@@ -549,6 +605,12 @@ impl RackView {
             .flex()
             .items_center()
             .justify_center()
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, e: &MouseDownEvent, _, cx| {
+                    this.open_menu(MenuKind::Rack, e.position, cx)
+                }),
+            )
             .child(
                 svg()
                     .path("plates/grip.svg")
@@ -716,6 +778,7 @@ impl Render for RackView {
         self.scale = window.scale_factor() as f64;
         self.step(cx);
         self.place(cx);
+        self.remember_place();
         if self.animating() || self.tiles_animating() {
             window.request_animation_frame();
         }
@@ -725,7 +788,7 @@ impl Render for RackView {
         };
         div()
             .size_full()
-            .font_family("Inter")
+            .font_family(SANS)
             // GPUI's default line height is 1.618, where a browser lays Inter out at about 1.21,
             // the mockups' line height, so the default spreads a title and its summary apart.
             // (read in gpui-pre 0.3.12, src/style.rs, `TextStyle::default`)

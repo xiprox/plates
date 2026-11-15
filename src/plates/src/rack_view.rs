@@ -16,9 +16,10 @@ use plates_core::{
 };
 
 use crate::{
-    menu::{MENU_H, MENU_W, MenuView},
+    menu::{MENU_W, MenuKind, MenuView},
     motion::{self, Ease, Rect, Side, Tween},
     native,
+    place::{self, Place},
 };
 
 pub const RACK_W: f32 = 304.;
@@ -89,6 +90,10 @@ pub struct RackView {
     pub(crate) hwnd: isize,
     pub(crate) rack: Rack,
     data_file: PathBuf,
+    place_file: PathBuf,
+    /// The place last saved, which is `None` until the window has taken its saved place, so the
+    /// window's first position isn't saved over it.
+    saved_place: Option<Place>,
     pub(crate) input: Entity<InputState>,
     pub(crate) field: Option<Field>,
     pub(crate) menu: Option<Menu>,
@@ -145,12 +150,16 @@ impl RackView {
         ];
 
         // GPUI is still building the window here, and taking it over resizes it, so that waits
-        // for a task of its own.
+        // for a task of its own, which then puts the rack where it last came to rest.
         let take_over = cx.spawn(async move |this, cx| {
             native::take_over(hwnd);
             this.update(cx, |this, cx| {
                 let r = native::window_rect(hwnd);
                 this.pos = (r.left, r.top);
+                if let Some(saved) = place::load(&this.place_file) {
+                    this.restore_place(saved);
+                }
+                this.saved_place = Some(this.current_place());
                 this.applied = None;
                 cx.notify();
             })
@@ -176,10 +185,13 @@ impl RackView {
         });
 
         let r = native::window_rect(hwnd);
+        let place_file = data_file.with_file_name("place.json");
         let mut view = RackView {
             hwnd,
             rack,
             data_file,
+            place_file,
+            saved_place: None,
             input,
             field: None,
             menu: None,
@@ -255,6 +267,70 @@ impl RackView {
     fn save(&self) {
         if let Err(e) = store::save(&self.rack, &self.data_file) {
             eprintln!("Couldn't save {}: {e}", self.data_file.display());
+        }
+    }
+
+    fn current_place(&self) -> Place {
+        match self.docked {
+            Some(side) => Place {
+                x: match side {
+                    Side::Left => self.dock_area.left,
+                    Side::Right => self.dock_area.right - 1.,
+                },
+                y: self.pos.1,
+                docked: Some(side),
+            },
+            None => Place {
+                x: self.pos.0,
+                y: self.pos.1,
+                docked: None,
+            },
+        }
+    }
+
+    /// Saves where the rack sits once it has come to rest somewhere new.
+    pub(crate) fn remember_place(&mut self) {
+        if self.animating() || self.saved_place.is_none() {
+            return;
+        }
+        let place = self.current_place();
+        if self.saved_place == Some(place) {
+            return;
+        }
+        self.saved_place = Some(place);
+        if let Err(e) = place::save(place, &self.place_file) {
+            eprintln!("Couldn't save {}: {e}", self.place_file.display());
+        }
+    }
+
+    // A saved place on a monitor that's gone, or partly off its monitor, moves onto the nearest
+    // monitor's work area.
+    fn restore_place(&mut self, saved: Place) {
+        let (w, h) = self.rack_size();
+        match saved.docked {
+            None => {
+                let a = native::edges_at((saved.x + w / 2., saved.y + h / 2.)).area;
+                self.pos = (
+                    saved.x.clamp(a.left, (a.right - w).max(a.left)),
+                    saved.y.clamp(a.top, (a.bottom - h).max(a.top)),
+                );
+            }
+            Some(side) => {
+                let a = native::edges_at((saved.x, saved.y)).area;
+                let strip_h = strip_height(self.rack.tiles().len()) as f64 * self.scale;
+                self.dock_area = a;
+                self.docked = Some(side);
+                self.peek = false;
+                self.pos = (
+                    match side {
+                        Side::Left => a.left - w,
+                        Side::Right => a.right,
+                    },
+                    saved.y.clamp(a.top, (a.bottom - strip_h).max(a.top)),
+                );
+                self.nudged_for = self.latest_need();
+                native::set_shadow(self.hwnd, false);
+            }
         }
     }
 
@@ -577,7 +653,7 @@ impl RackView {
     // The menu opens in a window of its own at the pointer, so it can reach past the rack's edges
     // without growing the rack's window, whose shadow DWM would draw around the grown rectangle.
     // It opens below and to the left of the pointer, and above it near the screen's bottom.
-    pub(crate) fn open_menu(&mut self, id: TileId, at: Point<Pixels>, cx: &mut Context<Self>) {
+    pub(crate) fn open_menu(&mut self, kind: MenuKind, at: Point<Pixels>, cx: &mut Context<Self>) {
         self.close_menu(cx);
         let s = self.scale;
         let r = native::window_rect(self.hwnd);
@@ -586,7 +662,8 @@ impl RackView {
             r.top + f64::from(f32::from(at.y)) * s,
         );
         let area = native::edges_at(pointer).area;
-        let (w, h) = (MENU_W as f64 * s, MENU_H as f64 * s);
+        let menu_h = kind.height();
+        let (w, h) = (MENU_W as f64 * s, menu_h as f64 * s);
         let x = (pointer.0 - w + 12. * s).clamp(area.left, (area.right - w).max(area.left));
         let below = pointer.1 + 6. * s;
         let y = if below + h <= area.bottom {
@@ -599,7 +676,7 @@ impl RackView {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                 point(px((x / s) as f32), px((y / s) as f32)),
-                size(px(MENU_W), px(MENU_H)),
+                size(px(MENU_W), px(menu_h)),
             ))),
             titlebar: None,
             focus: false,
@@ -613,10 +690,10 @@ impl RackView {
             ..Default::default()
         };
         match cx.open_window(options, |window, cx| {
-            cx.new(|cx| MenuView::new(rack, id, bounds, window, cx))
+            cx.new(|cx| MenuView::new(rack, kind, bounds, window, cx))
         }) {
             Ok(window) => self.menu = Some(Menu { window }),
-            Err(e) => eprintln!("Couldn't open the timer menu: {e}"),
+            Err(e) => eprintln!("Couldn't open a menu: {e}"),
         }
     }
 

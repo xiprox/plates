@@ -19,6 +19,7 @@ None of it is GPUI code, as [decision 001](../../decisions/001-rust-and-gpui.md)
 - Every method that depends on time takes the current time as a `SystemTime` argument, so a test sets the clock and the model never reads it.
 - A session's hook events reach the model as `SessionEvent` values, one per Claude Code hook event that changes a tile.
   `hooks::parse` makes them from the hooks' JSON, so `Rack` never sees JSON.
+  An interrupt or a denial reaches the model as `SessionEvent::Interrupted`, which `Cuts` makes from the session's transcript, since no hook event carries it.
 - The app calls `Rack::tick` once a second and on every event, which turns a timer that has run out into time-up and clears an ended tile once [02-tiles](../rack/02-tiles.md#session-tiles) says it clears itself.
 
 ## Tiles
@@ -27,7 +28,7 @@ None of it is GPUI code, as [decision 001](../../decisions/001-rust-and-gpui.md)
 - Session tiles come first, in the order their sessions first reached Plates, and your own tiles follow, in the order you added them.
   A new session's tile goes after the last session tile, so no session tile above it moves.
   An Undo puts a tile back in its own group, at the place it had there.
-- A session tile's title is the session's custom title, or else the first line of the first prompt you typed in it, or else, until either arrives, the name of the session's folder.
+- A session tile's title comes from the sources [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries) lists, in its order.
   For a session Plates first sees after that prompt, the app reads the prompt from the transcript and sets it over any prompt the first event carried.
 - A session tile's state and timer follow [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events), event by event.
 - A tile needs you while it's an approval, your turn, or time-up, and the model keeps why it needs you and since when.

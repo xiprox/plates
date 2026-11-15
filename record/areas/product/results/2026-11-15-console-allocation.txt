@@ -1,0 +1,31 @@
+Console allocation of plates.exe started from Explorer
+Measured on Windows 11 25H2 (build 26200), 2026-11-15, with Windows Terminal as the default terminal.
+Each exe was started with `explorer.exe "<path to exe>"`, and 3s later we listed the exe's child
+processes and the console hosts that hadn't been running before.
+
+Without the policy (the build from commit a4111f7):
+  children [conhost.exe], new console hosts [conhost, OpenConsole, WindowsTerminal]
+
+With consoleAllocationPolicy detached merged into the manifest by mt.exe:
+  children [], new console hosts []
+
+Linking a second manifest with /MANIFEST:EMBED /MANIFESTINPUT failed, since gpui-pre's
+windows-manifest feature already embeds one through embed-resource:
+  CVTRES : fatal error CVT1100: duplicate resource.  type:MANIFEST, name:1, language:0x0409
+  LINK : fatal error LNK1123: failure during conversion to COFF: file invalid or corrupt
+
+mt.exe from Windows SDK 10.0.22621.0 merged the policy and warned:
+  manifest authoring warning 81010002: Unrecognized Element "consoleAllocationPolicy" in
+  namespace "http://schemas.microsoft.com/SMI/2024/WindowsSettings".
+
+`plates.exe nope` run from PowerShell with the policy printed its usage to the terminal, and
+PowerShell waited for it and got its exit code, 1.
+
+Where a Plates started from a shell inside the Claude desktop app keeps its data:
+  The Claude desktop app is the Windows package Claude_pzs8sxrjxfjjc.
+  A place.json written to %APPDATA%\Plates\ from this session's shell landed in
+  %LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Plates\, beside a rack.json
+  that Plates had written there.
+  A Plates started from Explorer read no place.json, and one started from the shell read it.
+  A place.json written by a .cmd file that Explorer ran was read by a Plates started from
+  Explorer.

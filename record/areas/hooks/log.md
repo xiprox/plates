@@ -2,6 +2,27 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: An interrupt and a denial each write a marker record to the transcript
+
+**Asked:** since no hook event fires after you interrupt Claude or deny a tool, does the transcript show either at once?
+
+**Expected:** a `tool_result` with `is_error` for a denial, and nothing for an interrupt.
+
+**Found:** we searched every transcript on our PC, all from the Claude desktop app (measured on Windows 11 25H2, 2026-11-15, [results/2026-11-15-interrupt-markers.txt](results/2026-11-15-interrupt-markers.txt)).
+
+- An interrupt writes a `user` record whose text is `[Request interrupted by user]`.
+- A denial writes the tool's result with `is_error` true and a top-level `toolDenialKind` of `user-rejected`, then a `user` record whose text is `[Request interrupted by user for tool use]`.
+  There are 133 `user-rejected` results and 133 transcript lines containing that text, and in the three denials we read in order, the marker came right after the result.
+- `toolDenialKind` takes six other values: `permission-rule` (75), `automode-blocked` (46), `automode-unavailable` (33), `interrupted` (32), `cancelled` (31), and `automode-parsing-error` (11).
+  We haven't read what follows them, so whether Claude goes on with its turn after each is unverified, and reading the records after a few of each would settle it.
+- We haven't timed how soon after an interrupt the record reaches the file.
+- Whether Claude Code documents these records is unverified.
+  If it doesn't, an update can change them without notice, and a tile would then wait for the session's next event again.
+
+**Changed:** Plates reads what the transcript of each session in a turn gains, once a second, and a marker record moves the tile to your turn.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#events), [02-tiles](../rack/02-tiles.md#session-tiles), and [01-core](../core/01-core.md#events-and-time).
+
 ## 2026-11-15: The Claude desktop app keeps a file per session with its title and its Claude Code session IDs
 
 **Asked:** where does the title the Claude desktop app shows for a session come from, since `session_title` carries only a custom title?
@@ -15,10 +36,10 @@ What we found about Claude Code's hooks and the Claude desktop app, newest entry
 - Each file also holds `cliSessionId`, the `session_id` the hooks carry, and `priorCliSessionIds`, which looks like where the app keeps a session's earlier IDs, such as after a `/clear` (unverified).
 - It holds `sessionId`, the app's own `local_<id>`, `isArchived`, and `interruptedAwaitingPerson`, which was null in every file (unverified what sets it).
 - None of this is documented, so an update to the app can change it without notice.
+- Reading all 332 files took about 205ms on our PC, and the file of this repository's session, which had just fired an event, was the second newest by modified time.
 
-**Changed:** a session tile takes the title the app shows from the session's file, ahead of `session_title` and the first prompt.
-Reading all 332 files took about 205ms on our PC, and the file of this repository's session, which had just fired an event, was the second newest, so Plates searches the newest first.
-The files could also keep one tile across a `/clear`, and name the session for [the plan's step 6](../product/plan.md#6-opening-a-session-from-its-tile).
+**Changed:** a session tile takes the title the app shows from the session's file, ahead of `session_title` and the first prompt, and Plates searches the files newest first by modified time.
+The files' `local_` IDs may also name the session for [the plan's step 6](../product/plan.md#6-opening-a-session-from-its-tile).
 
 **Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#titles-and-summaries).
 

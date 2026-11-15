@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::{
     rack::{Rack, TileId},
-    session::{SessionEvent, Tool},
+    session::{SessionEvent, Tool, first_line},
     transcript,
 };
 
@@ -22,7 +22,7 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
     let known = rack.knows(&message.session_id);
     let id = rack.apply(&message.session_id, &message.cwd, event, now);
     if let Some(status) = &message.status {
-        rack.set_status(&message.session_id, status);
+        rack.set_status(&message.session_id, status, now);
     }
     if let Some(title) = &message.app_title {
         rack.set_app_title(&message.session_id, title);
@@ -128,8 +128,9 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
     })
 }
 
-// The tool an approval is for: the command of a shell tool, the file of a tool that edits one,
-// with the session's folder taken off the front, or else the tool's name.
+// The tool an approval is for, and what a working tile shows it doing. The input fields each
+// tool's target comes from are the ones Claude Code's tool definitions name, such as Grep's
+// `pattern` and Skill's `skill`.
 fn tool(v: &Value, cwd: &Path) -> Option<Tool> {
     let name = v.get("tool_name")?.as_str()?.to_string();
     let input = |key: &str| {
@@ -148,11 +149,39 @@ fn tool(v: &Value, cwd: &Path) -> Option<Tool> {
     .then(|| input("file_path").or_else(|| input("notebook_path")))
     .flatten()
     .map(|f| relative(Path::new(f), cwd));
+    let target = match name.as_str() {
+        "Read" | "Edit" | "MultiEdit" | "Write" => input("file_path").map(file_name),
+        "NotebookEdit" => input("notebook_path").map(file_name),
+        "Grep" | "Glob" => input("pattern").map(str::to_string),
+        "WebFetch" => input("url").map(host),
+        "WebSearch" => input("query").map(str::to_string),
+        "Skill" => input("skill").map(str::to_string),
+        "Bash" | "PowerShell" | "Agent" | "Task" => input("description").map(str::to_string),
+        _ => None,
+    }
+    .map(|t| first_line(&t))
+    .filter(|t| !t.is_empty());
     Some(Tool {
         name,
         command,
         file,
+        target,
     })
+}
+
+fn file_name(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned())
+}
+
+// "https://code.claude.com/docs/en/hooks.md" gives "code.claude.com".
+fn host(url: &str) -> String {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    rest.split(['/', '?', '#'])
+        .next()
+        .unwrap_or(rest)
+        .to_string()
 }
 
 fn relative(file: &Path, cwd: &Path) -> String {
@@ -240,12 +269,45 @@ mod tests {
 
         let read = with(
             "PreToolUse",
-            json!({ "tool_name": "Read", "tool_input": { "file_path": "/work/plates/x" } }),
+            json!({ "tool_name": "Read", "tool_input": { "file_path": "/work/plates/record/plan.md" } }),
         );
         let Some(SessionEvent::ToolPending { tool }) = event(read) else {
             panic!("PreToolUse should be ToolPending");
         };
         assert_eq!(tool.summary(), "Wants to use: Read");
+        assert_eq!(tool.activity(), "Reading plan.md");
+    }
+
+    #[test]
+    fn a_tools_target_comes_from_its_input() {
+        let target = |name: &str, input: Value| {
+            let body = with(
+                "PreToolUse",
+                json!({ "tool_name": name, "tool_input": input }),
+            );
+            let Some(SessionEvent::ToolPending { tool }) = event(body) else {
+                panic!("PreToolUse should be ToolPending");
+            };
+            tool.activity()
+        };
+        assert_eq!(
+            target(
+                "WebFetch",
+                json!({ "url": "https://code.claude.com/docs/en/hooks.md" })
+            ),
+            "Fetching code.claude.com"
+        );
+        assert_eq!(
+            target(
+                "PowerShell",
+                json!({ "command": "cargo build", "description": "Build release\nnow" })
+            ),
+            "Build release"
+        );
+        assert_eq!(
+            target("Grep", json!({ "pattern": "fn open_menu" })),
+            "Searching for fn open_menu"
+        );
     }
 
     #[test]

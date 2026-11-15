@@ -23,15 +23,16 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 | State | Starts when | The tile shows |
 | --- | --- | --- |
 | New | the session starts | the tile slides in, and its background brightens blue once |
-| Working | Claude starts a turn, such as when you send a prompt | a blue dot that breathes on a 2.4s cycle, and the first line of the newest text Claude wrote in the turn as a blue summary line (user, 2026-11-15) |
-| Your turn | Claude finishes its turn | an amber dot, the first line of Claude's last message as an amber summary line, and a timer that starts on its own |
+| Working | Claude starts a turn, such as when you send a prompt | a blue dot that breathes on a 2.4s cycle, and a blue summary line of what Claude last wrote or is doing, such as "Reading plan.md" ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries)) |
+| Your turn | Claude finishes its turn, or you interrupt Claude or deny a tool | an amber dot, an amber summary line, and a timer that starts on its own; the summary line is the first line of Claude's last message, or "Interrupted", or "Denied: " and what you denied, such as "Denied: rm -rf target" |
 | Needs approval | Claude asks you to approve a tool | an orange dot, what Claude wants to do as an orange summary line, such as "Wants to run: cargo test -p collector", and a timer that starts on its own |
 | Ended | the session ends | a dimmed ring for its marker, and an × on hover that clears the tile |
 
 [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) says which hook event starts each state.
 
 - Clicking a session tile opens that session in the Claude desktop app, or brings the app forward where no link opens one session ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session)).
-- Hovering a session tile shows the session's folder, and its state in words, such as "Your turn · waiting 12m".
+- A summary line draws text between backticks in a monospace font on a background of 8% white, and text between double asterisks in bold, and leaves out the backticks and asterisks (user, 2026-11-15).
+- Hovering a session tile shows its summary line whole, which the tile cuts to one line, and its state in words, such as "Your turn · waiting 12m" (user, 2026-11-15).
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
 - An ended tile clears itself 30 minutes after the session ends.
 
@@ -70,6 +71,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 ## Saving
 
 Plates saves your own tiles, each with its timer, as JSON in its data folder, `%APPDATA%\Plates\` on Windows and `~/Library/Application Support/Plates/` on macOS, and loads them when it starts.
+In the same folder, it saves where the rack last came to rest, as [01-window](01-window.md#launching-and-quitting) describes.
 
 ## Colors and type
 
@@ -85,6 +87,7 @@ Plates saves your own tiles, each with its timer, as JSON in its data folder, `%
 | Time-up tints: your own tile, your turn, and approval | `#2B2715`, `#2F2616`, `#321F17` |
 
 The type is Inter: titles at 13.5px semibold, summary lines and secondary text at 12px, and the hotkey's name on the phantom tile at 11px.
+Code in a summary line is in a monospace font each OS ships with: Consolas on Windows and Menlo on macOS.
 
 ## Left open
 
