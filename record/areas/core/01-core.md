@@ -29,7 +29,7 @@ None of it is GPUI code, as [decision 001](../../decisions/001-rust-and-gpui.md)
   A new session's tile goes after the last session tile, so no session tile above it moves.
   An Undo puts a tile back in its own group, at the place it had there.
 - A session tile's title comes from the sources [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries) lists, in its order.
-  For a session Plates first sees after that prompt, the app reads the prompt from the transcript and sets it over any prompt the first event carried.
+  For a session Plates first sees after you typed its first prompt, the app reads that prompt from the transcript and sets it over any prompt the first event carried.
 - A session tile's state and timer follow [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events), event by event.
 - A tile needs you while it's an approval, your turn, or time-up, and the model keeps why it needs you and since when.
   The rack brightens the tile each time that reason changes, so a your-turn tile brightens at `Stop` and again, in its time-up tint, when its timer runs out.

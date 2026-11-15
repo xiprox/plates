@@ -94,6 +94,7 @@ On Windows, the Claude desktop app registers a `claude://` link handler (measure
 Its one documented link, `claude://code/new`, opens the app's new-session page, and no documented link opens one session.
 `claude --desktop --resume <session-id>` opens a session in the app by its ID, but it's documented only for a session started from the CLI and not still running ([hooks log](log.md#2026-11-15-claude-code-documents-the-final-message-on-stop-failure-events-and-the-session-title-on-every-prompt)).
 [The plan's step 6](../product/plan.md#6-opening-a-session-from-its-tile) tries it on a desktop session, and until a way is found, clicking a session tile brings the Claude app forward.
+The app's own file for a session holds the app's ID for it, `sessionId`, as `local_<id>`, and whether a link or `claude --desktop` can take that ID is unverified ([hooks log](log.md#2026-11-15-the-claude-desktop-app-keeps-a-file-per-session-with-its-title-and-its-claude-code-session-ids)).
 
 ## Left open
 

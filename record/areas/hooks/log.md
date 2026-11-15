@@ -16,7 +16,7 @@ What we found about Claude Code's hooks and the Claude desktop app, newest entry
 - `toolDenialKind` takes six other values: `permission-rule` (75), `automode-blocked` (46), `automode-unavailable` (33), `interrupted` (32), `cancelled` (31), and `automode-parsing-error` (11).
   We haven't read what follows them, so whether Claude goes on with its turn after each is unverified, and reading the records after a few of each would settle it.
 - We haven't timed how soon after an interrupt the record reaches the file.
-- Whether Claude Code documents these records is unverified.
+- Whether Claude Code documents these records is unverified, and searching its documentation for `toolDenialKind` and the marker text would settle it.
   If it doesn't, an update can change them without notice, and a tile would then wait for the session's next event again.
 
 **Changed:** Plates reads what the transcript of each session in a turn gains, once a second, and a marker record moves the tile to your turn.
@@ -39,7 +39,6 @@ What we found about Claude Code's hooks and the Claude desktop app, newest entry
 - Reading all 332 files took about 205ms on our PC, and the file of this repository's session, which had just fired an event, was the second newest by modified time.
 
 **Changed:** a session tile takes the title the app shows from the session's file, ahead of `session_title` and the first prompt, and Plates searches the files newest first by modified time.
-The files' `local_` IDs may also name the session for [the plan's step 6](../product/plan.md#6-opening-a-session-from-its-tile).
 
 **Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#titles-and-summaries).
 
