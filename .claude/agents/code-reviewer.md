@@ -13,7 +13,6 @@ Read `.claude/rules/writing.md` before you write the report, because the report 
 
 1. Read the target: the files you're given, or else the uncommitted changes outside `experiments/`, which are `git diff HEAD` plus the untracked files `git status --short --untracked-files=all` lists.
    If neither gives you anything, say so and stop.
-   When you weren't given files, list the files you reviewed at the end of the report, because another session's uncommitted changes can be among them.
 2. Find the design.
    Read the design docs in `record/areas/` and the decisions in `record/decisions/` that describe this code, and the step of `record/areas/product/plan.md` that builds it, because work the plan leaves to a later step isn't a finding.
    If no design doc describes the code, say so and review against the plan and the repository.
@@ -47,5 +46,5 @@ Each finding gives:
 - the change you'd make
 - for a claim about other code, where you looked
 
-End with the result of each check, one line each, then the files you reviewed if you weren't given any.
+End with the result of each check, one line each, then the files you reviewed if you weren't given any, because another session's uncommitted changes can be among them.
 If nothing needs fixing, say so in one line.

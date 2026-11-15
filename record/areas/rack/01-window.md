@@ -32,8 +32,9 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 - You drag the rack against the left or right screen edge and hold it there.
   A blue bar fills along that edge, and after 1.5s the rack shrinks to the strip.
   Letting go before the bar fills leaves the rack where it is.
-- The strip is 22px wide, with one 8px dot per tile, a pip, in the tiles' order.
-  A session's pip is a circle and your own tile's is a square, colored as the tile's marker is, except that a running timer, or a tile that's time-up, shows yellow, since the strip has no room for the timer.
+- The strip is 22px wide, with one 8px mark per tile, called a pip, in the tiles' order.
+  A session's pip is a circle colored as its tile's marker is.
+  Your own tile's pip is a gray square, which shows yellow while the tile's timer runs or once the tile is time-up ([02-tiles](02-tiles.md#the-timer)), since the strip has no room for the timer.
 - When a tile starts needing you, the strip nudges 12px out of the edge once, then sits still.
 - Hovering the strip lists the tiles that need you, with their pips.
 - Clicking the strip slides the rack back out, at 950px/s away from the edge.

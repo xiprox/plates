@@ -1,0 +1,13 @@
+reg query "HKCU\Software\Classes\claude" /s
+Windows 11 25H2, build 26200.9711, 2026-11-15
+
+HKEY_CURRENT_USER\Software\Classes\claude
+    URL Protocol    REG_SZ
+    (Default)    REG_SZ    URL:claude
+
+HKEY_CURRENT_USER\Software\Classes\claude\shell
+
+HKEY_CURRENT_USER\Software\Classes\claude\shell\open
+
+HKEY_CURRENT_USER\Software\Classes\claude\shell\open\command
+    (Default)    REG_SZ    "C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\Claude.exe" -- "%1"

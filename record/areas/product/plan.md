@@ -26,8 +26,8 @@ Done when `cargo test` covers each session state change and each timer rule, and
 ## 3. Claude Code hookup
 
 The hook receiver, `plates hooks install` and `uninstall`, and the transcript reader, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md) designs them.
-Done when every hook event from a real session in the Claude desktop app reaches the receiver, and a session with Plates closed shows no hook error or delay.
-The hooks log then has an entry for what each event carried, which event follows an approval you allow and one you deny, whether a resumed session keeps its `session_id`, and the format of a desktop session's transcript.
+Done when every hook event from a real session in the Claude desktop app reaches the receiver, and a session with Plates closed shows no hook error and starts Claude's turn within 100ms of the same prompt with the hooks uninstalled, as the median of 10 prompts each.
+The hooks log then has an entry for what each event carried and for each question the design's Events section leaves to this step, and for the format of a desktop session's transcript.
 
 ## 4. The rack
 
@@ -46,8 +46,9 @@ Done when clicking a session tile opens that session, or else brings the Claude 
 
 ## 7. macOS
 
-Each step's behavior on the Mac, run in one session there, as [CLAUDE.md](../../../CLAUDE.md) asks.
-Done when every step's "done when" holds on macOS too.
+Each later step's behavior on the Mac, run in one session there, as [CLAUDE.md](../../../CLAUDE.md) asks.
+Step 1 runs on the Mac in a session of its own, because decision 001 turns on its result.
+Done when every later step's "done when" holds on macOS too.
 
 ## Later
 

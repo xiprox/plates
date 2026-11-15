@@ -7,38 +7,38 @@ Decides:     The tiles' layout and states, the timer, how a tile asks for attent
 ```
 
 A tile is one 60px row of the rack: a session tile for each Claude Code session, and your own tiles for anything else you want kept in view.
-On every tile, the marker on the left is its status and the right side is its timer (user, 2026-11-15).
+On every tile, the marker on the left is its status, and the timer slot on the right shows an hourglass, or a draining ring while a timer runs (user, 2026-11-15).
 [The mockups](https://claude.ai/artifact/A81TcK3BfzDVyQ2qaCqgNd) draw every state on this page.
 
 ## Layout
 
-- Tiles never reorder, so none moves under your cursor.
+- Tiles never change places, so a change of state never moves a tile under your cursor, and only adding or clearing a tile moves the tiles below it.
 - Session tiles come first, then your own tiles, with no divider or gap between the groups (user, 2026-11-15).
 - A session tile's marker is a circle, and your own tile's is a square.
 - A title wraps to two lines when the tile has no summary line, and truncates after the second.
-- Hovering a tile brightens its own background slightly rather than replacing it.
+- Hovering a tile lays 3.5% white over its background, so a tinted tile keeps its tint.
 
 ## Session tiles
 
 | State | Starts when | The tile shows |
 | --- | --- | --- |
 | New | the session starts | the tile slides in, and its background brightens blue once |
-| Working | you send Claude a prompt | a blue dot that breathes on a 2.4s cycle |
+| Working | Claude starts a turn, such as when you send a prompt | a blue dot that breathes on a 2.4s cycle |
 | Your turn | Claude finishes its turn | an amber dot, the first line of Claude's last message as an amber summary line, and a timer that starts on its own |
-| Needs approval | Claude waits for you to approve a tool | an orange dot, what Claude wants to do as an orange summary line, such as "Wants to run: cargo test -p collector", and a timer that starts on its own |
+| Needs approval | Claude asks you to approve a tool | an orange dot, what Claude wants to do as an orange summary line, such as "Wants to run: cargo test -p collector", and a timer that starts on its own |
 | Ended | the session ends | a dimmed ring for its marker, and an × on hover that clears the tile |
 
 [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) says which hook event starts each state.
 
 - Clicking a session tile opens that session in the Claude desktop app, or brings the app forward where no link opens one session ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session)).
 - Hovering a session tile shows the session's folder, and its state in words, such as "Your turn · waiting 12m".
-- Session tiles can't be renamed, because the new name wouldn't reach the Claude app (user, 2026-11-15).
+- Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
 - An ended tile clears itself 30 minutes after the session ends.
 
 ## Your own tiles
 
-- Your own tile has a gray square marker and a title, and shows no time except a timer you start (user, 2026-11-15).
-- The hotkey for a new tile is Ctrl + Shift + Space on Windows and ⌃⇧Space on macOS, and you can change it.
+- Your own tile has a gray square marker and a title, and shows no time except a timer you start ([01-aims](../product/01-aims.md#non-goals)).
+- The hotkey for a new tile is Ctrl + Shift + Space on Windows and ⌃⇧Space on macOS.
 - The last item in the rack is a phantom tile: a dashed outline with a faint + and the hotkey's name beside it.
   Clicking it, or pressing the hotkey, brings the rack forward, slides it out of the dock if it's docked, and turns the phantom tile into an inline name field.
   Enter adds the tile, and Esc cancels.
@@ -50,13 +50,13 @@ On every tile, the marker on the left is its status and the right side is its ti
 
 - Clicking the hourglass starts a 5-minute timer.
   Right-clicking it opens a menu of 5, 10, 15, 20, and 30 minutes, and 1 hour, and picking one while a timer runs starts it over.
-- While a timer runs, the hourglass is a yellow ring that drains.
+- While a timer runs, the timer slot shows a yellow ring that drains.
   Hovering the ring shows a faint ×, at 55% opacity, and clicking the ring cancels the timer.
-- A session tile starts a 5-minute timer on its own when it moves to your turn or needs approval, and the timer stops when you send Claude a prompt.
+- A session tile starts a 5-minute timer on its own when it moves to your turn or needs approval, and the timer stops when the session moves to working.
 - When the timer runs out, the tile is time-up, and that becomes its status:
   - your own tile's square turns yellow, and the tile takes a yellow tint
   - a session tile takes a tint of its own status color, amber for your turn and orange for an approval, and its dot keeps showing Claude's state
-  - the right side goes back to the hourglass, which starts another 5 minutes, and clicking the tile clears time-up
+  - the timer slot goes back to the hourglass, which starts another 5 minutes when you click it, and clicking anywhere else on the tile clears time-up
 - A timer runs on the wall clock, whether or not anyone is at the desk.
 - The timer slot's icon, divider, and hover highlight are translucent white, so they take on a tile's tint without adding a color of their own (user, 2026-11-15).
 
@@ -85,3 +85,7 @@ Plates saves your own tiles and their running timers as JSON in its data folder,
 | Time-up tints: your own tile, your turn, and approval | `#2B2715`, `#2F2616`, `#321F17` |
 
 The type is Inter: titles at 13.5px semibold, summary lines and secondary text at 12px, and the hotkey's name on the phantom tile at 11px.
+
+## Left open
+
+- Where you change the hotkey.

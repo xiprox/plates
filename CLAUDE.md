@@ -17,7 +17,8 @@ Plates is an always-on-top overview of the Claude Code sessions and other work i
 - `tools/prose-lint.mjs` makes the mechanical checks from writing.md, on Markdown and on the comments in code.
   A hook runs it after every edit, and its findings come back to you as context.
 - `.claude/agents/doc-reviewer.md` makes the judgment checks the lint can't, and `.claude/agents/code-reviewer.md` checks product code against its design and the rules below.
-  If an agent in `.claude/agents/` isn't available as an agent type, which happens when that folder didn't exist when the session started ([sub-agents](https://code.claude.com/docs/en/sub-agents.md), as of 2026-11-15), run a general-purpose agent told to read that definition and act as that agent, in the background if its front matter says `background: true`.
+  If an agent in `.claude/agents/` isn't available as an agent type, run a general-purpose agent told to read that definition and act as that agent, in the background if its front matter says `background: true`.
+  That happens when `.claude/agents/` didn't exist as the session started ([sub-agents](https://code.claude.com/docs/en/sub-agents.md), as of 2026-11-15).
 
 ## Working rules
 
@@ -30,7 +31,7 @@ Only the user can run Plates on macOS, so write each Mac test to answer as much 
 
 **Group a folder's files by what they're for once it grows past about a dozen.**
 Name each group's folder, and each file, for what it holds, and in Rust put `dock.rs` beside `dock/` rather than a `dock/mod.rs`.
-In Dual Input, a folder that reached 17 flat files hid which of them belonged together, while a folder made for files that won't grow only adds nesting.
+In Dual Input, another of our repositories, a folder that reached 17 flat files hid which of them belonged together, while a folder made for files that won't grow only adds nesting.
 
 **Never delete as a side effect.**
 Deleting a file, or running `git checkout`, `restore`, `stash`, or `reset` on a path, is its own proposal: ask first, and say why.

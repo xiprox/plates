@@ -8,21 +8,35 @@ What we found about Claude Code's hooks and the Claude desktop app, newest entry
 
 **Expected:** the seven events the design listed, covering every change of state.
 
-**Found:** a second read of Claude Code's documentation, for the review of the hooks design.
+**Found:** two more reads of Claude Code's documentation, for two reviews of the hooks design.
 Nothing here has been measured yet.
 
 - `Stop` carries `last_assistant_message`, the text of Claude's final response, and the page warns that the transcript file may not hold that message yet when `Stop` fires (documented, [hooks](https://code.claude.com/docs/en/hooks.md), as of 2026-11-15).
-- When an API error ends a turn, `StopFailure` fires in place of `Stop`, with an `error` such as `rate_limit` and the error's text in `last_assistant_message` (documented, same page).
+- `Stop` doesn't fire when you interrupt Claude, and canceling a running tool fires no `PostToolUseFailure`, so an interrupted turn fires no event that ends it (documented, same page).
+- When an API error ends a turn, `StopFailure` fires in place of `Stop`, with an `error` such as `rate_limit` and, optionally, the error's text in `last_assistant_message` (documented, same page).
 - `PostToolUseFailure` fires after a tool that started fails.
-  A permission you deny by hand fires nothing after its `PreToolUse`, since `PermissionDenied` fires only for auto mode's denials (documented, same page).
+  A permission you deny by hand fires no event of its own: `PostToolUseFailure` doesn't fire for a permission denial, and `PermissionDenied` fires only for auto mode's denials (documented, same page).
+- `PermissionRequest` fires when Claude Code is about to ask you for permission to use a tool (documented, same page).
+  In a session hosted through the Agent SDK's `canUseTool` callback, as the Claude desktop app hosts Claude Code, `Notification` with `permission_prompt` arrives about 6s after Claude asks, and not at all if you or a `PermissionRequest` hook answer sooner (documented, same page).
 - `SessionStart` fires with a `source` of `startup` for a new session, and also of `resume`, `clear`, `compact`, or `fork` (documented, same page).
+- `SessionEnd` fires when a session exits, and also on `/clear` and on switching sessions with `/resume`, with a `reason` of `clear` or `resume` (documented, same page).
+- `UserPromptSubmit` fires for a prompt you send, and also when a scheduled task fires, when a background subagent reports back, and when another session sends a message to the conversation (documented, same page).
 - `session_title` is present whenever the session has a custom title, whether from `--name`, `/rename`, a hook, or the Agent SDK's `renameSession()`, and absent for a title the app generates.
   `UserPromptSubmit` carries it too (documented, same page).
 - An `http` hook whose connection fails, or whose response isn't a 2xx status, ends in a non-blocking error, and the action goes ahead (documented, same page).
-- An `http` hook's default timeout is 600s, except 30s on `UserPromptSubmit`, and a session's `SessionEnd` hooks share 1.5s (documented, same page).
-- `claude --desktop --resume <session-id>` opens a CLI session in the Claude desktop app by its ID, and a session's name doesn't work in place of the ID (documented, [desktop](https://code.claude.com/docs/en/desktop.md), as of 2026-11-15).
+- An `http` hook's default timeout is 600s, except 30s on `UserPromptSubmit`.
+  A session's `SessionEnd` hooks share a budget of 1.5s, which Claude Code raises to the longest per-hook `timeout` in the settings files, up to 60s (documented, same page).
+- `claude --desktop --resume <session-id>` opens a CLI session in the Claude desktop app by its ID, a session's name doesn't work in place of the ID, and it doesn't move a session that's open in another terminal or still running in the background (documented, [desktop](https://code.claude.com/docs/en/desktop.md), as of 2026-11-15).
 
-**Changed:** the your-turn summary comes from `last_assistant_message`, `PostToolUseFailure` and `StopFailure` move tiles as `PostToolUse` and `Stop` do, a `SessionStart` for a tile Plates already shows leaves it as it is, an event from a session Plates doesn't show adds its tile, the receiver answers before acting, and step 6 tries `claude --desktop --resume` on a desktop session.
+**Changed:**
+
+- The your-turn summary comes from `last_assistant_message`.
+- `PostToolUseFailure` and `StopFailure` move tiles as `PostToolUse` and `Stop` do.
+- `PermissionRequest` moves a tile to needs approval, without the 6s wait of `permission_prompt`.
+- `SessionStart` brings back an ended tile and leaves any other tile it already shows as it is.
+- An event from a session Plates doesn't show adds its tile.
+- The receiver answers each request before acting on it.
+- Step 6 tries `claude --desktop --resume` on a desktop session.
 
 **Affects:** [01-claude-code-hooks](01-claude-code-hooks.md) and [the plan](../product/plan.md).
 
@@ -43,8 +57,8 @@ Apart from that look at the registry, nothing here has been measured yet.
 - `SessionStart` carries `session_title` when the session has a custom title, such as one set with `--name` or `/rename`, and leaves it out for a title the app generates (documented, same page).
 - A hook can be of type `http`, which POSTs the event's JSON to a URL, with a default timeout of 600s (documented, same page).
 - The documented deep link, `claude-cli://open`, opens the terminal CLI and takes `q`, `cwd`, and `repo`, with no session ID (documented, [deep links](https://code.claude.com/docs/en/deep-links.md)).
-  The desktop app's own `claude://` links are documented only for opening an SSH session (documented, [desktop](https://code.claude.com/docs/en/desktop.md)).
-- On our Windows PC, the `claude` URL protocol is registered to the Claude desktop app's executable, under `HKCU\Software\Classes\claude` (measured on Windows 11 25H2, 2026-11-15).
+  The desktop app's one documented `claude://` link, `claude://code/new`, opens its new-session page, optionally on an SSH connection, and takes no session ID (documented, [desktop](https://code.claude.com/docs/en/desktop.md)).
+- On our Windows PC, the `claude` URL protocol is registered to the Claude desktop app's executable, under `HKCU\Software\Classes\claude` (measured on Windows 11 25H2, 2026-11-15, [results/2026-11-15-claude-protocol.txt](results/2026-11-15-claude-protocol.txt)).
 
 **Changed:** the receiver takes `http` hooks directly, with no helper program; a session tile's title falls back to the session's first prompt; and clicking a session tile brings the Claude app forward until a link to one session turns up.
 
