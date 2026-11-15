@@ -98,6 +98,23 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
             title: text("session_title"),
             prompt: text("prompt"),
         }),
+        // The Claude desktop app has Claude end each turn with its wrap-up tool, whose `ask` and
+        // `blocked` say a decision waits for you, and whose `recap` alone says nothing does
+        // (read in the tool's own description, Claude desktop app 5.11492.5.0).
+        "PreToolUse" if text("tool_name").as_deref() == Some("mcp__ccd_turn__wrap_up") => {
+            let input = v.get("tool_input");
+            let ask = input
+                .and_then(|i| i.get("ask"))
+                .and_then(Value::as_str)
+                .is_some_and(|a| !a.trim().is_empty());
+            let blocked = input
+                .and_then(|i| i.get("blocked"))
+                .and_then(Value::as_bool)
+                == Some(true);
+            Some(SessionEvent::WrappedUp {
+                asks: ask || blocked,
+            })
+        }
         "PreToolUse" => tool(&v, &cwd).map(|tool| SessionEvent::ToolPending { tool }),
         "PermissionRequest" => Some(SessionEvent::ApprovalAsked {
             tool: tool(&v, &cwd),
@@ -378,6 +395,28 @@ mod tests {
                 error: "rate_limit".into(),
                 text: Some("API Error: Rate limit reached".into())
             })
+        );
+    }
+
+    #[test]
+    fn a_wrap_up_asks_when_it_has_a_question_or_blocks() {
+        let wrap = |input: Value| {
+            event(with(
+                "PreToolUse",
+                json!({ "tool_name": "mcp__ccd_turn__wrap_up", "tool_input": input }),
+            ))
+        };
+        assert_eq!(
+            wrap(json!({ "recap": "Pushed." })),
+            Some(SessionEvent::WrappedUp { asks: false })
+        );
+        assert_eq!(
+            wrap(json!({ "recap": "Built.", "ask": "Commit it?" })),
+            Some(SessionEvent::WrappedUp { asks: true })
+        );
+        assert_eq!(
+            wrap(json!({ "recap": "Stuck.", "blocked": true })),
+            Some(SessionEvent::WrappedUp { asks: true })
         );
     }
 

@@ -32,6 +32,8 @@ pub enum SessionState {
     New,
     Working,
     YourTurn,
+    /// Claude finished its turn and asked you nothing, so the session waits without needing you.
+    Done,
     NeedsApproval,
     Ended,
 }
@@ -71,6 +73,9 @@ pub enum SessionEvent {
     InputAsked { summary: String },
     /// `ElicitationResult`: you answered the MCP server.
     InputGiven,
+    /// `PreToolUse` for the Claude desktop app's `mcp__ccd_turn__wrap_up`, which Claude calls at
+    /// the end of a turn, with whether it asks you to decide something.
+    WrappedUp { asks: bool },
 }
 
 impl SessionEvent {
@@ -84,7 +89,8 @@ impl SessionEvent {
             SessionEvent::ToolPending { .. }
             | SessionEvent::ToolFinished
             | SessionEvent::CompactFinished { .. }
-            | SessionEvent::InputGiven => None,
+            | SessionEvent::InputGiven
+            | SessionEvent::WrappedUp { .. } => None,
             SessionEvent::ApprovalAsked { .. }
             | SessionEvent::ApprovalNotified { .. }
             | SessionEvent::InputAsked { .. } => Some(SessionState::NeedsApproval),
@@ -182,6 +188,9 @@ pub struct Session {
     /// Whether Claude Code is compacting the session's context, between `PreCompact` and
     /// `PostCompact`.
     pub compacting: bool,
+    /// Whether the turn's last wrap-up asked you something, or `None` for a turn with no
+    /// wrap-up, such as a session in a terminal, whose end counts as your turn.
+    pub asks: Option<bool>,
     /// What a working tile shows: `status` for `STATUS_HOLDS` after it changes, then `activity`
     /// while its tool runs and for at least `TOOL_HOLDS`, and `THINKING` otherwise.
     /// `refresh_line` keeps it current.
@@ -208,6 +217,7 @@ impl Session {
             activity_at: now,
             tool_running: false,
             compacting: false,
+            asks: None,
             line: None,
             pending_tool: None,
             ended_at: None,

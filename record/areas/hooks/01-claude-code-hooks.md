@@ -18,11 +18,11 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 | --- | --- |
 | `SessionStart` | adds the session's tile, as new, and brings back a tile it shows as ended, as new; any other tile it shows stays as it is, since `SessionStart` also fires on a resume, a `/clear`, and a compaction |
 | `UserPromptSubmit` | moves the tile to working, which stops its timer, while a tile already working keeps a timer you started on it |
-| `PreToolUse` | keeps the tool's name and input, for the summary line of an approval that follows, and for what a working tile shows Claude doing |
+| `PreToolUse` | keeps the tool's name and input, for the summary line of an approval that follows, and for what a working tile shows Claude doing; for `mcp__ccd_turn__wrap_up`, the tool the Claude desktop app has Claude call at a turn's end, it keeps whether the call asks you something, through a non-empty `ask` or a `blocked` of true (read in the tool's own description, Claude desktop app 5.11492.5.0) |
 | `PermissionRequest` | moves the tile to needs approval as Claude Code is about to ask you, and starts its timer |
 | `Notification` with `notification_type` `permission_prompt` | moves the tile to needs approval if it isn't already, which covers an approval that fired no `PermissionRequest` |
 | `PostToolUse`, or `PostToolUseFailure` for a tool that failed | moves a tile that needed approval back to working, and stops its timer, since the tool ran |
-| `Stop` | moves the tile to your turn, and starts its timer |
+| `Stop` | moves the tile to done when the turn's last wrap-up asked nothing, and otherwise to your turn, starting its timer, so a turn with no wrap-up, such as in a terminal, is your turn (user, 2026-11-15) |
 | `StopFailure`, which fires in place of `Stop` when an API error ends the turn | moves the tile to your turn, with the error's text as its summary line, or its `error` when the text is missing, and starts its timer |
 | `SessionEnd` | moves the tile to ended |
 | `PreCompact` | moves the tile to working, with "Compacting session…", the Claude desktop app's words, as its summary line until `PostCompact` |

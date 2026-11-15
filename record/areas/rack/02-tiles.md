@@ -28,7 +28,8 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 | --- | --- | --- |
 | New | the session starts | the tile grows in, and its background then brightens blue once |
 | Working | Claude starts a turn, such as when you send a prompt | a blue dot that breathes on a 2.4s cycle, and a blue summary line of what Claude last wrote or is doing, such as "Reading plan.md" ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries)) |
-| Your turn | Claude finishes its turn, or you interrupt Claude or deny a tool | an amber dot, an amber summary line, and a timer that starts on its own; the summary line is the first line of Claude's last message, or "Interrupted", or "Denied: " and what you denied, such as "Denied: rm -rf target" |
+| Your turn | Claude finishes a turn that asks you something, or you interrupt Claude or deny a tool | an amber dot, an amber summary line, and a timer that starts on its own; the summary line is the first line of Claude's last message, or "Interrupted", or "Denied: " and what you denied, such as "Denied: rm -rf target" |
+| Done | Claude finishes a turn that asks you nothing, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) tells | a gray dot, and the first line of Claude's last message in the secondary text color, with no timer and no tint, since the session doesn't need you (user, 2026-11-15) |
 | Needs approval | Claude asks you to approve a tool | an orange dot, what Claude wants to do as an orange summary line, such as "Wants to run: cargo test -p collector", and a timer that starts on its own |
 | Ended | the session ends | a dimmed ring for its marker, and an × on hover that clears the tile |
 

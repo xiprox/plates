@@ -187,6 +187,7 @@ fn marker(t: &Tile, pip: bool) -> AnyElement {
         Some(SessionState::Working) => (base.rounded_full(), Some(BLUE), true),
         Some(SessionState::New) => (base.rounded_full(), Some(BLUE), false),
         Some(SessionState::YourTurn) => (base.rounded_full(), Some(AMBER), false),
+        Some(SessionState::Done) => (base.rounded_full(), Some(GRAY), false),
         Some(SessionState::NeedsApproval) => (base.rounded_full(), Some(HOT), false),
         Some(SessionState::Ended) => (base.rounded_full(), None, false),
         None => (
@@ -235,6 +236,7 @@ fn state_words(t: &Tile, now: SystemTime) -> Option<String> {
                 format!("Needs your approval · {}", minutes(in_state))
             }
             SessionState::YourTurn => format!("Your turn · waiting {}", minutes(in_state)),
+            SessionState::Done => format!("Done · finished {} ago", minutes(in_state)),
             SessionState::Ended => {
                 let left = ENDED_CLEARS_AFTER.saturating_sub(in_state);
                 format!(
@@ -282,6 +284,12 @@ impl RackView {
                 .session()
                 .and_then(|s| s.summary.clone())
                 .map(|s| (s, 0xF2C46A)),
+            // A done session's summary is in the secondary text color, so it reads as finished
+            // rather than waiting on you (user, 2026-11-15).
+            Some(SessionState::Done) => t
+                .session()
+                .and_then(|s| s.summary.clone())
+                .map(|s| (s, TEXT2)),
             // A working tile shows Claude's newest text and the tool it used after it, as the
             // core's Session::line picks them (user, 2026-11-15).
             Some(SessionState::Working) => t

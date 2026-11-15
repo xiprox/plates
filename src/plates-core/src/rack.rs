@@ -77,6 +77,7 @@ impl Tile {
         match self.session().map(|s| s.state) {
             Some(SessionState::NeedsApproval) => Some(Need::Approval),
             Some(SessionState::YourTurn) => Some(Need::YourTurn),
+            // A session that's done waits for you without needing you.
             _ => None,
         }
     }
@@ -163,7 +164,7 @@ impl Rack {
                 SessionState::YourTurn | SessionState::NeedsApproval => {
                     Timer::start(now, DEFAULT_MINUTES)
                 }
-                SessionState::Working | SessionState::Ended => Timer::Idle,
+                SessionState::Working | SessionState::Done | SessionState::Ended => Timer::Idle,
                 SessionState::New => *timer,
             };
         };
@@ -191,7 +192,11 @@ impl Rack {
                 s.activity = None;
                 s.tool_running = false;
                 s.pending_tool = None;
+                s.asks = None;
                 set_state(s, &mut tile.timer, SessionState::Working);
+            }
+            SessionEvent::WrappedUp { asks } => {
+                s.asks = Some(asks);
             }
             SessionEvent::ToolPending { tool } => {
                 s.activity = Some(tool.activity());
@@ -225,12 +230,19 @@ impl Rack {
                     set_state(s, &mut tile.timer, SessionState::Working);
                 }
             }
+            // A turn whose wrap-up asked you nothing is done, and any other turn's end is your
+            // turn, so a session with no wrap-up still asks for you as it always has.
             SessionEvent::TurnEnded { last_message } => {
                 s.pending_tool = None;
                 s.summary = last_message
                     .map(|m| first_line(&m))
                     .filter(|m| !m.is_empty());
-                set_state(s, &mut tile.timer, SessionState::YourTurn);
+                let to = if s.asks == Some(false) {
+                    SessionState::Done
+                } else {
+                    SessionState::YourTurn
+                };
+                set_state(s, &mut tile.timer, to);
             }
             SessionEvent::TurnFailed { error, text } => {
                 s.pending_tool = None;
@@ -971,6 +983,31 @@ mod tests {
         assert_eq!(s.summary.as_deref(), Some("github asks: Pick a repository"));
         apply(&mut rack, "a", SessionEvent::InputGiven, 2);
         assert_eq!(session(&rack, id).state, SessionState::Working);
+    }
+
+    #[test]
+    fn a_turn_whose_wrap_up_asks_nothing_is_done_and_needs_no_one() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(&mut rack, "a", SessionEvent::WrappedUp { asks: false }, 1);
+        apply(&mut rack, "a", stop("All pushed."), 2);
+        let t = rack.tile(id).unwrap();
+        assert_eq!(t.session().unwrap().state, SessionState::Done);
+        assert_eq!(t.timer, Timer::Idle);
+        assert_eq!(t.need, None);
+
+        apply(&mut rack, "a", prompt("Next"), 3);
+        apply(&mut rack, "a", SessionEvent::WrappedUp { asks: true }, 4);
+        apply(&mut rack, "a", stop("Which fix first?"), 5);
+        assert_eq!(session(&rack, id).state, SessionState::YourTurn);
+
+        apply(&mut rack, "a", prompt("And again"), 6);
+        apply(&mut rack, "a", stop("No wrap-up this time."), 7);
+        assert_eq!(
+            session(&rack, id).state,
+            SessionState::YourTurn,
+            "a turn with no wrap-up is your turn"
+        );
     }
 
     #[test]
