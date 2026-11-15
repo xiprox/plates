@@ -23,15 +23,17 @@ use windows::Win32::{
     UI::{
         Controls::MARGINS,
         Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON},
-        Shell::{DefSubclassProc, SetWindowSubclass},
+        Shell::{DefSubclassProc, SetWindowSubclass, ShellExecuteW},
         WindowsAndMessaging::{
-            GWL_EXSTYLE, GetClientRect, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW,
-            GetWindowRect, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-            SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
-            SetWindowPos, WM_MOUSEACTIVATE, WM_NCCALCSIZE, WS_EX_NOACTIVATE,
+            ASFW_ANY, AllowSetForegroundWindow, GWL_EXSTYLE, GetClientRect, GetCursorPos,
+            GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, MA_NOACTIVATE, SW_SHOWNORMAL,
+            SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+            SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, WM_MOUSEACTIVATE,
+            WM_NCCALCSIZE, WS_EX_NOACTIVATE,
         },
     },
 };
+use windows::core::{PCWSTR, w};
 
 use crate::motion::{Edges, Rect};
 
@@ -270,4 +272,27 @@ pub fn foreground_window() -> isize {
 
 pub fn set_foreground(h: isize) -> bool {
     unsafe { SetForegroundWindow(hwnd(h)).as_bool() }
+}
+
+/// Opens a link with the program Windows has for its scheme, such as the Claude desktop app for
+/// `claude://`, and returns whether Windows started it. Windows lets a process bring its window to
+/// the front only with the foreground's leave, and the rack never takes the foreground, so the
+/// rack first gives that leave to any process, which Windows lets the process that got the last
+/// input, the click on the rack, do.
+/// (documented, https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-allowsetforegroundwindow)
+pub fn open_url(url: &str) -> bool {
+    let wide: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+        let result = ShellExecuteW(
+            None,
+            w!("open"),
+            PCWSTR(wide.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        );
+        // ShellExecuteW returns a value above 32 when it succeeds.
+        result.0 as isize > 32
+    }
 }

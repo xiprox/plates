@@ -13,7 +13,7 @@ use gpui_kit::*;
 use plates_core::{
     Rack,
     cuts::Cuts,
-    desktop::{self, Titles},
+    desktop::{self, AppSessions},
     hooks,
     receiver::{PORT, Received, Receiver},
     store, transcript,
@@ -58,7 +58,7 @@ pub fn run() {
     // The receiver hands events on from a thread of its own, and the rack takes them on the UI
     // thread, so a thread between them moves each one onto a channel the UI can await. That
     // thread also reads each tool event's transcript for the session's status line, the desktop
-    // app's file for the session's title, and, once a second, the transcripts of sessions in a
+    // app's file for the session's title and ID, and, once a second, the transcripts of sessions in a
     // turn for an interrupt or a denial, so none of these reads holds up the rack.
     let (tx, rx) = mpsc::channel();
     let receiver = Receiver::start(PORT, tx);
@@ -69,7 +69,7 @@ pub fn run() {
     thread::Builder::new()
         .name("plates-events".into())
         .spawn(move || {
-            let mut titles = Titles::new(desktop::sessions_folder());
+            let mut app_sessions = AppSessions::new(desktop::sessions_folder());
             let mut cuts = Cuts::new();
             let mut polled = Instant::now();
             loop {
@@ -87,7 +87,7 @@ pub fn run() {
                     messages.extend(cuts.poll());
                 }
                 for mut message in messages {
-                    message.app_title = titles.title(&message.session_id);
+                    message.app = app_sessions.get(&message.session_id);
                     if hooks::wants_status(&message.hook)
                         && let Some(path) = &message.transcript_path
                     {

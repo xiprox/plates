@@ -9,6 +9,7 @@ use std::{
 use serde_json::Value;
 
 use crate::{
+    desktop::AppSession,
     rack::{Rack, TileId},
     session::{SessionEvent, Tool, first_line},
     transcript,
@@ -24,8 +25,8 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
     if let Some(status) = &message.status {
         rack.set_status(&message.session_id, status, now);
     }
-    if let Some(title) = &message.app_title {
-        rack.set_app_title(&message.session_id, title);
+    if let Some(app) = &message.app {
+        rack.set_app_session(&message.session_id, app);
     }
     if !known
         && let Some(Ok(Some(prompt))) = message
@@ -52,9 +53,9 @@ pub struct HookMessage {
     /// The newest text Claude wrote in the turn, which the app reads from the transcript for a
     /// tool event, since no hook event carries it mid-turn.
     pub status: Option<String>,
-    /// The title the Claude desktop app shows for the session, which the app reads from the
-    /// desktop app's own file for it.
-    pub app_title: Option<String>,
+    /// The title and ID the Claude desktop app keeps for the session, which the app reads from
+    /// the desktop app's own file for it.
+    pub app: Option<AppSession>,
 }
 
 /// The hook events after which the app reads the transcript for the session's status line.
@@ -124,7 +125,7 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
         transcript_path,
         event,
         status: None,
-        app_title: None,
+        app: None,
     })
 }
 

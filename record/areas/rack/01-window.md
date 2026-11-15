@@ -56,6 +56,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   The policy needs Windows 11 24H2 (build 26100) or later (documented, [console allocation policy](https://learn.microsoft.com/en-us/windows/console/console-allocation-policy), as of 2026-11-15).
   That an earlier Windows ignores it and opens the console window is unverified, and starting the release build on Windows 11 23H2 would settle it.
 - Right-clicking the grip band at the rack's top opens a menu with "Quit Plates", in a popup at the pointer like the timer's menu (user, 2026-11-15).
+  Each menu fades in over 120ms, and DWM's shadow appears once it has, since DWM can't fade a shadow.
   While the rack is docked, you click the strip to slide the rack out, and then right-click the grip band.
 
 ## OS snapping

@@ -13,6 +13,7 @@ mod motion;
 mod native;
 mod place;
 mod rack_view;
+mod rows;
 mod view;
 
 use std::process::ExitCode;

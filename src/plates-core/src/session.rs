@@ -6,9 +6,19 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-/// How long a working tile shows Claude's newest text before the tool Claude used after it, so
-/// the text can be read even when a tool follows it at once.
+/// How long a working tile shows Claude's newest text before what Claude does next, so the text
+/// can be read even when a tool follows it at once.
 pub const STATUS_HOLDS: Duration = Duration::from_secs(4);
+
+/// How long a working tile shows a tool at least, so a tool that runs for a few milliseconds can
+/// still be read.
+pub const TOOL_HOLDS: Duration = Duration::from_secs(1);
+
+/// What a working tile shows while no tool runs and Claude has written nothing new. The Claude
+/// desktop app words a thinking step the same way (read in the Claude desktop app 5.11492.5.0,
+/// ion-dist.asar). No hook event says when Claude thinks, so this stands for all of Claude's work
+/// between tools.
+pub const THINKING: &str = "Thinking…";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionState {
@@ -131,6 +141,8 @@ pub struct Session {
     pub folder: PathBuf,
     /// The title the Claude desktop app shows for the session, from its own file for it.
     pub app_title: Option<String>,
+    /// The Claude desktop app's own ID for the session, which a link opens it by.
+    pub app_id: Option<String>,
     pub custom_title: Option<String>,
     pub first_prompt: Option<String>,
     pub state: SessionState,
@@ -143,8 +155,13 @@ pub struct Session {
     pub status_at: SystemTime,
     /// The newest tool Claude used in the turn, in words, such as "Reading plan.md".
     pub activity: Option<String>,
-    /// What a working tile shows: `status` for `STATUS_HOLDS` after it changes, and then
-    /// `activity`, which `refresh_line` keeps current.
+    /// When that tool started.
+    pub activity_at: SystemTime,
+    /// Whether that tool is still running.
+    pub tool_running: bool,
+    /// What a working tile shows: `status` for `STATUS_HOLDS` after it changes, then `activity`
+    /// while its tool runs and for at least `TOOL_HOLDS`, and `THINKING` otherwise.
+    /// `refresh_line` keeps it current.
     pub line: Option<String>,
     pub pending_tool: Option<Tool>,
     pub ended_at: Option<SystemTime>,
@@ -156,6 +173,7 @@ impl Session {
             id: id.to_string(),
             folder: folder.to_path_buf(),
             app_title: None,
+            app_id: None,
             custom_title: None,
             first_prompt: None,
             state: SessionState::New,
@@ -164,6 +182,8 @@ impl Session {
             status: None,
             status_at: now,
             activity: None,
+            activity_at: now,
+            tool_running: false,
             line: None,
             pending_tool: None,
             ended_at: None,
@@ -172,14 +192,16 @@ impl Session {
 
     /// Recomputes `line` for `now`, and returns whether it changed.
     pub fn refresh_line(&mut self, now: SystemTime) -> bool {
-        let fresh = now
-            .duration_since(self.status_at)
-            .is_ok_and(|d| d < STATUS_HOLDS);
+        let within =
+            |at: SystemTime, hold: Duration| now.duration_since(at).is_ok_and(|d| d < hold);
         let line = match (&self.status, &self.activity) {
-            (Some(status), _) if fresh => Some(status.clone()),
-            (_, Some(activity)) => Some(activity.clone()),
-            (status, None) => status.clone(),
+            (Some(status), _) if within(self.status_at, STATUS_HOLDS) => status.clone(),
+            (_, Some(activity)) if self.tool_running || within(self.activity_at, TOOL_HOLDS) => {
+                activity.clone()
+            }
+            _ => THINKING.to_string(),
         };
+        let line = Some(line);
         let changed = line != self.line;
         self.line = line;
         changed
@@ -292,19 +314,41 @@ mod tests {
     }
 
     #[test]
-    fn a_working_line_holds_new_text_then_shows_the_activity() {
+    fn a_working_line_holds_new_text_then_shows_the_tool_then_thinking() {
         let t0 = UNIX_EPOCH + Duration::from_secs(100);
+        let at = |secs: u64| t0 + Duration::from_secs(secs);
         let mut s = Session::new("a", Path::new("/w"), t0);
-        s.activity = Some("Reading plan.md".into());
         assert!(s.refresh_line(t0));
-        assert_eq!(s.line.as_deref(), Some("Reading plan.md"));
-        s.status = Some("Now the docs.".into());
+        assert_eq!(s.line.as_deref(), Some(THINKING), "before any text or tool");
+
+        s.activity = Some("Running cargo test".into());
+        s.activity_at = t0;
+        s.tool_running = true;
+        s.status = Some("Now the tests.".into());
         s.status_at = t0;
-        assert!(s.refresh_line(t0 + Duration::from_secs(1)));
-        assert_eq!(s.line.as_deref(), Some("Now the docs."));
-        assert!(!s.refresh_line(t0 + Duration::from_secs(3)));
-        assert!(s.refresh_line(t0 + STATUS_HOLDS));
-        assert_eq!(s.line.as_deref(), Some("Reading plan.md"));
+        s.refresh_line(at(1));
+        assert_eq!(s.line.as_deref(), Some("Now the tests."));
+        s.refresh_line(t0 + STATUS_HOLDS);
+        assert_eq!(
+            s.line.as_deref(),
+            Some("Running cargo test"),
+            "while it runs"
+        );
+
+        s.tool_running = false;
+        s.refresh_line(at(5));
+        assert_eq!(s.line.as_deref(), Some(THINKING), "once it finished");
+
+        s.activity = Some("Reading plan.md".into());
+        s.activity_at = at(10);
+        s.refresh_line(at(10));
+        assert_eq!(
+            s.line.as_deref(),
+            Some("Reading plan.md"),
+            "a tool that already finished still shows for TOOL_HOLDS"
+        );
+        s.refresh_line(at(10) + TOOL_HOLDS);
+        assert_eq!(s.line.as_deref(), Some(THINKING));
     }
 
     #[test]

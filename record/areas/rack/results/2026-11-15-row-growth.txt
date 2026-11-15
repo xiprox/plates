@@ -1,0 +1,15 @@
+The rack window's height while a session's tile grows in
+Measured on Windows 11 25H2, 2026-11-15, with the release build of commit 23fc016 plus the
+row motion, started from Explorer, at 100% scaling.
+
+A probe posted a SessionStart for an unknown session to 127.0.0.1:47231/plates/hook, then read
+the rack window's height with GetWindowRect every 2ms for 1.5s and printed each change, as time
+since the post and height in px. Thread.Sleep(2) wakes about every 15.6ms at Windows' default
+timer resolution, so the probe can't see steps finer than that.
+
+0ms:234  293ms:238  309ms:250  324ms:261  340ms:271  355ms:276  370ms:284  385ms:288
+400ms:292  416ms:295  431ms:297  446ms:299  479ms:300
+
+The 293ms before the first change is the events thread searching the desktop app's 332 session
+files for an ID none of them holds. The growth itself ran from 293ms to 479ms, against the 220ms
+the rows ask for.

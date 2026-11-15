@@ -1,6 +1,8 @@
 //! The rack's menus: a popup window of their own at the pointer that opened them, so they can
 //! reach past the rack's edges without growing the rack's window.
 
+use std::time::{Duration, Instant};
+
 use gpui_kit::*;
 use plates_core::{TileId, timer::MENU_MINUTES};
 
@@ -12,6 +14,9 @@ use crate::{
 };
 
 pub const MENU_W: f32 = 156.;
+
+/// How long a menu takes to fade in.
+const FADE: Duration = Duration::from_millis(120);
 
 /// Which menu a right-click opens.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -40,6 +45,7 @@ pub struct MenuView {
     /// Whether the mouse buttons have been up since the menu opened, so the right-click that
     /// opened it doesn't close it.
     armed: bool,
+    opened: Instant,
 }
 
 impl MenuView {
@@ -51,9 +57,14 @@ impl MenuView {
         cx: &mut Context<Self>,
     ) -> Self {
         let hwnd = native::hwnd_of(window);
-        cx.spawn(async move |_, _| {
+        // DWM draws the shadow at full strength around the whole window, so it waits for the
+        // fade to finish rather than outline a menu that isn't there yet.
+        cx.spawn(async move |_, cx| {
             native::take_over(hwnd);
             native::set_bounds(hwnd, bounds);
+            native::set_shadow(hwnd, false);
+            cx.background_executor().timer(FADE).await;
+            native::set_shadow(hwnd, true);
         })
         .detach();
         MenuView {
@@ -61,6 +72,7 @@ impl MenuView {
             kind,
             hwnd,
             armed: false,
+            opened: Instant::now(),
         }
     }
 
@@ -97,12 +109,6 @@ impl MenuView {
                 format!("{m} min")
             };
             Self::row(("minutes", m as u64), &label)
-                .children((m == 5).then(|| {
-                    div()
-                        .text_size(px(11.))
-                        .text_color(rgb(MUTED))
-                        .child("click")
-                }))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.rack
                         .update(cx, |rack, cx| rack.pick_minutes(tile, m, cx))
@@ -145,7 +151,9 @@ impl Render for MenuView {
             MenuKind::Timer(tile) => self.timer_items(tile, cx),
             MenuKind::Rack => self.rack_items(cx),
         };
+        let shown = (self.opened.elapsed().as_secs_f32() / FADE.as_secs_f32()).min(1.);
         div()
+            .opacity(1. - (1. - shown).powi(3))
             .size_full()
             .font_family("Inter")
             .line_height(relative(1.21))

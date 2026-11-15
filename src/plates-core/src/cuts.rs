@@ -89,7 +89,7 @@ impl Cuts {
                     transcript_path: Some(w.path.clone()),
                     event: Some(SessionEvent::Interrupted { denied }),
                     status: None,
-                    app_title: None,
+                    app: None,
                 });
                 false
             }
@@ -207,7 +207,7 @@ mod tests {
             transcript_path: Some(path.to_path_buf()),
             event: Some(SessionEvent::ToolFinished),
             status: None,
-            app_title: None,
+            app: None,
         }
     }
 

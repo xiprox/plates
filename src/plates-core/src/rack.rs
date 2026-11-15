@@ -7,6 +7,7 @@ use std::{
 };
 
 use crate::{
+    desktop::AppSession,
     session::{Session, SessionEvent, SessionState, first_line, prompt_title},
     timer::{DEFAULT_MINUTES, Timer},
 };
@@ -188,11 +189,14 @@ impl Rack {
                 s.summary = None;
                 s.status = None;
                 s.activity = None;
+                s.tool_running = false;
                 s.pending_tool = None;
                 set_state(s, &mut tile.timer, SessionState::Working);
             }
             SessionEvent::ToolPending { tool } => {
                 s.activity = Some(tool.activity());
+                s.activity_at = now;
+                s.tool_running = true;
                 s.pending_tool = Some(tool);
             }
             SessionEvent::ApprovalAsked { tool } => {
@@ -215,6 +219,7 @@ impl Rack {
             }
             SessionEvent::ToolFinished => {
                 s.pending_tool = None;
+                s.tool_running = false;
                 if s.state == SessionState::NeedsApproval {
                     s.summary = None;
                     set_state(s, &mut tile.timer, SessionState::Working);
@@ -362,14 +367,19 @@ impl Rack {
         }
     }
 
-    /// Sets the title the Claude desktop app shows for a session.
-    pub fn set_app_title(&mut self, session_id: &str, title: &str) {
+    /// Sets the title and ID the Claude desktop app keeps for a session, from its file for it.
+    pub fn set_app_session(&mut self, session_id: &str, app: &AppSession) {
         let session = self.tiles.iter_mut().find_map(|t| match &mut t.body {
             Body::Session(s) if s.id == session_id => Some(s),
             _ => None,
         });
         if let Some(s) = session {
-            s.app_title = Some(title.to_string());
+            if app.title.is_some() {
+                s.app_title = app.title.clone();
+            }
+            if app.id.is_some() {
+                s.app_id = app.id.clone();
+            }
         }
     }
 
@@ -873,6 +883,11 @@ mod tests {
         assert_eq!(
             session(&rack, id).line.as_deref(),
             Some("Running cargo build")
+        );
+        apply(&mut rack, "a", SessionEvent::ToolFinished, 30);
+        assert_eq!(
+            session(&rack, id).line.as_deref(),
+            Some(crate::session::THINKING)
         );
     }
 

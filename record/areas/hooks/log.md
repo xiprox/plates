@@ -2,6 +2,26 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: The Claude desktop app opens one session from a continue link with its own ID
+
+**Asked:** can a link open one session in the Claude desktop app, for [the plan's step 6](../product/plan.md#6-opening-a-session-from-its-tile)?
+
+**Expected:** no, since the app documents only `claude://code/new`.
+
+**Found:** we read the app's link handler in its code and then tried the link (read in the Claude desktop app 5.11492.5.0, `app.asar`, the `claude://` handler; measured on Windows 11 25H2, 2026-11-15).
+
+- The app registers the `claude` scheme in its package manifest, and passes each link to its own handler.
+- For `claude://code/continue`, the handler takes `session=last`, or a `session` that matches `^local_[A-Za-z0-9-]{1,64}$`, the app's own ID for a session, which its file for the session holds as `sessionId`.
+  It looks the ID up among the sessions that aren't archived and shows that session, or the Code page when none matches.
+- Opening `claude://code/continue?session=local_<id>` from a shell switched the app from one session to the other, and a second link switched it back.
+- The app's menu offers `claude://code/continue?session=last` as "Continue Last Claude Code Session", and `claude://code/needs-input` as "Sessions Waiting for You".
+- None of this is documented, so an update to the app can change it without notice.
+
+**Changed:** clicking a session tile opens that link, with the ID from the app's file for the session.
+We haven't yet measured whether the app comes to the front when Plates opens the link while another window covers it.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#opening-a-session) and [02-tiles](../rack/02-tiles.md#session-tiles).
+
 ## 2026-11-15: An interrupt and a denial each write a marker record to the transcript
 
 **Asked:** since no hook event fires after you interrupt Claude or deny a tool, does the transcript show either at once?

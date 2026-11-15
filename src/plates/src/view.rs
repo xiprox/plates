@@ -1,7 +1,7 @@
 //! Draws the rack and its docked strip as the mockups do, from their styles in Main.dc.html and
 //! Docked.dc.html, and from the rules in record/areas/rack/02-tiles.md.
 
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use gpui_kit::component::{input::Input, tooltip::Tooltip};
 use gpui_kit::*;
@@ -11,7 +11,7 @@ use crate::{
     markup::{self, Mark},
     menu::MenuKind,
     motion::{PEEK, Side},
-    rack_view::{POPOVER_GAP, POPOVER_W, RackView, STRIP_W, TOAST_H, rack_height},
+    rack_view::{POPOVER_GAP, POPOVER_W, RackView, STRIP_W, TOAST_H},
 };
 
 const BG: u32 = 0x131417;
@@ -28,8 +28,8 @@ const GRAY: u32 = 0x5E626B;
 
 /// How long a tile's background brightens when it starts needing you.
 const BRIGHTEN: Duration = Duration::from_millis(1400);
-/// How long a new session's tile slides in before it brightens.
-const ENTER: Duration = Duration::from_millis(450);
+/// A new session's tile brightens once it has grown in.
+const ENTER: Duration = crate::rows::ENTER;
 
 /// The font the rack's text uses. The root of the rack's view sets the same family.
 const SANS: &str = "Inter";
@@ -38,6 +38,18 @@ const MONO: &str = if cfg!(windows) { "Consolas" } else { "Menlo" };
 
 fn white(alpha: f32) -> Hsla {
     hsla(0., 0., 1., alpha)
+}
+
+// A row of the rack, `full` px tall once grown, at `factor` of its height and opacity, with what
+// doesn't fit cut off below.
+fn grown(row: AnyElement, full: f32, factor: f32) -> AnyElement {
+    div()
+        .flex_none()
+        .h(px(full * factor))
+        .overflow_hidden()
+        .opacity(factor)
+        .child(row)
+        .into_any_element()
 }
 
 // A line Claude wrote, with its `code` in the monospace font on a faint background and its
@@ -537,48 +549,47 @@ impl RackView {
         border_width(phantom, 1.5).into_any_element()
     }
 
-    // The Undo row, which shows for 5s after you remove your own tile.
-    fn undo_row(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let toast = self.toast.as_ref()?;
-        Some(
-            div()
-                .h(px(TOAST_H))
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(px(12.))
-                .px(px(14.))
-                .rounded(px(9.))
-                .bg(rgb(BG))
-                .border_1()
-                .border_color(rgb(BORDER))
-                .text_size(px(12.5))
-                .text_color(rgb(TEXT))
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .child(format!("Removed \u{201c}{}\u{201d}", toast.title)),
-                )
-                .child(
-                    div()
-                        .id("undo")
-                        .flex_none()
-                        .h(px(26.))
-                        .px(px(10.))
-                        .flex()
-                        .items_center()
-                        .rounded(px(6.))
-                        .bg(rgb(BORDER))
-                        .hover(|s| s.bg(rgb(0x34363C)))
-                        .text_color(rgb(0x9CC4FF))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .cursor_pointer()
-                        .child("Undo")
-                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.undo_remove(cx))),
-                )
-                .into_any_element(),
-        )
+    // The Undo row, which shows for 5s after you remove your own tile, and grows in and shrinks
+    // out as a tile does.
+    fn undo_row(&self, now: Instant, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (title, factor) = self.rows.undo(now)?;
+        let row = div()
+            .h(px(TOAST_H))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(12.))
+            .px(px(14.))
+            .rounded(px(9.))
+            .bg(rgb(BG))
+            .border_1()
+            .border_color(rgb(BORDER))
+            .text_size(px(12.5))
+            .text_color(rgb(TEXT))
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .child(format!("Removed \u{201c}{title}\u{201d}")),
+            )
+            .child(
+                div()
+                    .id("undo")
+                    .flex_none()
+                    .h(px(26.))
+                    .px(px(10.))
+                    .flex()
+                    .items_center()
+                    .rounded(px(6.))
+                    .bg(rgb(BORDER))
+                    .hover(|s| s.bg(rgb(0x34363C)))
+                    .text_color(rgb(0x9CC4FF))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .cursor_pointer()
+                    .child("Undo")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.undo_remove(cx))),
+            );
+        Some(grown(row.into_any_element(), TOAST_H + 6., factor))
     }
 
     pub(crate) fn render_rack(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -591,14 +602,30 @@ impl RackView {
                 let p = since.elapsed().as_secs_f32() / crate::motion::HOLD.as_secs_f32();
                 (side, p.min(1.))
             });
-        let tiles: Vec<AnyElement> = self
-            .rack
-            .tiles()
-            .iter()
-            .enumerate()
-            .map(|(i, t)| self.tile(i, t, now, cx))
-            .collect();
-        let undo = self.undo_row(cx);
+        // A shrinking tile is drawn above the tile it sat above, or after the last tile. Its
+        // group and element names count from LEAVING, so they never match a present tile's.
+        const LEAVING: usize = 10_000;
+        let at = Instant::now();
+        let present = self.rack.tiles();
+        let leaving = self.rows.leaving();
+        let mut tiles: Vec<AnyElement> = Vec::new();
+        for (i, t) in present.iter().enumerate() {
+            for (k, l) in leaving.iter().enumerate() {
+                if l.before == Some(t.id) {
+                    let el = self.tile(LEAVING + k, &l.tile, now, cx);
+                    tiles.push(grown(el, 66., l.factor(at)));
+                }
+            }
+            let el = self.tile(i, t, now, cx);
+            tiles.push(grown(el, 66., self.rows.factor(t.id, at)));
+        }
+        for (k, l) in leaving.iter().enumerate() {
+            if l.before.is_none_or(|b| present.iter().all(|t| t.id != b)) {
+                let el = self.tile(LEAVING + k, &l.tile, now, cx);
+                tiles.push(grown(el, 66., l.factor(at)));
+            }
+        }
+        let undo = self.undo_row(at, cx);
         let last = self.last_row(cx);
         let band = div()
             .h(px(28.))
@@ -638,7 +665,7 @@ impl RackView {
                 Side::Right => bar.right_0(),
             }
         });
-        let height = rack_height(self.rack.tiles().len(), self.toast.is_some());
+        let height = self.shown_height();
         let panel = div()
             .relative()
             .w_full()
@@ -656,11 +683,12 @@ impl RackView {
             })
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_press))
             .child(band)
+            // Each tile's row and the Undo row carry the 6px below them, so a row that grows or
+            // shrinks takes its gap with it.
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
                     .children(tiles)
                     .children(undo)
                     .child(last),
@@ -776,10 +804,11 @@ impl RackView {
 impl Render for RackView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.scale = window.scale_factor() as f64;
+        self.track_rows();
         self.step(cx);
         self.place(cx);
         self.remember_place();
-        if self.animating() || self.tiles_animating() {
+        if self.animating() || self.tiles_animating() || self.rows.animating(Instant::now()) {
             window.request_animation_frame();
         }
         let content = match self.docked {

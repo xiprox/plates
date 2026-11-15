@@ -13,6 +13,9 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 ## Layout
 
 - Tiles never change places, so a change of state never moves a tile under your cursor, and only adding or clearing a tile moves the tiles below it.
+- A tile that arrives grows from nothing to its full row over 220ms, and one that goes shrinks out over 180ms, fading as it does, so the tiles below it slide rather than jump, and the rack's window grows and shrinks with them (user, 2026-11-15, [rack log](log.md#2026-11-15-the-racks-window-can-change-height-on-every-frame)).
+  The Undo row grows in and shrinks out the same way.
+  A change of state, such as a new summary line or a new color, shows at once, so a fast change can still be read (user, 2026-11-15).
 - Session tiles come first, then your own tiles, with no divider or gap between the groups (user, 2026-11-15).
 - A session tile's marker is a circle, and your own tile's is a square.
 - A title wraps to two lines when the tile has no summary line, and truncates after the second.
@@ -22,7 +25,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 
 | State | Starts when | The tile shows |
 | --- | --- | --- |
-| New | the session starts | the tile slides in, and its background brightens blue once |
+| New | the session starts | the tile grows in, and its background then brightens blue once |
 | Working | Claude starts a turn, such as when you send a prompt | a blue dot that breathes on a 2.4s cycle, and a blue summary line of what Claude last wrote or is doing, such as "Reading plan.md" ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries)) |
 | Your turn | Claude finishes its turn, or you interrupt Claude or deny a tool | an amber dot, an amber summary line, and a timer that starts on its own; the summary line is the first line of Claude's last message, or "Interrupted", or "Denied: " and what you denied, such as "Denied: rm -rf target" |
 | Needs approval | Claude asks you to approve a tool | an orange dot, what Claude wants to do as an orange summary line, such as "Wants to run: cargo test -p collector", and a timer that starts on its own |
@@ -30,7 +33,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 
 [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) says which hook event starts each state.
 
-- Clicking a session tile opens that session in the Claude desktop app, or brings the app forward where no link opens one session ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session)).
+- Clicking a session tile opens that session in the Claude desktop app, and a session the app doesn't keep, such as one in a terminal, has nowhere to open ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session)).
 - A summary line draws text between backticks in a monospace font on a background of 8% white, and text between double asterisks in bold, and leaves out the backticks and asterisks (user, 2026-11-15).
 - Hovering a session tile shows its summary line whole, which the tile cuts to one line, and its state in words, such as "Your turn · waiting 12m" (user, 2026-11-15).
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).

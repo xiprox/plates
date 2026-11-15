@@ -2,6 +2,22 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-15: The rack's window can change height on every frame
+
+**Asked:** can the rack's window follow a tile that grows in, by changing its height with `SetWindowPos` on each frame, or does a resize each frame stutter?
+
+**Expected:** a stutter, since GPUI rebuilds its drawing surface when the window's size changes (unverified).
+
+**Found:** a probe sent a session's first event and read the window's height every 2ms (measured on Windows 11 25H2, 2026-11-15, [results/2026-11-15-row-growth.txt](results/2026-11-15-row-growth.txt)).
+
+- The height went from 234px to 300px in 12 steps over 186ms, easing out as the rows ask, at the probe's 15.6ms resolution.
+- The tile's first event reached the rack 293ms after it was sent, because a session the desktop app doesn't keep makes Plates search all of the app's session files once.
+- We judged smoothness only from the steps, and haven't watched for a stutter by eye or on a monitor above 60Hz.
+
+**Changed:** a tile grows in and shrinks out, and the window's height follows it each frame.
+
+**Affects:** [02-tiles](02-tiles.md#layout).
+
 ## 2026-11-15: DWM draws the rack's drop shadow once the window's frame reaches 1px into its client area
 
 **Asked:** can the rack have the mockups' drop shadow without a transparent margin around it, which would take clicks meant for the windows below?

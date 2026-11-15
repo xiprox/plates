@@ -55,8 +55,11 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 - An approval's summary line is built from the tool the `PermissionRequest` names, or else from the `PreToolUse` before it: "Wants to run: " and the command for a shell command, "Wants to edit: " and the file for an edit, and "Wants to use: " and the tool's name for any other tool.
   Where neither names a tool, the summary is the `Notification`'s `message`.
 - Your turn's summary line is the first line of `Stop`'s `last_assistant_message`, because the transcript isn't guaranteed to hold Claude's final message when `Stop` fires.
-- A working tile's summary line is the first line of the newest text Claude wrote since your last prompt, for 4s after that text changes, and then, once Claude has used a tool in the turn, what Claude is doing with its newest one, so the text can be read even when a tool follows it at once (user, 2026-11-15).
+- A working tile's summary line is the first line of the newest text Claude wrote since your last prompt, for 4s after that text changes, so the text can be read even when a tool follows it at once (user, 2026-11-15).
   No hook event carries the text mid-turn, so Plates reads it from the end of the transcript after each tool event, and it can trail Claude by a record or two.
+- After those 4s, the line shows what Claude is doing with a tool from its `PreToolUse` until its `PostToolUse`, and for at least 1s, so a tool that runs for a few milliseconds can still be read.
+- Otherwise the line is "Thinking…", the Claude desktop app's own word for a thinking step (read in the Claude desktop app 5.11492.5.0, ion-dist.asar, the function that labels a thinking step).
+  No hook event says when Claude thinks, so the line says it for all of Claude's work between tools, such as before the first tool after your prompt (user, 2026-11-15).
 
 What Claude is doing comes from the tool's `PreToolUse`:
 
@@ -90,11 +93,11 @@ The receiver answers each request with an empty 200 before it acts on the event,
 
 ## Opening a session
 
-On Windows, the Claude desktop app registers a `claude://` link handler (measured on Windows 11 25H2, 2026-11-15, [hooks log](log.md#2026-11-15-claude-code-documents-hooks-in-desktop-sessions-and-an-http-hook-type-but-no-link-that-opens-one-desktop-session)), and we haven't looked on macOS.
-Its one documented link, `claude://code/new`, opens the app's new-session page, and no documented link opens one session.
-`claude --desktop --resume <session-id>` opens a session in the app by its ID, but it's documented only for a session started from the CLI and not still running ([hooks log](log.md#2026-11-15-claude-code-documents-the-final-message-on-stop-failure-events-and-the-session-title-on-every-prompt)).
-[The plan's step 6](../product/plan.md#6-opening-a-session-from-its-tile) tries it on a desktop session, and until a way is found, clicking a session tile brings the Claude app forward.
-The app's own file for a session holds the app's ID for it, `sessionId`, as `local_<id>`, and whether a link or `claude --desktop` can take that ID is unverified ([hooks log](log.md#2026-11-15-the-claude-desktop-app-keeps-a-file-per-session-with-its-title-and-its-claude-code-session-ids)).
+Clicking a session tile opens `claude://code/continue?session=local_<id>`, with the app's own ID for the session from the app's file for it, and the Claude desktop app shows that session ([hooks log](log.md#2026-11-15-the-claude-desktop-app-opens-one-session-from-a-continue-link-with-its-own-id)).
+The link is undocumented: we read it in the app's code and measured it from a shell, so an update to the app can change it.
+Before it opens the link, Plates lets any program take the foreground, since the rack never takes it and the app must come to the front.
+A session the app doesn't keep, such as one in a terminal, has no such ID, and clicking its tile opens nothing.
+We haven't looked at how the app opens one session on macOS.
 
 ## Left open
 

@@ -9,7 +9,7 @@ use std::{
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::*;
 use plates_core::{
-    Rack, Removed, TileId,
+    Rack, Removed, TileId, desktop,
     hooks::{self, HookMessage},
     store,
     timer::DEFAULT_MINUTES,
@@ -20,6 +20,7 @@ use crate::{
     motion::{self, Ease, Rect, Side, Tween},
     native,
     place::{self, Place},
+    rows::Rows,
 };
 
 pub const RACK_W: f32 = 304.;
@@ -32,7 +33,12 @@ const TOAST_FOR: Duration = Duration::from_secs(5);
 /// The rack's height: a 28px band, a 60px row for each tile and for the phantom tile with 6px
 /// between rows, the Undo row while it shows, 12px of padding below, and a 1px border.
 pub fn rack_height(tiles: usize, toast: bool) -> f32 {
-    102. + 66. * tiles as f32 + if toast { TOAST_H + 6. } else { 0. }
+    rack_height_for(tiles as f32, if toast { 1. } else { 0. })
+}
+
+/// The rack's height while rows grow and shrink, with each row counted by how far it has grown.
+pub fn rack_height_for(tile_rows: f32, undo_row: f32) -> f32 {
+    102. + 66. * tile_rows + (TOAST_H + 6.) * undo_row
 }
 
 pub fn strip_height(tiles: usize) -> f32 {
@@ -94,6 +100,7 @@ pub struct RackView {
     /// The place last saved, which is `None` until the window has taken its saved place, so the
     /// window's first position isn't saved over it.
     saved_place: Option<Place>,
+    pub(crate) rows: Rows,
     pub(crate) input: Entity<InputState>,
     pub(crate) field: Option<Field>,
     pub(crate) menu: Option<Menu>,
@@ -192,6 +199,7 @@ impl RackView {
             data_file,
             place_file,
             saved_place: None,
+            rows: Rows::default(),
             input,
             field: None,
             menu: None,
@@ -361,10 +369,10 @@ impl RackView {
                 };
                 Rect::new((x, self.pos.1), (w, h))
             }
-            None => {
-                let h = rack_height(self.rack.tiles().len(), self.toast.is_some());
-                Rect::new(self.pos, (RACK_W as f64 * s, h as f64 * s))
-            }
+            None => Rect::new(
+                self.pos,
+                (RACK_W as f64 * s, self.shown_height() as f64 * s),
+            ),
         }
     }
 
@@ -533,8 +541,28 @@ impl RackView {
     }
 
     fn rack_size(&self) -> (f64, f64) {
-        let h = rack_height(self.rack.tiles().len(), self.toast.is_some());
-        (RACK_W as f64 * self.scale, h as f64 * self.scale)
+        (
+            RACK_W as f64 * self.scale,
+            self.shown_height() as f64 * self.scale,
+        )
+    }
+
+    /// The rack's height in logical pixels this frame, with its rows as far as they've grown.
+    pub(crate) fn shown_height(&self) -> f32 {
+        let now = Instant::now();
+        let undo = self.rows.undo(now).map_or(0., |(_, f)| f);
+        rack_height_for(self.rows.tile_rows(self.rack.tiles(), now), undo)
+    }
+
+    /// Notes the rows that changed since the last frame, so they grow in or shrink out.
+    pub(crate) fn track_rows(&mut self) {
+        let undo = self.toast.as_ref().map(|t| t.title.as_str());
+        self.rows.track(
+            self.rack.tiles(),
+            undo,
+            self.docked.is_none(),
+            Instant::now(),
+        );
     }
 
     // The rack slides into the edge it was held against, and the strip takes its place.
@@ -628,6 +656,16 @@ impl RackView {
         if clicks >= 2 && tile.is_own() {
             self.start_field(FieldFor::Rename(id), window, cx);
             return;
+        }
+        // A session the Claude desktop app keeps opens there by the app's own ID, and a session
+        // it doesn't, such as one in a terminal, has nowhere to open.
+        if let Some(link) = tile
+            .session()
+            .and_then(|s| s.app_id.as_deref())
+            .and_then(desktop::session_link)
+            && !native::open_url(&link)
+        {
+            eprintln!("Couldn't open {link}");
         }
         if tile.timer.is_time_up() {
             self.rack.clear_time_up(id, SystemTime::now());
