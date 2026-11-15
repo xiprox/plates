@@ -182,6 +182,27 @@ impl RackView {
                 }
             }
         });
+        // A game in borderless full screen raises itself over the rack when it comes to the
+        // front, and can do it a moment later, so the rack checks at once and 200ms after, and
+        // once a second for a window that raises itself without coming to the front.
+        let raised = cx.spawn(async move |_, cx| {
+            let Some(foreground) = native::watch_foreground() else {
+                return;
+            };
+            while foreground.recv().await.is_ok() {
+                native::keep_on_top(hwnd);
+                cx.background_executor()
+                    .timer(Duration::from_millis(200))
+                    .await;
+                native::keep_on_top(hwnd);
+            }
+        });
+        let on_top = cx.spawn(async move |_, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                native::keep_on_top(hwnd);
+            }
+        });
         let tick = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
@@ -222,7 +243,7 @@ impl RackView {
             last_frame: None,
             applied: None,
             _subs: subs,
-            _tasks: vec![take_over, receive, tick],
+            _tasks: vec![take_over, receive, tick, raised, on_top],
         };
         view.rack.tick(SystemTime::now());
         view.nudged_for = view.latest_need();

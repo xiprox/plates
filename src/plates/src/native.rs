@@ -5,15 +5,19 @@
 
 use std::{
     ffi::c_void,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
     Graphics::{
         Dwm::{
-            DWM_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE,
-            DWMWCP_DONOTROUND, DWMWCP_ROUND, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
+            DWM_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR, DWMWA_CLOAKED,
+            DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
+            DwmExtendFrameIntoClientArea, DwmGetWindowAttribute, DwmSetWindowAttribute,
         },
         Gdi::{
             ClientToScreen, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL,
@@ -21,15 +25,18 @@ use windows::Win32::{
         },
     },
     UI::{
+        Accessibility::{HWINEVENTHOOK, SetWinEventHook},
         Controls::MARGINS,
         Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON},
         Shell::{DefSubclassProc, SetWindowSubclass, ShellExecuteW},
         WindowsAndMessaging::{
-            ASFW_ANY, AllowSetForegroundWindow, GWL_EXSTYLE, GetClientRect, GetCursorPos,
-            GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, MA_NOACTIVATE, SW_SHOWNORMAL,
-            SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
-            SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, WM_MOUSEACTIVATE,
-            WM_NCCALCSIZE, WS_EX_NOACTIVATE,
+            ASFW_ANY, AllowSetForegroundWindow, EVENT_SYSTEM_FOREGROUND, GW_HWNDPREV, GWL_EXSTYLE,
+            GetClientRect, GetCursorPos, GetForegroundWindow, GetWindow, GetWindowLongPtrW,
+            GetWindowRect, GetWindowThreadProcessId, HWND_TOPMOST, IsWindowVisible, MA_NOACTIVATE,
+            SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+            SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
+            WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_MOUSEACTIVATE, WM_NCCALCSIZE,
+            WS_EX_NOACTIVATE, WS_EX_TOPMOST,
         },
     },
 };
@@ -272,6 +279,113 @@ pub fn foreground_window() -> isize {
 
 pub fn set_foreground(h: isize) -> bool {
     unsafe { SetForegroundWindow(hwnd(h)).as_bool() }
+}
+
+// Windows stacks the topmost windows by which went on top last, so a game in borderless full
+// screen, itself a topmost window, covers the rack once Windows raises it (measured on Windows 11
+// 25H2, 2026-11-15, record/areas/rack/log.md). The rack checks whether another program's topmost
+// window covers any of it, and if one does, puts itself back on top without taking focus.
+pub fn keep_on_top(h: isize) {
+    if covered(h) {
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd(h),
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            );
+        }
+    }
+}
+
+// Walks the windows above the rack in z-order, and finds one of another program's that's
+// topmost, shown, and over the rack. A cloaked window, such as an app on another virtual
+// desktop, counts as hidden, since Windows reports it visible but doesn't draw it.
+fn covered(h: isize) -> bool {
+    unsafe {
+        let me = hwnd(h);
+        let mut ours = 0u32;
+        GetWindowThreadProcessId(me, Some(&mut ours));
+        let mut rack = RECT::default();
+        if GetWindowRect(me, &mut rack).is_err() {
+            return false;
+        }
+        let mut next = GetWindow(me, GW_HWNDPREV);
+        while let Ok(above) = next {
+            let mut theirs = 0u32;
+            GetWindowThreadProcessId(above, Some(&mut theirs));
+            let topmost = GetWindowLongPtrW(above, GWL_EXSTYLE) & WS_EX_TOPMOST.0 as isize != 0;
+            let mut r = RECT::default();
+            let overlaps = GetWindowRect(above, &mut r).is_ok()
+                && r.left < rack.right
+                && rack.left < r.right
+                && r.top < rack.bottom
+                && rack.top < r.bottom;
+            if theirs != ours
+                && topmost
+                && overlaps
+                && IsWindowVisible(above).as_bool()
+                && !cloaked(above)
+            {
+                return true;
+            }
+            next = GetWindow(above, GW_HWNDPREV);
+        }
+        false
+    }
+}
+
+fn cloaked(h: HWND) -> bool {
+    let mut value = 0u32;
+    unsafe {
+        DwmGetWindowAttribute(
+            h,
+            DWMWA_CLOAKED,
+            &mut value as *mut u32 as *mut c_void,
+            size_of::<u32>() as u32,
+        )
+        .is_ok()
+            && value != 0
+    }
+}
+
+static FOREGROUND: OnceLock<async_channel::Sender<()>> = OnceLock::new();
+
+/// Sends on the returned channel each time another program's window comes to the foreground,
+/// which is when a game raises itself over the rack. It must be called on the thread that runs
+/// the window's message loop, since Windows delivers the event through that loop.
+pub fn watch_foreground() -> Option<async_channel::Receiver<()>> {
+    let (tx, rx) = async_channel::unbounded();
+    FOREGROUND.set(tx).ok()?;
+    let hook = unsafe {
+        SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            None,
+            Some(on_foreground),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+        )
+    };
+    (!hook.is_invalid()).then_some(rx)
+}
+
+unsafe extern "system" fn on_foreground(
+    _: HWINEVENTHOOK,
+    _: u32,
+    _: HWND,
+    _: i32,
+    _: i32,
+    _: u32,
+    _: u32,
+) {
+    if let Some(tx) = FOREGROUND.get() {
+        let _ = tx.try_send(());
+    }
 }
 
 /// Opens a link with the program Windows has for its scheme, such as the Claude desktop app for

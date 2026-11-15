@@ -13,6 +13,10 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 ## Shape
 
 - The window is borderless, with 14px rounded corners, and has no taskbar or Dock entry.
+- It stays above every other window, a game in borderless full screen included (user, 2026-11-15).
+  On Windows, a game in borderless full screen is a topmost window like the rack, and Windows puts whichever topmost window went on top last above the others, so the game covers the rack once Windows raises it ([rack log](log.md#2026-11-15-another-programs-topmost-window-covers-the-rack-until-the-rack-raises-itself)).
+  So when another program's window comes to the front, and again 200ms later and once a second, Plates checks whether another program's shown, topmost window covers any of the rack, and if one does, puts the rack back on top without taking focus.
+  A game in exclusive full screen bypasses the Desktop Window Manager, and no other window shows over it (unverified).
 - On macOS, it shows on every Space and over full-screen apps.
 - It has no title.
   A 28px band at its top holds a centered, horizontal grip of six dots.
@@ -70,4 +74,5 @@ On Windows, the OS started no move loop on the rack over 8,282 moves by hand (me
 
 - Whether the rack also docks to the top and bottom edges.
 - Whether the rack keeps a place for each arrangement of monitors, so that when you unplug a laptop from its external monitors, the rack goes back to where it sat on the laptop's own screen.
-- Whether the rack hides from screen capture, and whether it hides while a full-screen app is in front.
+- Whether the rack hides from screen capture.
+- Whether the rack, by covering part of a game in borderless full screen, costs the game frame rate, since Windows then composes the game's frames with the rack's rather than showing them directly (unverified).

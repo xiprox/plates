@@ -2,6 +2,23 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-15: Another program's topmost window covers the rack until the rack raises itself
+
+**Asked:** why does the rack go behind a game in borderless full screen, and can it stay above?
+
+**Expected:** that the game is a topmost window too, and that Windows puts the newer one on top.
+
+**Found:** a stand-in for the game, a borderless, topmost WinForms window from another process shown over the rack, sat above it in z-order, as `EnumWindows` reported it (measured on Windows 11 25H2, 2026-11-15).
+
+- Before the fix, the stand-in stayed above the rack for the whole 3s it showed.
+- With the rack checking once a second whether another program's topmost window covers it, and raising itself with `SetWindowPos` and `HWND_TOPMOST` if one does, the stand-in was still above at 0.7s and below the rack at 2s and 3s.
+- The stand-in never became the foreground window, so the check that runs when another program comes to the front didn't run, and how fast it raises the rack over a real game is unverified.
+- We haven't tried a real game, or one in exclusive full screen.
+
+**Changed:** the rack keeps itself above other programs' topmost windows.
+
+**Affects:** [01-window](01-window.md#shape).
+
 ## 2026-11-15: The rack's window can change height on every frame
 
 **Asked:** can the rack's window follow a tile that grows in, by changing its height with `SetWindowPos` on each frame, or does a resize each frame stutter?
