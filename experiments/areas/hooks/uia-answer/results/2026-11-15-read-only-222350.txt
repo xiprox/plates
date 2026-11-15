@@ -1,0 +1,44 @@
+uia-answer, run at 2026-11-15 22:23:50 UTC
+Windows: Microsoft Windows [Version 10.0.26200.9711]
+
+== Session ==
+session the app opened last (newest lastFocusedAt): local_e4c2b1b0-16ce-4c53-be73-25a5e5fc8bd2 "Plates"
+no --session given, so the probe reads whatever the app shows
+
+== Before the first walk ==
+UiaClientsAreListening: true
+app command lines, processes read: 29
+window 0x50520 pid=1936 class="Chrome_WidgetWin_1" title="Claude" rect=(362,15 2626x1375) app=5.11492.5.0
+walking window 0x50520
+
+== Question 5: the tree on the first walk and after ==
+walk at +0ms: 24 elements, depth 10, 20 with FrameworkId Chrome, 4 buttons, 4 documents with [1, 0, 1, 0] children, took 78ms by one cached subtree request
+walk at +300ms: 1068 elements, depth 44, 1064 with FrameworkId Chrome, 217 buttons, 4 documents with [1, 0, 1, 1] children, took 143ms by one cached subtree request
+walk at +700ms: 1068 elements, depth 44, 1064 with FrameworkId Chrome, 217 buttons, 4 documents with [1, 0, 1, 1] children, took 104ms by one cached subtree request
+selected item: RadioButton name="Code" automationId="base-ui-_r_1m_" className="cds-reset relative z-[1] inline-flex h-full items-center justify-center gap-1.5 ..." ariaRole="radio" framework="Chrome" patterns=[Invoke, Value(readOnly=false, length=0), SelectionItem(selected=true)] enabled=true offscreen=false focusable=true focused=false rect=(615,20 34x26) defaultAction="Check" children=0
+
+== Question 3: the wrap-up's buttons ==
+no wrap-up in the transcript, so no labels to look for
+
+== Question 4: the composer ==
+editable candidates (Edit or Document, with Value or Text, focusable, not read-only): 1
+  Edit name="Prompt" automationId="" className="tiptap ProseMirror" ariaRole="textbox" framework="Chrome" patterns=[Value(readOnly=false, length=1), Text] enabled=true offscreen=false focusable=true focused=false rect=(1319,1309 644x22) defaultAction="" children=1
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[2]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[0]/Edit[0]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Plates - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+    selectors: AutomationId empty; Name+ControlType shared by 1; ClassName+ControlType shared by 1; AriaRole "textbox" shared by 1
+  FindAll(Descendants, Name="Prompt" and ControlType=Edit): 1 in 25ms
+every Edit element: 1
+  Edit name="Prompt" automationId="" className="tiptap ProseMirror" ariaRole="textbox" framework="Chrome" patterns=[Value(readOnly=false, length=1), Text] enabled=true offscreen=false focusable=true focused=false rect=(1319,1309 644x22) defaultAction="" children=1
+the invokable elements within four levels above the composer:
+  Group name="" automationId="" className="w-full max-h-96 min-h-[var(--cmp-row-h)] overflow-y-auto break-words [--cmp-type..." ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1319,1306 644x28) defaultAction="Press" children=2
+  Group name="" automationId="" className="contents" ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1283,1306 36x10) defaultAction="Press" children=0
+  Group name="" automationId="_r_62ko_" className="flex" ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1971,1306 28x28) defaultAction="Press" children=1
+  Group name="" automationId="" className="contents" ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1971,1306 28x28) defaultAction="Press" children=1
+  Button name="Stop" automationId="_r_62kr_" className="cds-reset group/btn relative isolate inline-flex shrink-0 items-center justify-c..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1971,1306 28x28) defaultAction="Press" children=0
