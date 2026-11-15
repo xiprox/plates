@@ -1,0 +1,43 @@
+﻿A session transcript of the Claude desktop app (entrypoint claude-desktop, Claude Code 2.1.325),
+Windows 11 25H2, 2026-11-15. The first 40 records: type, origin.kind, isSidechain, the kinds of message.content, and the record's keys. No text.
+
+queue-operation | origin=- | sidechain= | content=- | keys=operation,sessionId,timestamp,type
+queue-operation | origin=- | sidechain= | content=- | keys=operation,sessionId,timestamp,type
+user | origin=human | sidechain=False | content=text(system-reminder)+text | keys=clientPlatform,cwd,entrypoint,gitBranch,isSidechain,message,origin,parentUuid,permissionMode,promptId,promptSource,sessionId,timestamp,turnAttributionKey,turnOrigin,turnPosition,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedRole,sessionId,timestamp,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedRole,sessionId,timestamp,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedRole,sessionId,timestamp,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedRole,sessionId,timestamp,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedRole,sessionId,timestamp,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedRole,sessionId,timestamp,type,userType,uuid,version
+last-prompt | origin=- | sidechain= | content=- | keys=lastPrompt,leafUuid,sessionId,type
+file-history-snapshot | origin=- | sidechain= | content=- | keys=isSnapshotUpdate,messageId,snapshot,type
+atis-latch | origin=- | sidechain= | content=- | keys=atis,sessionId,type
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedRole,sessionId,timestamp,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedRole,sessionId,timestamp,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedRole,sessionId,timestamp,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,sessionId,timestamp,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,sessionId,timestamp,type,userType,uuid,version
+api-request-shape | origin=- | sidechain= | content=- | keys=sessionId,shape,shapeHash,timestamp,type,version
+api-request-blob | origin=- | sidechain= | content=text(system-reminder)+text(system-reminder)+text(system-reminder)+text | keys=hash,message,sessionId,type
+api-request-blob | origin=- | sidechain= | content=text | keys=hash,message,sessionId,type
+api-request | origin=- | sidechain= | content=- | keys=cacheControl,id,keep,params,querySource,requestDigest,sessionId,shapeHash,tail,timestamp,type,version
+last-prompt | origin=- | sidechain= | content=- | keys=lastPrompt,leafUuid,sessionId,type
+atis-latch | origin=- | sidechain= | content=- | keys=atis,sessionId,type
+bridge-session | origin=- | sidechain= | content=- | keys=bridgeSessionId,lastSequenceNum,ownerAccountUuid,ownerOrganizationUuid,sessionId,type
+custom-title | origin=- | sidechain= | content=- | keys=customTitle,sessionId,type
+agent-name | origin=- | sidechain= | content=- | keys=agentName,sessionId,type
+custom-title | origin=- | sidechain= | content=- | keys=customTitle,sessionId,type
+queue-operation | origin=- | sidechain= | content=- | keys=content,operation,sessionId,timestamp,type
+queue-operation | origin=- | sidechain= | content=- | keys=operation,sessionId,timestamp,type
+user | origin=human | sidechain=False | content=string | keys=clientPlatform,cwd,entrypoint,gitBranch,isSidechain,message,origin,parentUuid,permissionMode,promptId,promptSource,sessionId,timestamp,turnAttributionKey,turnOrigin,turnPosition,type,userType,uuid,version
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedRole,sessionId,timestamp,type,userType,uuid,version
+file-history-snapshot | origin=- | sidechain= | content=- | keys=isSnapshotUpdate,messageId,snapshot,type
+attachment | origin=- | sidechain=False | content=- | keys=attachment,cwd,entrypoint,gitBranch,isSidechain,parentUuid,rendered,renderedBesideToolResult,renderedRole,sessionId,timestamp,type,userType,uuid,version
+api-request-blob | origin=- | sidechain= | content=text(system-reminder)+text(system-reminder)+text(system-reminder)+text(system-reminder)+text+text | keys=hash,message,sessionId,type
+api-request-blob | origin=- | sidechain= | content=text+tool_addition | keys=hash,message,sessionId,type
+api-request | origin=- | sidechain= | content=- | keys=cacheControl,id,keep,params,querySource,requestDigest,sessionId,shapeHash,tail,timestamp,type,version
+last-prompt | origin=- | sidechain= | content=- | keys=lastPrompt,leafUuid,sessionId,type
+custom-title | origin=- | sidechain= | content=- | keys=customTitle,sessionId,type
+agent-name | origin=- | sidechain= | content=- | keys=agentName,sessionId,type
+atis-latch | origin=- | sidechain= | content=- | keys=atis,sessionId,type

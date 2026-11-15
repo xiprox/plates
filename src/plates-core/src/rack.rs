@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    session::{Session, SessionEvent, SessionState, first_line},
+    session::{Session, SessionEvent, SessionState, first_line, prompt_title},
     timer::{DEFAULT_MINUTES, Timer},
 };
 
@@ -85,11 +85,12 @@ impl Tile {
     }
 }
 
-/// A tile taken off the rack, with its place, so it can be put back.
+/// A tile taken off the rack, with its place among the tiles of its own group, session tiles or
+/// your own, so an Undo puts it back in its group even after the other group changed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Removed {
     pub tile: Tile,
-    pub index: usize,
+    pub index_in_group: usize,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -178,7 +179,7 @@ impl Rack {
                     s.custom_title = title;
                 }
                 if s.first_prompt.is_none() {
-                    s.first_prompt = prompt.filter(|p| !first_line(p).is_empty());
+                    s.first_prompt = prompt.filter(|p| !prompt_title(p).is_empty());
                 }
                 s.summary = None;
                 s.pending_tool = None;
@@ -307,14 +308,25 @@ impl Rack {
 
     /// Names a session from its first prompt, read from its transcript, when Plates first saw the
     /// session after that prompt.
-    pub fn note_first_prompt(&mut self, session_id: &str, prompt: &str) {
-        let tile = self.tiles.iter_mut().find_map(|t| match &mut t.body {
+    /// Sets a session's first prompt over any prompt its first event carried, since the event
+    /// that brought a session's tile can come long after the session's first prompt.
+    pub fn set_first_prompt(&mut self, session_id: &str, prompt: &str) {
+        if prompt_title(prompt).is_empty() {
+            return;
+        }
+        let session = self.tiles.iter_mut().find_map(|t| match &mut t.body {
             Body::Session(s) if s.id == session_id => Some(s),
             _ => None,
         });
-        if let Some(s) = tile.filter(|s| s.first_prompt.is_none()) {
-            s.first_prompt = Some(prompt.to_string()).filter(|p| !first_line(p).is_empty());
+        if let Some(s) = session {
+            s.first_prompt = Some(prompt.to_string());
         }
+    }
+
+    pub fn knows(&self, session_id: &str) -> bool {
+        self.tiles
+            .iter()
+            .any(|t| t.session().is_some_and(|s| s.id == session_id))
     }
 
     /// Puts back your own tiles, in order, as `store` loaded them.
@@ -351,14 +363,30 @@ impl Rack {
             Body::Own(_) => true,
             Body::Session(s) => s.state == SessionState::Ended,
         };
-        removable.then(|| Removed {
+        if !removable {
+            return None;
+        }
+        let own = self.tiles[index].is_own();
+        let index_in_group = self.tiles[..index]
+            .iter()
+            .filter(|t| t.is_own() == own)
+            .count();
+        Some(Removed {
             tile: self.tiles.remove(index),
-            index,
+            index_in_group,
         })
     }
 
+    // Session tiles always come before your own, so a group's tiles sit together.
     pub fn restore(&mut self, removed: Removed) {
-        let index = removed.index.min(self.tiles.len());
+        let own = removed.tile.is_own();
+        let sessions = self.tiles.iter().filter(|t| !t.is_own()).count();
+        let (start, len) = if own {
+            (sessions, self.tiles.len() - sessions)
+        } else {
+            (0, sessions)
+        };
+        let index = start + removed.index_in_group.min(len);
         self.tiles.insert(index, removed.tile);
     }
 
@@ -741,10 +769,33 @@ mod tests {
         let b = rack.add_own("B", at(0));
         let c = rack.add_own("C", at(0));
         let removed = rack.remove(b).unwrap();
-        assert_eq!(removed.index, 1);
+        assert_eq!(removed.index_in_group, 1);
         rack.restore(removed);
         let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
         assert_eq!(order, vec![a, b, c]);
+    }
+
+    #[test]
+    fn an_undo_puts_your_tile_back_below_a_session_that_arrived_meanwhile() {
+        let mut rack = Rack::new();
+        let s1 = apply(&mut rack, "s1", started(), 0);
+        let o1 = rack.add_own("O1", at(0));
+        let o2 = rack.add_own("O2", at(0));
+        let removed = rack.remove(o1).unwrap();
+        let s2 = apply(&mut rack, "s2", started(), 1);
+        rack.restore(removed);
+        let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
+        assert_eq!(order, vec![s1, s2, o1, o2]);
+    }
+
+    #[test]
+    fn the_transcripts_first_prompt_names_a_session_seen_late() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("The fifth prompt"), 0);
+        rack.set_first_prompt("a", "The first prompt");
+        assert_eq!(session(&rack, id).title(), "The first prompt");
+        rack.set_first_prompt("a", "<system-reminder>only context</system-reminder>");
+        assert_eq!(session(&rack, id).title(), "The first prompt");
     }
 
     #[test]

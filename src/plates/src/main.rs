@@ -56,6 +56,21 @@ fn usage() -> String {
 }
 
 /// Claude Code's user settings file, `~/.claude/settings.json`.
+/// The `plates-hook` program beside this one, which each hook runs.
+fn hook_program() -> Result<PathBuf, String> {
+    let exe =
+        std::env::current_exe().map_err(|e| format!("Couldn't find Plates' own path: {e}"))?;
+    let program = exe.with_file_name(format!("plates-hook{}", std::env::consts::EXE_SUFFIX));
+    if program.exists() {
+        Ok(program)
+    } else {
+        Err(format!(
+            "{} isn't there. Build it with `cargo build -p plates-hook` first.",
+            program.display()
+        ))
+    }
+}
+
 fn settings_path() -> Result<PathBuf, String> {
     dirs::home_dir()
         .map(|home| home.join(".claude").join("settings.json"))
@@ -80,7 +95,7 @@ fn change_hooks(change: Change, yes: bool) -> Result<(), String> {
     };
     let describe = |e: InstallError| format!("{}: {e}", path.display());
     let next = match change {
-        Change::Install => install::with(&current, PORT).map_err(describe)?,
+        Change::Install => install::with(&current, &hook_program()?).map_err(describe)?,
         Change::Uninstall => install::without(&current).map_err(describe)?,
     };
     if next == current {
@@ -101,7 +116,7 @@ fn change_hooks(change: Change, yes: bool) -> Result<(), String> {
                 "This adds these hooks to {}, and leaves every other setting and hook as it is:\n",
                 path.display()
             );
-            let ours = Value::Object(install::ours(PORT));
+            let ours = Value::Object(install::ours(&hook_program()?));
             println!(
                 "{}\n",
                 serde_json::to_string_pretty(&ours).unwrap_or_default()
@@ -190,10 +205,7 @@ fn listen(log: Option<PathBuf>) -> Result<(), String> {
                     println!("{} {short}: ignored", message.hook);
                     continue;
                 };
-                let known = rack
-                    .tiles()
-                    .iter()
-                    .any(|t| t.session().is_some_and(|s| s.id == message.session_id));
+                let known = rack.knows(&message.session_id);
                 let id = rack.apply(&message.session_id, &message.cwd, event, now);
                 if !known
                     && let Some(Ok(Some(prompt))) = message
@@ -201,7 +213,7 @@ fn listen(log: Option<PathBuf>) -> Result<(), String> {
                         .as_deref()
                         .map(transcript::first_prompt)
                 {
-                    rack.note_first_prompt(&message.session_id, &prompt);
+                    rack.set_first_prompt(&message.session_id, &prompt);
                 }
                 if let Some(tile) = rack.tile(id) {
                     let s = tile.session();

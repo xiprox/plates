@@ -1,24 +1,23 @@
-//! The receiver Claude Code's `http` hooks post to, on `127.0.0.1`.
+//! The receiver on `127.0.0.1` that `plates-hook` forwards each Claude Code hook event to.
 //!
 //! It answers each request with an empty 200 before reading the event, so a slow Plates never
-//! holds up a prompt, and so Claude Code takes the answer as a success with no decision, which
-//! leaves a `PermissionRequest` to you. (documented, https://code.claude.com/docs/en/hooks.md,
-//! as of 2026-11-15)
+//! holds up the forwarder.
 
 use std::{
     io::{self, Read, Write},
-    net::Ipv4Addr,
+    net::{Ipv4Addr, SocketAddr, TcpStream},
     sync::mpsc::Sender,
     thread::{self, JoinHandle},
+    time::Duration,
 };
 
 use crate::hooks::{self, HookMessage};
 
-/// The port Plates listens on, which `plates hooks install` writes into each hook's URL.
-/// When you change it, existing installs keep posting to the old port until they're reinstalled.
+/// The port Plates listens on and `plates-hook` forwards to, which both read from here.
 pub const PORT: u16 = 47231;
 
-/// The path the hooks post to, which also marks a hook in the settings file as Plates' own.
+/// The path events are posted to, which also marks an `http` hook from an earlier install of
+/// Plates in the settings file, so installing again replaces it.
 pub const PATH: &str = "/plates/hook";
 
 pub fn url(port: u16) -> String {
@@ -68,10 +67,13 @@ impl Receiver {
     }
 }
 
-/// Posts `body` to a receiver the way Claude Code's `http` hook does, for tests and for checking
-/// a running receiver.
-pub fn post(port: u16, body: &[u8]) -> io::Result<String> {
-    let mut stream = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))?;
+/// Posts `body` to a receiver, as `plates-hook` does for each hook event, giving up when nothing
+/// takes the connection within `connect_timeout`. It returns the receiver's response.
+pub fn forward(port: u16, body: &[u8], connect_timeout: Duration) -> io::Result<String> {
+    let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let mut stream = TcpStream::connect_timeout(&address, connect_timeout)?;
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(2)))?;
     write!(
         stream,
         "POST {PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -87,7 +89,7 @@ pub fn post(port: u16, body: &[u8]) -> io::Result<String> {
 mod tests {
     use super::*;
     use crate::session::SessionEvent;
-    use std::{sync::mpsc, time::Duration};
+    use std::sync::mpsc;
 
     #[test]
     fn the_receiver_answers_empty_and_hands_on_the_event() {
@@ -97,7 +99,7 @@ mod tests {
         let port = 47331;
         let _receiver = Receiver::start(port, tx).unwrap();
         let body = br#"{"session_id":"abc","cwd":"/w","hook_event_name":"Stop","last_assistant_message":"Done."}"#;
-        let response = post(port, body).unwrap();
+        let response = forward(port, body, Duration::from_secs(1)).unwrap();
         assert!(response.starts_with("HTTP/1.1 200"), "{response}");
         assert!(response.ends_with("\r\n\r\n"), "an empty body: {response}");
         let Received::Event(message, raw) = rx.recv_timeout(Duration::from_secs(5)).unwrap() else {
@@ -111,7 +113,7 @@ mod tests {
             })
         );
 
-        post(port, b"not json").unwrap();
+        forward(port, b"not json", Duration::from_secs(1)).unwrap();
         assert!(matches!(
             rx.recv_timeout(Duration::from_secs(5)).unwrap(),
             Received::Unreadable(..)

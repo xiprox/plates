@@ -1,10 +1,16 @@
 //! Adding Plates' hooks to Claude Code's user settings, and taking them out again.
-//! A hook is Plates' own when it's an `http` hook whose URL is on `127.0.0.1` and ends in
-//! `receiver::PATH`, so uninstalling leaves every other hook as it was.
+//!
+//! Each hook is an async command hook in exec form, which runs `plates-hook` with no shell and
+//! doesn't wait for it, so a closed Plates never slows a session (record/areas/hooks/log.md).
+//! A hook is Plates' own when it runs a program named `plates-hook`, or when it's an `http` hook
+//! to `receiver::PATH` on `127.0.0.1` from an earlier install, so uninstalling leaves every other
+//! hook as it was.
+
+use std::path::Path;
 
 use serde_json::{Map, Value, json};
 
-use crate::receiver::{self, PATH};
+use crate::receiver::PATH;
 
 /// The hook events Plates listens to, with the matcher each takes, from
 /// record/areas/hooks/01-claude-code-hooks.md. A `Notification` hook matches only
@@ -22,16 +28,19 @@ pub const EVENTS: [(&str, Option<&str>); 10] = [
     ("SessionEnd", None),
 ];
 
-/// Each hook's timeout, in seconds. The receiver answers at once, so this only bounds how long a
-/// stuck Plates can hold up Claude Code, against the default of 600s.
-pub const TIMEOUT_SECS: u64 = 2;
-
 fn is_ours(hook: &Value) -> bool {
-    hook.get("type").and_then(Value::as_str) == Some("http")
-        && hook
-            .get("url")
-            .and_then(Value::as_str)
-            .is_some_and(|u| u.starts_with("http://127.0.0.1:") && u.ends_with(PATH))
+    let field = |key: &str| hook.get(key).and_then(Value::as_str);
+    match field("type") {
+        Some("command") => field("command").is_some_and(|c| {
+            Path::new(c)
+                .file_stem()
+                .is_some_and(|stem| stem == "plates-hook")
+        }),
+        Some("http") => {
+            field("url").is_some_and(|u| u.starts_with("http://127.0.0.1:") && u.ends_with(PATH))
+        }
+        _ => false,
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -84,9 +93,9 @@ pub fn without(settings: &Value) -> Result<Value, InstallError> {
     Ok(settings)
 }
 
-/// Plates' hooks alone, as they're added to the settings, which `plates hooks install` shows you
-/// before it writes them.
-pub fn ours(port: u16) -> Map<String, Value> {
+/// Plates' hooks alone, each running the `plates-hook` at `hook_program`, which
+/// `plates hooks install` shows you before it writes them.
+pub fn ours(hook_program: &Path) -> Map<String, Value> {
     let mut events = Map::new();
     for (event, matcher) in EVENTS {
         let mut group = Map::new();
@@ -95,7 +104,12 @@ pub fn ours(port: u16) -> Map<String, Value> {
         }
         group.insert(
             "hooks".into(),
-            json!([{ "type": "http", "url": receiver::url(port), "timeout": TIMEOUT_SECS }]),
+            json!([{
+                "type": "command",
+                "command": hook_program.to_string_lossy(),
+                "args": [],
+                "async": true,
+            }]),
         );
         events.insert(event.into(), json!([Value::Object(group)]));
     }
@@ -104,7 +118,7 @@ pub fn ours(port: u16) -> Map<String, Value> {
 
 /// The settings with Plates' hooks added, replacing any Plates hooks already there, and leaving
 /// every other hook as it was.
-pub fn with(settings: &Value, port: u16) -> Result<Value, InstallError> {
+pub fn with(settings: &Value, hook_program: &Path) -> Result<Value, InstallError> {
     let mut settings = without(settings)?;
     let root = settings
         .as_object_mut()
@@ -114,7 +128,7 @@ pub fn with(settings: &Value, port: u16) -> Result<Value, InstallError> {
         .or_insert_with(|| json!({}))
         .as_object_mut()
         .ok_or(InstallError::NotAnObject("`hooks`"))?;
-    for (event, groups) in ours(port) {
+    for (event, groups) in ours(hook_program) {
         let list = events.entry(event).or_insert_with(|| json!([]));
         if let (Some(list), Some(new)) = (list.as_array_mut(), groups.as_array()) {
             list.extend(new.iter().cloned());
@@ -126,6 +140,8 @@ pub fn with(settings: &Value, port: u16) -> Result<Value, InstallError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const PROGRAM: &str = "/opt/plates/plates-hook";
 
     fn theirs() -> Value {
         json!({
@@ -139,15 +155,15 @@ mod tests {
     }
 
     #[test]
-    fn installing_adds_one_http_hook_per_event_and_keeps_theirs() {
-        let s = with(&theirs(), 47231).unwrap();
+    fn installing_adds_one_async_hook_per_event_and_keeps_theirs() {
+        let s = with(&theirs(), Path::new(PROGRAM)).unwrap();
         assert_eq!(s["model"], "opus");
         let pre = s["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre.len(), 2);
         assert_eq!(pre[0]["hooks"][0]["command"], "check.sh");
         assert_eq!(
             pre[1]["hooks"][0],
-            json!({ "type": "http", "url": "http://127.0.0.1:47231/plates/hook", "timeout": 2 })
+            json!({ "type": "command", "command": PROGRAM, "args": [], "async": true })
         );
         assert_eq!(
             s["hooks"]["Notification"][0]["matcher"],
@@ -158,23 +174,34 @@ mod tests {
 
     #[test]
     fn installing_twice_leaves_one_set() {
-        let once = with(&theirs(), 47231).unwrap();
-        let twice = with(&once, 47231).unwrap();
+        let once = with(&theirs(), Path::new(PROGRAM)).unwrap();
+        let twice = with(&once, Path::new(PROGRAM)).unwrap();
         assert_eq!(once, twice);
     }
 
     #[test]
+    fn installing_replaces_an_earlier_installs_http_hooks() {
+        let mut earlier = theirs();
+        earlier["hooks"]["Stop"] = json!([{ "hooks": [
+            { "type": "http", "url": "http://127.0.0.1:47231/plates/hook", "timeout": 2 }
+        ] }]);
+        let s = with(&earlier, Path::new(PROGRAM)).unwrap();
+        assert_eq!(s["hooks"]["Stop"].as_array().unwrap().len(), 1);
+        assert_eq!(s["hooks"]["Stop"][0]["hooks"][0]["type"], "command");
+    }
+
+    #[test]
     fn uninstalling_takes_out_only_plates_hooks() {
-        let installed = with(&theirs(), 47231).unwrap();
+        let installed = with(&theirs(), Path::new(PROGRAM)).unwrap();
         assert_eq!(without(&installed).unwrap(), theirs());
-        let bare = with(&json!({}), 47231).unwrap();
+        let bare = with(&json!({}), Path::new(PROGRAM)).unwrap();
         assert_eq!(without(&bare).unwrap(), json!({}));
     }
 
     #[test]
     fn a_settings_file_that_isnt_an_object_is_refused() {
         assert_eq!(
-            with(&json!([1, 2]), 47231),
+            with(&json!([1, 2]), Path::new(PROGRAM)),
             Err(InstallError::NotAnObject("the settings file"))
         );
     }

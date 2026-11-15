@@ -1,0 +1,11 @@
+[package]
+name = "plates-hook"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+plates-core = { path = "../plates-core" }
+
+[lints]
+workspace = true

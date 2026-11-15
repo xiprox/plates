@@ -1,0 +1,21 @@
+Windows 11 25H2, build 26200.9711, 2026-11-15
+
+A TCP connect to 127.0.0.1:47299, where nothing listens, from PowerShell's System.Net.Sockets.TcpClient:
+refused after 2053 ms
+refused after 2038 ms
+refused after 2041 ms
+
+target/debug/plates-hook.exe, given a Stop event on stdin, timed with System.Diagnostics.Process from start to exit.
+
+Plates closed, nothing listening on 127.0.0.1:47231:
+331 ms, exit 0
+320 ms, exit 0
+324 ms, exit 0
+
+Plates listening, `plates listen` on 127.0.0.1:47231:
+14 ms, exit 0
+10 ms, exit 0
+13 ms, exit 0
+21 ms, exit 0
+10 ms, exit 0
+12 ms, exit 0

@@ -116,7 +116,8 @@ impl Session {
     pub fn title(&self) -> String {
         self.custom_title
             .clone()
-            .or_else(|| self.first_prompt.as_deref().map(first_line))
+            .or_else(|| self.first_prompt.as_deref().map(prompt_title))
+            .filter(|t| !t.is_empty())
             .or_else(|| {
                 self.folder
                     .file_name()
@@ -124,6 +125,36 @@ impl Session {
             })
             .unwrap_or_else(|| "Session".to_string())
     }
+}
+
+/// The first line of what you typed in a prompt.
+/// The Claude desktop app puts blocks of context before the typed text, such as
+/// `<artifact-view-context ...>...</artifact-view-context>`, so the title skips each tag block at
+/// the start (measured on Windows 11 25H2, 2026-11-15, record/areas/hooks/log.md).
+pub fn prompt_title(prompt: &str) -> String {
+    let mut rest = prompt.trim_start();
+    while let Some(after) = rest.strip_prefix('<') {
+        let name: String = after
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+            .collect();
+        let Some(open_end) = rest.find('>') else {
+            break;
+        };
+        if name.is_empty() {
+            break;
+        }
+        if rest[..open_end].ends_with('/') {
+            rest = rest[open_end + 1..].trim_start();
+            continue;
+        }
+        let close = format!("</{name}>");
+        match rest.find(&close) {
+            Some(i) => rest = rest[i + close.len()..].trim_start(),
+            None => break,
+        }
+    }
+    first_line(rest)
 }
 
 /// The first non-empty line of `text`, trimmed.
@@ -156,6 +187,22 @@ mod tests {
             "Wants to edit: src/hooks.rs"
         );
         assert_eq!(tool(None, None).summary(), "Wants to use: Bash");
+    }
+
+    #[test]
+    fn a_prompts_title_skips_the_context_blocks_before_it() {
+        let prompt = "<artifact-view-context artifact=\"49dc\">\n{\"mode\":\"canvas\"}\n<artifact-content-authored-by-others/>\n</artifact-view-context>\n\nI tried it.\n\nMore";
+        assert_eq!(prompt_title(prompt), "I tried it.");
+        assert_eq!(
+            prompt_title("<note/> <b>bold</b> rest"),
+            "rest",
+            "self-closing and plain blocks both go"
+        );
+        assert_eq!(
+            prompt_title("a < b, says the prompt"),
+            "a < b, says the prompt"
+        );
+        assert_eq!(prompt_title("<unclosed> text"), "<unclosed> text");
     }
 
     #[test]
