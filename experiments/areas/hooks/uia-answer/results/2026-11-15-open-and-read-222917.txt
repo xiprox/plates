@@ -1,0 +1,118 @@
+uia-answer, run at 2026-11-15 22:29:17 UTC
+Windows: Microsoft Windows [Version 10.0.26200.9711]
+
+== Session ==
+session the app opened last (newest lastFocusedAt): local_e91f373e-7479-4e67-bbc5-8e2bd64a4baf "Probe answering a desktop session through UI Automation"
+target: local_3f46e39d-fd54-4e1a-be2e-abfcd6dfb246 "Manual shifting controller button support", archived=false
+last wrap-up at 2026-11-15T19:29:01.223Z, prompts typed since: 0
+  ask: "Want a design for controller buttons in Manual Shifting?"
+  reply labels: ["Yes, design it", "Not now"]
+  app actions: []
+  recap starts: "Neither mod takes controller buttons: bo..."
+last assistant text starts: "There's no difference. NightCoop Voice d..."
+
+== Before the first walk ==
+UiaClientsAreListening: true
+app command lines, processes read: 29
+window 0x50520 pid=1936 class="Chrome_WidgetWin_1" title="Claude" rect=(362,15 2626x1375) app=5.11492.5.0
+walking window 0x50520
+
+== Question 5: the tree on the first walk and after ==
+walk at +0ms: 1019 elements, depth 43, 1015 with FrameworkId Chrome, 199 buttons, 4 documents with [1, 0, 1, 1] children, took 86ms by one cached subtree request
+walk at +300ms: 1019 elements, depth 43, 1015 with FrameworkId Chrome, 199 buttons, 4 documents with [1, 0, 1, 1] children, took 75ms by one cached subtree request
+walk at +700ms: 1019 elements, depth 43, 1015 with FrameworkId Chrome, 199 buttons, 4 documents with [1, 0, 1, 1] children, took 82ms by one cached subtree request
+selected item: RadioButton name="Code" automationId="base-ui-_r_1m_" className="cds-reset relative z-[1] inline-flex h-full items-center justify-center gap-1.5 ..." ariaRole="radio" framework="Chrome" patterns=[Invoke, Value(readOnly=false, length=0), SelectionItem(selected=true)] enabled=true offscreen=false focusable=true focused=false rect=(615,20 34x26) defaultAction="Check" children=0
+
+== Opening the session ==
+foreground before: 0x50520, the app's: true
+ShellExecuteW claude://code/continue?session=local_3f46e39d-fd54-4e1a-be2e-abfcd6dfb246: ok
+the session's last turn showed within 843ms, by ["wrap-up ask", "wrap-up recap"]
+foreground after: 0x50520, the app's: true
+walk after opening: 885 elements, depth 43, 881 with FrameworkId Chrome, 193 buttons, 4 documents with [1, 0, 1, 1] children, took 95ms by one cached subtree request
+
+== Question 3: the wrap-up's buttons ==
+label "Yes, design it": 1 element(s) named exactly so
+  Button name="Yes, design it" automationId="_r_65dd_" className="cds-reset group/btn relative isolate inline-flex items-center justify-center gap..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1307,1138 160x28) defaultAction="Press" children=0
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[1]/Group[18]/Group[1]/Group[2]/Button[0]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Manual shifting controller button support - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+      Group name="Chat messages" automationId="" ariaRole="feed" depth=33
+      Group name="Suggested next actions" automationId="" ariaRole="group" depth=37
+    selectors: AutomationId shared by 1; Name+ControlType shared by 1; ClassName+ControlType shared by 1; AriaRole "button" shared by 192
+  FindAll(Descendants, Name="Yes, design it" and ControlType=Button): 1 in 26ms
+label "Not now": 1 element(s) named exactly so
+  Button name="Not now" automationId="_r_65dg_" className="cds-reset group/btn relative isolate inline-flex shrink-0 items-center justify-c..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1478,1138 74x28) defaultAction="Press" children=0
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[1]/Group[18]/Group[1]/Group[2]/Button[1]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Manual shifting controller button support - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+      Group name="Chat messages" automationId="" ariaRole="feed" depth=33
+      Group name="Suggested next actions" automationId="" ariaRole="group" depth=37
+    selectors: AutomationId shared by 1; Name+ControlType shared by 1; ClassName+ControlType shared by 1; AriaRole "button" shared by 192
+  FindAll(Descendants, Name="Not now" and ControlType=Button): 1 in 20ms
+elements whose Name holds the ask: 1
+  Text name="Want a design for controller buttons in Manual Shifting?" automationId="" className="" ariaRole="description" framework="Chrome" patterns=[Text] enabled=true offscreen=false focusable=false focused=false rect=(1307,1103 367x18) defaultAction="" children=0
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[1]/Group[18]/Group[1]/Group[1]/Text[0]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Manual shifting controller button support - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+      Group name="Chat messages" automationId="" ariaRole="feed" depth=33
+    selectors: AutomationId empty; Name+ControlType shared by 1; AriaRole "description" shared by 192
+the smallest element holding all of them:
+  Group name="" automationId="" className="" ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1291,1010 736x172) defaultAction="Press" children=4
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[1]/Group[18]/Group[1]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Manual shifting controller button support - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+      Group name="Chat messages" automationId="" ariaRole="feed" depth=33
+    selectors: AutomationId empty; Name+ControlType shared by 363; AriaRole "group" shared by 364
+the invokable elements inside it:
+  Group name="" automationId="" className="" ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1291,1010 736x172) defaultAction="Press" children=4
+  Button name="Dismiss" automationId="_r_65d8_" className="cds-reset group/btn relative isolate inline-flex shrink-0 items-center justify-c..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1987,1022 28x28) defaultAction="Press" children=0
+  Button name="Yes, design it" automationId="_r_65dd_" className="cds-reset group/btn relative isolate inline-flex items-center justify-center gap..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1307,1138 160x28) defaultAction="Press" children=0
+  Button name="Not now" automationId="_r_65dg_" className="cds-reset group/btn relative isolate inline-flex shrink-0 items-center justify-c..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1478,1138 74x28) defaultAction="Press" children=0
+
+== Question 4: the composer ==
+editable candidates (Edit or Document, with Value or Text, focusable, not read-only): 1
+  Edit name="Prompt" automationId="" className="tiptap ProseMirror ProseMirror-focused" ariaRole="textbox" framework="Chrome" patterns=[Value(readOnly=false, length=1), Text] enabled=true offscreen=false focusable=true focused=true rect=(1319,1309 644x22) defaultAction="" children=1
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[2]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[0]/Edit[0]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Manual shifting controller button support - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+    selectors: AutomationId empty; Name+ControlType shared by 1; ClassName+ControlType shared by 1; AriaRole "textbox" shared by 1
+  shares an ancestor with the session's last turn at depth 28 (the candidate is at 36)
+  FindAll(Descendants, Name="Prompt" and ControlType=Edit): 1 in 20ms
+every Edit element: 1
+  Edit name="Prompt" automationId="" className="tiptap ProseMirror ProseMirror-focused" ariaRole="textbox" framework="Chrome" patterns=[Value(readOnly=false, length=1), Text] enabled=true offscreen=false focusable=true focused=true rect=(1319,1309 644x22) defaultAction="" children=1
+the invokable elements within four levels above the composer:
+  Group name="" automationId="" className="w-full max-h-96 min-h-[var(--cmp-row-h)] overflow-y-auto break-words [--cmp-type..." ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1319,1306 644x28) defaultAction="Press" children=2
+  Group name="" automationId="" className="contents" ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1283,1306 36x10) defaultAction="Press" children=0
+
+== Restoring the session the app showed ==
+opened local_e91f373e-7479-4e67-bbc5-8e2bd64a4baf "Probe answering a desktop session through UI Automation": ok
