@@ -14,7 +14,7 @@ use windows::Win32::{
     Graphics::{
         Dwm::{
             DWM_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE,
-            DWMWCP_DONOTROUND, DwmSetWindowAttribute,
+            DWMWCP_DONOTROUND, DWMWCP_ROUND, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
         },
         Gdi::{
             BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CAPTUREBLT, ClientToScreen,
@@ -24,6 +24,7 @@ use windows::Win32::{
             MONITORINFOEXW, MonitorFromPoint, ReleaseDC, SRCCOPY, SelectObject,
         },
     },
+    UI::Controls::MARGINS,
     UI::{
         Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON},
         Shell::{DefSubclassProc, SetWindowSubclass},
@@ -192,28 +193,47 @@ pub fn allow_activation(h: isize, allowed: bool) {
     set_noactivate(h, !allowed);
 }
 
-// Windows 11 rounds a window's corners and draws a border around it, and the rack draws its own
-// 14px corners inside a transparent window, so the window test turns both off.
-pub fn square_off(h: isize) -> (bool, bool) {
+// The mockups give the rack a drop shadow, and a shadow drawn inside the window would need a
+// transparent margin that takes clicks meant for the windows below. DWM draws a window's shadow
+// outside it, for a window whose frame reaches 1px into its client area, so the window test asks
+// for that and turns off DWM's 1px border, which would cover the rack's own.
+pub fn dwm_shadow(h: isize, round: bool) -> bool {
     // DWMWA_COLOR_NONE, from dwmapi.h.
     const COLOR_NONE: u32 = 0xFFFF_FFFE;
+    let margins = MARGINS {
+        cxLeftWidth: 1,
+        cxRightWidth: 1,
+        cyTopHeight: 1,
+        cyBottomHeight: 1,
+    };
     unsafe {
-        let pref: DWM_WINDOW_CORNER_PREFERENCE = DWMWCP_DONOTROUND;
-        let corners = DwmSetWindowAttribute(
-            hwnd(h),
-            DWMWA_WINDOW_CORNER_PREFERENCE,
-            &pref as *const _ as *const c_void,
-            size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
-        )
-        .is_ok();
-        let border = DwmSetWindowAttribute(
+        let extended = DwmExtendFrameIntoClientArea(hwnd(h), &margins).is_ok();
+        let _ = DwmSetWindowAttribute(
             hwnd(h),
             DWMWA_BORDER_COLOR,
             &COLOR_NONE as *const _ as *const c_void,
             size_of::<u32>() as u32,
-        )
-        .is_ok();
-        (corners, border)
+        );
+        set_round_corners(h, round);
+        extended
+    }
+}
+
+// DWM rounds a window's corners, and its shadow, at 8px. The rack draws 14px corners inside that,
+// and the docked strip, which is flush with the screen edge, takes square corners.
+pub fn set_round_corners(h: isize, round: bool) {
+    let pref: DWM_WINDOW_CORNER_PREFERENCE = if round {
+        DWMWCP_ROUND
+    } else {
+        DWMWCP_DONOTROUND
+    };
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            hwnd(h),
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &pref as *const _ as *const c_void,
+            size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+        );
     }
 }
 

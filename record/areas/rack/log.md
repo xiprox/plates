@@ -2,6 +2,57 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-15: DWM draws the rack's drop shadow once the window's frame reaches 1px into its client area
+
+**Asked:** can the rack have the mockups' drop shadow without a transparent margin around it, which would take clicks meant for the windows below?
+
+**Expected:** a shadow window of Plates' own, since the rack's window, without its frame, gets no shadow from DWM.
+
+**Found:** we ran the self-test of the redrawn window test three times on the same PC (measured on Windows 11 25H2, 2026-11-15, the last three self-test reports in `experiments/areas/rack/results/`).
+
+- With `DwmExtendFrameIntoClientArea` margins of 1px on each side, and DWM's border color set to none, DWM drew a shadow below the rack.
+  In the screen captures, the screen 2px below the rack measured an average brightness of 9.5 with the shadow and 16.3 without it, and the shadow faded out by 28px.
+  The captures stay beside the build, out of the repository.
+- DWM rounds the shadow's corners at 8px, and the rack draws its own 14px corners inside that.
+  Against the dark desktop in the captures, the corners looked the same with and without the shadow, and over a light window they're unverified.
+- The slide out of the dock drew about 680 frames a second against the display's 240, while the window's center was off its display.
+  The slide is timed, so it kept its speed and only made extra moves.
+  Which GPUI path redraws on those moves is unverified.
+
+**Changed:** the window test asks DWM for the shadow, and squares the docked strip's corners, which sit flush with the screen edge.
+
+**Affects:** [01-window](01-window.md#shape).
+
+## 2026-11-15: By hand, the prototype's throw, bounce, and dock numbers got in the way
+
+**Asked:** tried by hand on Windows, does the rack leave keyboard focus where it is, keep Windows Snap away, and feel the way the mockups' prototype does?
+
+**Expected:** the prototype's numbers to carry over, since the self-test moved the window on every frame.
+
+**Found:** the user tried the window test by hand on the same PC, in two runs, and its reports are `2026-11-15-windows-by-hand-160214.txt` and `2026-11-15-windows-by-hand-160450.txt` in `experiments/areas/rack/results/` (measured on Windows 11 25H2, 2026-11-15).
+
+- Every flick came out at about the same speed (user, 2026-11-15).
+  The prototype caps a throw at 3,200px/s, enough to cross its 1,440px-wide desk, and friction stops a throw at that cap within 1,000px, under a fifth of the 5120px-wide display.
+- A bounce off a screen edge sent the rack back into the way (user, 2026-11-15).
+- The 1.5s hold before docking was far too long (user, 2026-11-15).
+- Undocking pushed the rack about one rack width inward (user, 2026-11-15): the prototype sends it out at 950px/s, and friction stops it about 300px from the edge.
+- Typing in the inline field worked (user, 2026-11-15).
+  The field took keyboard focus all 4 times, and handed it back after Enter and after Esc; the other 2 times ended with a click elsewhere.
+- Over 8,282 moves from real drags, throws, and 3 docks, Windows never started a move loop of its own on the rack, so Snap had no move to act on, and never put the rack anywhere other than where it was moved.
+- In the second run, all 6 clicks on tiles and the strip left keyboard focus in the app that had it.
+  In the first, 6 of 13 did, and the report didn't record whether the inline field had focus during the other 7, so the window test now counts those clicks apart.
+- The rack's tiles were placeholders beside a readout of the test's numbers, and its look and feel were far from the mockups' (user, 2026-11-15).
+
+**Changed:**
+
+- A throw takes its speed from the drag's last 60ms, with no cap a hand reaches.
+- A screen edge stops a thrown rack on that axis, with no bounce.
+- The dock hold is 0.5s, and the rack slides into the edge over 200ms.
+- Undocking slides the rack out of the edge over 200ms, to sit flush with it.
+- The window test draws the rack from the mockups' styles: Inter, the mockups' sample tiles, timer slots, hover states, the inline field, and a strip that peeks 6px out when hovered.
+
+**Affects:** [01-window](01-window.md).
+
 ## 2026-11-15: On Windows, GPUI's PopUp window moves on every frame at 240Hz, once a subclass removes its frame and keeps clicks from activating it
 
 **Asked:** can GPUI give the rack the window [01-window](01-window.md) designs, on Windows?

@@ -1,0 +1,59 @@
+Plates window test, by-hand run
+Date (UTC): 2026-11-15
+OS: Windows 11 25H2, build 26200.9711
+Displays: 1; the rack's is 5120x1440 physical pixels at 100% scale and 240 Hz
+
+Window
+- extended styles: WS_EX_TOOLWINDOW yes, WS_EX_TOPMOST yes, WS_EX_NOACTIVATE yes, WS_EX_APPWINDOW no
+- window subclass installed: yes
+- the subclass answers WM_MOUSEACTIVATE with MA_NOACTIVATE: yes
+- window rectangle 304x376, client area 304x376, in physical pixels
+- DWM corner rounding turned off: yes; DWM border turned off: yes
+- keyboard focus stayed in the app that had it when the rack opened: yes
+
+Motion
+- drag: 89 moves over 0.37s, 240 per second; between moves, median 4.2ms, 95th percentile 4.6ms, longest 4.8ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 0.80ms; frames drawn 240 per second
+- throw: 317 moves over 1.32s, 240 per second; between moves, median 4.2ms, 95th percentile 4.6ms, longest 5.3ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.43ms and at most 1.89ms; frames drawn 240 per second
+- drag: 53 moves over 0.22s, 239 per second; between moves, median 4.2ms, 95th percentile 4.7ms, longest 5.0ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.04ms and at most 0.70ms; frames drawn 240 per second
+- throw: 378 moves over 1.57s, 240 per second; between moves, median 4.1ms, 95th percentile 4.7ms, longest 5.8ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.40ms and at most 1.21ms; frames drawn 240 per second
+- drag: 15 moves over 0.06s, 239 per second; between moves, median 4.1ms, 95th percentile 4.6ms, longest 4.7ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.04ms and at most 0.73ms; frames drawn 242 per second
+- throw: 269 moves over 1.12s, 240 per second; between moves, median 4.2ms, 95th percentile 4.7ms, longest 5.0ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.43ms and at most 0.91ms; frames drawn 240 per second
+- drag: 52 moves over 0.21s, 240 per second; between moves, median 4.1ms, 95th percentile 4.8ms, longest 5.2ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.06ms and at most 0.75ms; frames drawn 240 per second
+- throw: 210 moves over 0.87s, 240 per second; between moves, median 4.2ms, 95th percentile 4.7ms, longest 5.5ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.05ms and at most 1.04ms; frames drawn 240 per second
+- drag: 69 moves over 0.28s, 240 per second; between moves, median 4.1ms, 95th percentile 4.6ms, longest 4.9ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 0.78ms; frames drawn 240 per second
+- throw: 407 moves over 1.69s, 240 per second; between moves, median 4.1ms, 95th percentile 4.7ms, longest 5.6ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.37ms and at most 1.19ms; frames drawn 240 per second
+- drag: 42 moves over 0.17s, 240 per second; between moves, median 4.2ms, 95th percentile 4.5ms, longest 4.6ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.04ms and at most 0.82ms; frames drawn 240 per second
+- throw: 244 moves over 1.01s, 240 per second; between moves, median 4.1ms, 95th percentile 4.7ms, longest 6.8ms; 1 gap longer than 6.2ms; SetWindowPos took a median 0.45ms and at most 1.02ms; frames drawn 240 per second
+- drag: 40 moves over 0.16s, 240 per second; between moves, median 4.2ms, 95th percentile 4.6ms, longest 4.7ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.03ms and at most 0.69ms; frames drawn 240 per second
+- throw: 242 moves over 1.00s, 240 per second; between moves, median 4.1ms, 95th percentile 4.7ms, longest 5.9ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.44ms and at most 1.20ms; frames drawn 240 per second
+- drag: 73 moves over 0.30s, 240 per second; between moves, median 4.2ms, 95th percentile 4.7ms, longest 4.8ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.03ms and at most 0.72ms; frames drawn 239 per second
+- throw: 232 moves over 0.96s, 240 per second; between moves, median 4.1ms, 95th percentile 4.7ms, longest 5.1ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.44ms and at most 0.85ms; frames drawn 240 per second
+- drag: 67 moves over 0.28s, 240 per second; between moves, median 4.2ms, 95th percentile 4.6ms, longest 4.8ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.03ms and at most 0.72ms; frames drawn 239 per second
+- throw: 372 moves over 1.54s, 240 per second; between moves, median 4.2ms, 95th percentile 4.7ms, longest 5.1ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.41ms and at most 1.03ms; frames drawn 240 per second
+- drag: 65 moves over 0.27s, 240 per second; between moves, median 4.1ms, 95th percentile 4.7ms, longest 4.8ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.03ms and at most 0.77ms; frames drawn 240 per second
+- throw: 325 moves over 1.35s, 240 per second; between moves, median 4.1ms, 95th percentile 4.7ms, longest 5.1ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.42ms and at most 1.93ms; frames drawn 240 per second
+- drag: 40 moves over 0.16s, 240 per second; between moves, median 4.1ms, 95th percentile 4.6ms, longest 4.6ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.04ms and at most 0.81ms; frames drawn 238 per second
+- throw: 174 moves over 0.72s, 241 per second; between moves, median 4.2ms, 95th percentile 5.0ms, longest 6.7ms; 1 gap longer than 6.2ms; SetWindowPos took a median 0.40ms and at most 1.33ms; frames drawn 240 per second
+- drag: 118 moves over 0.49s, 240 per second; between moves, median 4.1ms, 95th percentile 4.6ms, longest 4.8ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 0.77ms; frames drawn 240 per second
+- throw: 279 moves over 1.16s, 240 per second; between moves, median 4.2ms, 95th percentile 4.7ms, longest 6.1ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.39ms and at most 1.62ms; frames drawn 240 per second
+- drag: 73 moves over 0.30s, 240 per second; between moves, median 4.2ms, 95th percentile 4.5ms, longest 4.6ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.04ms and at most 0.73ms; frames drawn 240 per second
+- throw: 204 moves over 0.85s, 240 per second; between moves, median 4.1ms, 95th percentile 4.6ms, longest 5.7ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.44ms and at most 1.11ms; frames drawn 240 per second
+- drag: 53 moves over 0.22s, 240 per second; between moves, median 4.1ms, 95th percentile 4.5ms, longest 4.7ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 0.76ms; frames drawn 240 per second
+- throw: 296 moves over 1.23s, 240 per second; between moves, median 4.2ms, 95th percentile 4.5ms, longest 6.2ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 1.31ms; frames drawn 240 per second
+- drag: 44 moves over 0.18s, 240 per second; between moves, median 4.1ms, 95th percentile 5.0ms, longest 5.2ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 0.80ms; frames drawn 240 per second
+- drag: 149 moves over 0.62s, 240 per second; between moves, median 4.1ms, 95th percentile 4.5ms, longest 4.8ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 0.99ms; frames drawn 240 per second
+- drag: 67 moves over 0.27s, 240 per second; between moves, median 4.2ms, 95th percentile 4.5ms, longest 4.6ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 0.68ms; frames drawn 240 per second
+- throw: 93 moves over 0.38s, 240 per second; between moves, median 4.2ms, 95th percentile 4.5ms, longest 5.4ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 1.00ms; frames drawn 240 per second
+- drag: 23 moves over 0.09s, 240 per second; between moves, median 4.2ms, 95th percentile 4.4ms, longest 4.5ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 0.75ms; frames drawn 240 per second
+- throw: 241 moves over 1.00s, 240 per second; between moves, median 4.2ms, 95th percentile 4.5ms, longest 4.6ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 0.89ms; frames drawn 240 per second
+- docked 0 times and undocked 0 times
+
+The OS
+- entered its own move or size loop on the rack: 0 times
+- sent WM_MOUSEACTIVATE: 29 times
+- put the rack somewhere other than where it was moved: 0 of 5419 moves
+
+Focus
+- clicks on tiles and the strip: 13, after which keyboard focus stayed in the app that had it: 6
+- inline field 1: took keyboard focus: yes; ended by Esc; focus went back to the app you were in: yes
+- inline field 2: took keyboard focus: yes; ended by a click elsewhere; focus went back to the app you were in: not handed back

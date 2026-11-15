@@ -18,26 +18,28 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   A 28px band at its top holds a centered, horizontal grip of six dots.
 - It has 12px of padding on the left, right, and bottom, and its tiles sit 6px apart.
 - Its background is `#131417`, with a 1px `#2A2C31` border.
+- It casts a drop shadow, which on Windows DWM draws outside the window ([rack log](log.md#2026-11-15-dwm-draws-the-racks-drop-shadow-once-the-windows-frame-reaches-1px-into-its-client-area)).
 
 ## Drag and throw
 
 - A press anywhere on the rack becomes a drag once the pointer moves 5px.
   A click on a tile, its timer, or its check still lands, and a drag that starts on a tile doesn't also click it.
-- Letting go mid-drag keeps the rack's speed, measured over the drag's last 90ms and capped at 3,200px/s.
-- The rack then slides on, keeping about 4% of its speed after each second (a factor of e^−3.2), and bounces off a screen edge with 45% of its speed.
+- Letting go mid-drag keeps the rack's speed, measured over the drag's last 60ms, with no cap a hand reaches (user, 2026-11-15, [rack log](log.md#2026-11-15-by-hand-the-prototypes-throw-bounce-and-dock-numbers-got-in-the-way)).
+- The rack then slides on, keeping about 4% of its speed after each second (a factor of e^−3.2).
+  A screen edge stops it on that axis, and it slides on along the edge, because a rack that bounced would come back into the way (user, 2026-11-15).
 - A throw only moves the rack and never docks it, because a throw means "out of my way for now" (user, 2026-11-15).
 
 ## Docking
 
 - You drag the rack against the left or right screen edge and hold it there.
-  A blue bar fills along that edge, and after 1.5s the rack shrinks to the strip.
+  A blue bar fills along that edge, and after 0.5s the rack slides into the edge over 200ms and the strip takes its place (user, 2026-11-15).
   Letting go before the bar fills leaves the rack where it is.
 - The strip is 22px wide, with one 8px mark per tile, called a pip, in the tiles' order.
   A session's pip is a circle colored as its tile's marker is.
   Your own tile's pip is a gray square, which shows yellow while the tile's timer runs or once the tile is time-up ([02-tiles](02-tiles.md#the-timer)), since the strip has no room for the timer.
 - When a tile starts needing you, the strip nudges 12px out of the edge once, then sits still.
-- Hovering the strip lists the tiles that need you, with their pips.
-- Clicking the strip slides the rack back out, at 950px/s away from the edge.
+- Hovering the strip peeks it 6px out of the edge and lists the tiles that need you, with their pips.
+- Clicking the strip slides the rack back out of the edge over 200ms, to sit flush with it (user, 2026-11-15).
 
 ## Focus
 
@@ -46,7 +48,8 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 
 ## OS snapping
 
-Plates moves the rack's window from its own drag, so the OS never starts a window move, and Windows Snap and macOS window tiling get no move to act on (unverified, until [the window test](../product/plan.md#1-window-test) tries it).
+Plates moves the rack's window from its own drag, so the OS never starts a window move, and Windows Snap and macOS window tiling get no move to act on.
+On Windows, the OS started no move loop on the rack over 8,282 moves by hand (measured on Windows 11 25H2, 2026-11-15, [rack log](log.md#2026-11-15-by-hand-the-prototypes-throw-bounce-and-dock-numbers-got-in-the-way)), and on macOS it's unverified until [the window test](../product/plan.md#1-window-test) runs there.
 
 ## Left open
 

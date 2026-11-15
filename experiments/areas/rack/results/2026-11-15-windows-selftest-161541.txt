@@ -1,0 +1,30 @@
+Plates window test, self-test run
+Date (UTC): 2026-11-15
+OS: Windows 11 25H2, build 26200.9711
+Displays: 1; the rack's is 5120x1440 physical pixels at 100% scale and 240 Hz
+
+Window
+- extended styles: WS_EX_TOOLWINDOW yes, WS_EX_TOPMOST yes, WS_EX_NOACTIVATE yes, WS_EX_APPWINDOW no
+- window subclass installed: yes
+- the subclass answers WM_MOUSEACTIVATE with MA_NOACTIVATE: yes
+- window rectangle 304x630, client area 304x630, in physical pixels
+- DWM shadow asked for, by extending the frame 1px into the client area: yes
+- keyboard focus stayed in the app that had it when the rack opened: yes
+- screen capture: rack, saved beside the build in target/captures/rack.png
+- screen capture: rack-with-dwm-shadow, saved beside the build in target/captures/rack-with-dwm-shadow.png
+- screen capture: docked-strip, saved beside the build in target/captures/docked-strip.png
+
+Motion
+- fast throw up and to the left: 495 moves over 2.06s, 240 per second; between moves, median 4.2ms, 95th percentile 4.4ms, longest 5.1ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.29ms and at most 0.98ms; frames drawn 240 per second
+- fast throw down and to the right: 261 moves over 1.08s, 240 per second; between moves, median 4.2ms, 95th percentile 4.4ms, longest 4.6ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.32ms and at most 0.77ms; frames drawn 240 per second
+- slide into the dock: 48 moves over 0.20s, 240 per second; between moves, median 4.2ms, 95th percentile 4.5ms, longest 4.5ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.32ms and at most 0.65ms; frames drawn 240 per second
+- slide out of the dock: 153 moves over 0.20s, 777 per second; between moves, median 1.0ms, 95th percentile 3.3ms, longest 4.2ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.40ms and at most 0.92ms; frames drawn 764 per second
+- docked 1 time and undocked 1 time
+
+The OS
+- entered its own move or size loop on the rack: 0 times
+- sent WM_MOUSEACTIVATE: 0 times
+- put the rack somewhere other than where it was moved: 0 of 959 moves
+
+Focus
+- clicks on tiles and the strip: 0, after which keyboard focus stayed in the app that had it: 0

@@ -1,16 +1,18 @@
-// A throwaway GPUI app that tries the rack's window from record/areas/rack/01-window.md:
-// borderless and on top with no taskbar entry, dragged and thrown with its position set every
-// frame, docked to a strip, clicked without taking keyboard focus, and holding a text field that
-// takes focus and hands it back.
+// A throwaway GPUI app that tries the rack's window from record/areas/rack/01-window.md, drawn
+// as the mockups draw it: borderless and on top with no taskbar entry, dragged and thrown with
+// its position set every frame, docked to a strip, clicked without taking keyboard focus, and
+// holding a text field that takes focus and hands it back.
 //
-// `cargo run --release` opens it for trying by hand, and the × in its top band quits it and
-// writes the report. `cargo run --release -- --selftest` throws, docks, and undocks it by itself
-// without touching the mouse or keyboard, captures its look, and quits. `--style-only` leaves
-// WM_MOUSEACTIVATE to GPUI, to see whether WS_EX_NOACTIVATE alone keeps clicks from activating
-// the window. Each run writes its report to ../results/.
+// `cargo run --release` opens it for trying by hand, and right-clicking the grip at its top quits
+// it and writes the report. `cargo run --release -- --selftest` throws, docks, and undocks it by
+// itself without touching the mouse or keyboard, captures its look, and quits. `--style-only`
+// leaves WM_MOUSEACTIVATE to GPUI, to see whether WS_EX_NOACTIVATE alone keeps clicks from
+// activating the window. Each run writes its report to ../results/.
 
+mod assets;
 mod motion;
 mod report;
+mod view;
 
 #[cfg(windows)]
 mod native_windows;
@@ -28,37 +30,24 @@ use std::{
 
 use gpui_kit::component::{
     Theme, ThemeMode,
-    input::{Input, InputEvent, InputState},
+    input::{InputEvent, InputState},
 };
 use gpui_kit::*;
-use motion::Side;
+use motion::{Ease, Rect, Side, Tween};
 use native::MoveRecord;
 use report::{Episode, FieldTest, Log};
 
 const RACK_W: f32 = 304.;
-const BAND_H: f32 = 28.;
-const TILE_H: f32 = 60.;
-const GAP: f32 = 6.;
-const PAD: f32 = 12.;
-const READOUT_H: f32 = 72.;
 const STRIP_W: f32 = 22.;
 
-const BG: u32 = 0x131417;
-const BORDER: u32 = 0x2A2C31;
-const TILE: u32 = 0x1C1D21;
-const TILE_HOVER: u32 = 0x222328;
-const TEXT: u32 = 0xECEDEF;
-const TEXT2: u32 = 0xA3A6AE;
-const BLUE: u32 = 0x74AEFF;
-const AMBER: u32 = 0xF2B441;
-const OWN: u32 = 0x5E626B;
-
-fn rack_height(items: usize) -> f32 {
-    BAND_H + items as f32 * TILE_H + items.saturating_sub(1) as f32 * GAP + GAP + READOUT_H + PAD
+// The rack's height in the mockups: a 28px band, a 60px row for each tile and for the phantom
+// tile with 6px between rows, 12px of padding below, and a 1px border.
+fn rack_height(tiles: usize) -> f32 {
+    102. + 66. * tiles as f32
 }
 
 fn strip_height(tiles: usize) -> f32 {
-    20. + tiles.max(1) as f32 * 16. - 8.
+    14. + 16. * tiles.max(1) as f32
 }
 
 fn results_dir() -> PathBuf {
@@ -73,16 +62,83 @@ fn captures_dir() -> PathBuf {
         .join("captures")
 }
 
-#[derive(Clone, Copy)]
-enum Marker {
-    Circle(u32),
-    Square(u32),
+#[derive(Clone, Copy, PartialEq)]
+enum State {
+    Working,
+    YourTurn,
+    Approval,
+    Ended,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Timer {
+    Idle,
+    // The share of the timer's time that's left, from 0 to 1.
+    Running(f32),
+    TimeUp,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Session(State),
+    Own,
 }
 
 struct Tile {
     title: SharedString,
-    marker: Marker,
-    clicks: u32,
+    kind: Kind,
+    summary: Option<SharedString>,
+    timer: Timer,
+}
+
+// The tiles the mockups' interactive prototype starts with.
+fn sample_tiles() -> Vec<Tile> {
+    let tile = |title: &str, kind, summary: Option<&str>, timer| Tile {
+        title: title.to_string().into(),
+        kind,
+        summary: summary.map(|s| s.to_string().into()),
+        timer,
+    };
+    vec![
+        tile(
+            "Stage 11b: app shells",
+            Kind::Session(State::Working),
+            None,
+            Timer::Idle,
+        ),
+        tile(
+            "Parse crash dumps in the log collector",
+            Kind::Session(State::Approval),
+            Some("Wants to run: cargo test -p collector"),
+            Timer::Running(0.6),
+        ),
+        tile(
+            "Donor page copy pass",
+            Kind::Session(State::YourTurn),
+            Some("Drafted three headlines. Which tone do you want?"),
+            Timer::Running(0.4),
+        ),
+        tile(
+            "Flight plan import",
+            Kind::Session(State::Ended),
+            None,
+            Timer::Idle,
+        ),
+        tile("Check release CI", Kind::Own, None, Timer::Running(0.4)),
+        tile("Waiting on review feedback", Kind::Own, None, Timer::Idle),
+        tile(
+            "Renew the domain before Friday",
+            Kind::Own,
+            None,
+            Timer::TimeUp,
+        ),
+        tile(
+            "Smoke-test the build when it lands",
+            Kind::Own,
+            None,
+            Timer::Running(0.6),
+        ),
+    ]
 }
 
 #[derive(Clone, Copy)]
@@ -114,6 +170,12 @@ impl Ended {
     }
 }
 
+#[derive(Clone, Copy)]
+enum After {
+    Dock(Side),
+    Settle,
+}
+
 struct Config {
     selftest: bool,
     style_only: bool,
@@ -130,6 +192,9 @@ struct Rack {
     cfg: Config,
     tiles: Vec<Tile>,
     docked: Option<Side>,
+    dock_area: Rect,
+    dock_y: f64,
+    peek: bool,
     press: Option<Press>,
     drag: Option<Drag>,
     wait_release: bool,
@@ -138,6 +203,7 @@ struct Rack {
     pos: (f64, f64),
     size: (f64, f64),
     vel: (f64, f64),
+    tween: Option<(Tween, After)>,
     scale: f64,
     last_frame: Option<Instant>,
     adding: Option<isize>,
@@ -152,7 +218,7 @@ struct Rack {
 impl Rack {
     fn new(cfg: Config, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let hwnd = native::hwnd_of(window);
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("New tile"));
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Name it"));
         let subs = vec![
             cx.subscribe_in(&input, window, |this, _, ev: &InputEvent, window, cx| {
                 if let InputEvent::PressEnter { .. } = ev {
@@ -183,13 +249,13 @@ impl Rack {
         cx.spawn(async move |this, cx| {
             let installed = native::install_subclass(hwnd, !style_only);
             native::set_noactivate(hwnd, true);
-            // The self-test captures the window as GPUI draws it before squaring off DWM's
-            // corners and border, so the report shows what each does.
-            let squared = (!selftest).then(|| native::square_off(hwnd));
+            // The self-test captures the window without DWM's shadow first, so the report shows
+            // what the shadow adds.
+            let shadow = (!selftest).then(|| native::dwm_shadow(hwnd, true));
             let (w, c) = (native::window_rect(hwnd), native::client_rect(hwnd));
             this.update(cx, |this, cx| {
                 this.log.subclass = Some(installed);
-                this.log.squared_off = squared;
+                this.log.dwm_shadow = shadow;
                 this.log.ex_style = native::ex_style(hwnd);
                 this.log.frame = Some((
                     w.right - w.left,
@@ -221,24 +287,11 @@ impl Rack {
                 since: Instant::now(),
             }),
             cfg,
-            tiles: vec![
-                Tile {
-                    title: "Working session".into(),
-                    marker: Marker::Circle(BLUE),
-                    clicks: 0,
-                },
-                Tile {
-                    title: "Your turn".into(),
-                    marker: Marker::Circle(AMBER),
-                    clicks: 0,
-                },
-                Tile {
-                    title: "Your own tile".into(),
-                    marker: Marker::Square(OWN),
-                    clicks: 0,
-                },
-            ],
+            tiles: sample_tiles(),
             docked: None,
+            dock_area: Rect::default(),
+            dock_y: 0.,
+            peek: false,
             press: None,
             drag: None,
             wait_release: false,
@@ -247,6 +300,7 @@ impl Rack {
             pos: (r.left, r.top),
             size: (r.right - r.left, r.bottom - r.top),
             vel: (0., 0.),
+            tween: None,
             scale: window.scale_factor() as f64,
             last_frame: None,
             adding: None,
@@ -311,13 +365,17 @@ impl Rack {
     }
 
     fn animating(&self) -> bool {
-        self.press.is_some() || self.wait_release || self.vel != (0., 0.) || self.selftest.is_some()
+        self.press.is_some()
+            || self.wait_release
+            || self.vel != (0., 0.)
+            || self.tween.is_some()
+            || self.selftest.is_some()
     }
 
     fn on_press(&mut self, _: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.last_press_focus = native::foreground_window();
         self.suppress_click = false;
-        if self.adding.is_some() || self.docked.is_some() {
+        if self.adding.is_some() || self.docked.is_some() || self.tween.is_some() {
             return;
         }
         self.refresh_rect();
@@ -344,6 +402,20 @@ impl Rack {
             e.frames.push(now);
         }
         let scale = self.scale;
+
+        if let Some((tween, after)) = self.tween {
+            let (p, done) = tween.at(now);
+            self.pos = p;
+            self.move_window(cx);
+            if done {
+                self.tween = None;
+                self.end_episode();
+                if let After::Dock(side) = after {
+                    self.finish_dock(side, cx);
+                }
+            }
+            return;
+        }
 
         if self.wait_release {
             if !native::left_button_down() {
@@ -376,12 +448,12 @@ impl Rack {
                     (Some(side), _) => Some((side, now)),
                     (None, _) => None,
                 };
-                drag.samples.push(now, p);
+                drag.samples.push(now, want);
                 self.move_window(cx);
                 let docks = drag.hold.filter(|(_, since)| now - *since >= motion::HOLD);
                 self.drag = Some(drag);
                 if let Some((side, _)) = docks {
-                    self.dock(side, cx);
+                    self.begin_dock(side);
                     self.wait_release = true;
                     return;
                 }
@@ -418,10 +490,33 @@ impl Rack {
         self.begin_episode(kind);
     }
 
-    fn dock(&mut self, side: Side, cx: &mut Context<Self>) {
+    // The rack slides into the edge it was held against, and the strip takes its place.
+    fn begin_dock(&mut self, side: Side) {
+        self.press = None;
+        self.drag = None;
+        self.vel = (0., 0.);
+        let a = native::edges_at(self.center()).area;
+        self.dock_area = a;
+        self.dock_y = self.pos.1;
+        let to_x = match side {
+            Side::Left => a.left - self.size.0,
+            Side::Right => a.right,
+        };
+        self.begin_episode("slide into the dock");
+        self.tween = Some((
+            Tween {
+                from: self.pos,
+                to: (to_x, self.pos.1),
+                start: Instant::now(),
+                ease: Ease::In,
+            },
+            After::Dock(side),
+        ));
+    }
+
+    fn finish_dock(&mut self, side: Side, cx: &mut Context<Self>) {
         let s = self.scale;
-        let edges = native::edges_at(self.center());
-        let a = edges.area;
+        let a = self.dock_area;
         let (w, h) = (
             STRIP_W as f64 * s,
             strip_height(self.tiles.len()) as f64 * s,
@@ -430,41 +525,71 @@ impl Rack {
             Side::Left => a.left,
             Side::Right => a.right - w,
         };
-        let y = (self.pos.1 + 12. * s).clamp(a.top + 16. * s, (a.bottom - h - 16. * s).max(a.top));
-        self.press = None;
-        self.drag = None;
-        self.vel = (0., 0.);
-        self.end_episode();
+        let y = (self.dock_y + 12. * s).clamp(a.top + 16. * s, (a.bottom - h - 16. * s).max(a.top));
         self.docked = Some(side);
+        self.peek = false;
         self.pos = (x, y);
         self.size = (w, h);
         self.set_bounds(cx);
+        native::set_round_corners(self.hwnd, false);
         self.log.docks += 1;
         cx.notify();
     }
 
+    // The rack slides back out of the edge and stops flush with it.
     fn undock(&mut self, cx: &mut Context<Self>) {
         let Some(side) = self.docked.take() else {
             return;
         };
         let s = self.scale;
-        let a = native::edges_at(self.center()).area;
-        let (w, h) = (
-            RACK_W as f64 * s,
-            rack_height(self.tiles.len() + 1) as f64 * s,
-        );
+        let a = self.dock_area;
+        let (w, h) = (RACK_W as f64 * s, rack_height(self.tiles.len()) as f64 * s);
         let y = (self.pos.1 - 12. * s).clamp(a.top, (a.bottom - h).max(a.top));
-        let (x, vx) = match side {
-            Side::Left => (a.left, motion::UNDOCK_SPEED * s),
-            Side::Right => (a.right - w, -motion::UNDOCK_SPEED * s),
+        let (from_x, to_x) = match side {
+            Side::Left => (a.left - w, a.left),
+            Side::Right => (a.right, a.right - w),
         };
-        self.pos = (x, y);
+        self.peek = false;
+        self.pos = (from_x, y);
         self.size = (w, h);
         self.set_bounds(cx);
-        self.vel = (vx, 0.);
+        native::set_round_corners(self.hwnd, true);
         self.begin_episode("slide out of the dock");
+        self.tween = Some((
+            Tween {
+                from: (from_x, y),
+                to: (to_x, y),
+                start: Instant::now(),
+                ease: Ease::Out,
+            },
+            After::Settle,
+        ));
         self.log.undocks += 1;
         cx.notify();
+    }
+
+    fn set_peek(&mut self, on: bool, cx: &mut Context<Self>) {
+        let Some(side) = self.docked else {
+            return;
+        };
+        if self.peek == on || self.tween.is_some() {
+            return;
+        }
+        self.peek = on;
+        let w = (STRIP_W as f64 + if on { motion::PEEK } else { 0. }) * self.scale;
+        self.pos.0 = match side {
+            Side::Left => self.dock_area.left,
+            Side::Right => self.dock_area.right - w,
+        };
+        self.size.0 = w;
+        self.set_bounds(cx);
+        cx.notify();
+    }
+
+    fn resize_rack(&mut self, cx: &mut Context<Self>) {
+        self.refresh_rect();
+        self.size.1 = rack_height(self.tiles.len()) as f64 * self.scale;
+        self.set_bounds(cx);
     }
 
     fn check_click_focus(&mut self, cx: &mut Context<Self>) {
@@ -476,7 +601,11 @@ impl Rack {
             let now = native::foreground_window();
             this.update(cx, |this, cx| {
                 this.log.clicks += 1;
-                if now == before && now != hwnd {
+                // While the inline field is open the rack has focus on purpose, so a click then
+                // says nothing about whether clicks take focus.
+                if before == hwnd {
+                    this.log.clicks_with_rack_focused += 1;
+                } else if now == before {
                     this.log.clicks_kept_focus += 1;
                 }
                 cx.notify();
@@ -486,12 +615,40 @@ impl Rack {
         .detach();
     }
 
-    fn click_tile(&mut self, i: usize, cx: &mut Context<Self>) {
+    // Clicking a session tile would open the session, and clicking your own time-up tile clears
+    // time-up. Every click is measured for whether it left keyboard focus where it was.
+    fn click_main(&mut self, i: usize, cx: &mut Context<Self>) {
         if self.suppress_click {
             return;
         }
-        self.tiles[i].clicks += 1;
         self.check_click_focus(cx);
+        let t = &mut self.tiles[i];
+        if t.kind == Kind::Own && t.timer == Timer::TimeUp {
+            t.timer = Timer::Idle;
+        }
+        cx.notify();
+    }
+
+    fn toggle_timer(&mut self, i: usize, cx: &mut Context<Self>) {
+        if self.suppress_click {
+            return;
+        }
+        self.check_click_focus(cx);
+        let t = &mut self.tiles[i];
+        t.timer = match t.timer {
+            Timer::Running(_) => Timer::Idle,
+            Timer::Idle | Timer::TimeUp => Timer::Running(1.),
+        };
+        cx.notify();
+    }
+
+    fn remove_tile(&mut self, i: usize, cx: &mut Context<Self>) {
+        if self.suppress_click || i >= self.tiles.len() {
+            return;
+        }
+        self.check_click_focus(cx);
+        self.tiles.remove(i);
+        self.resize_rack(cx);
         cx.notify();
     }
 
@@ -542,12 +699,11 @@ impl Rack {
         if ended == Ended::Enter && !text.is_empty() {
             self.tiles.push(Tile {
                 title: text.into(),
-                marker: Marker::Square(OWN),
-                clicks: 0,
+                kind: Kind::Own,
+                summary: None,
+                timer: Timer::Idle,
             });
-            self.refresh_rect();
-            self.size.1 = rack_height(self.tiles.len() + 1) as f64 * self.scale;
-            self.set_bounds(cx);
+            self.resize_rack(cx);
         }
         if let Some(f) = self.log.fields.last_mut() {
             f.ended_by = ended.name();
@@ -599,7 +755,7 @@ impl Rack {
         let _ = std::fs::create_dir_all(captures_dir());
         let path = captures_dir().join(format!("{name}.png"));
         let r = native::window_rect(self.hwnd);
-        let line = match native::capture(r, 12, &path) {
+        let line = match native::capture(r, 32, &path) {
             Ok(()) => format!("{name}, saved beside the build in target/captures/{name}.png"),
             Err(e) => format!("{name} failed: {e}"),
         };
@@ -613,33 +769,43 @@ impl Rack {
             return;
         };
         let (phase, t) = (st.phase, st.since.elapsed());
-        let still = self.vel == (0., 0.);
+        let still = self.vel == (0., 0.) && self.tween.is_none();
         let next = match phase {
             0 if t > Duration::from_millis(1200) => {
-                self.capture("as-gpui-draws-it");
-                self.log.squared_off = Some(native::square_off(self.hwnd));
+                self.capture("rack");
+                self.log.dwm_shadow = Some(native::dwm_shadow(self.hwnd, true));
                 true
             }
             1 if t > Duration::from_millis(600) => {
-                self.capture("dwm-corners-and-border-off");
-                self.throw((-2400., -700.), "throw up and to the left");
+                self.capture("rack-with-dwm-shadow");
+                self.throw((-6000., -1500.), "fast throw up and to the left");
                 true
             }
             2 if still && t > Duration::from_millis(300) => {
-                self.throw((3200., 600.), "throw into the right edge, with a bounce");
+                self.throw((8000., 2500.), "fast throw down and to the right");
                 true
             }
             3 if still && t > Duration::from_millis(300) => {
                 self.refresh_rect();
-                self.dock(Side::Right, cx);
+                self.begin_dock(Side::Right);
                 true
             }
-            4 if t > Duration::from_millis(800) => {
+            4 if self.docked.is_some() && t > Duration::from_millis(800) => {
                 self.capture("docked-strip");
                 self.undock(cx);
                 true
             }
-            5 if still && t > Duration::from_millis(300) => {
+            // The field is shown without taking focus, which only a click or the hotkey may do.
+            5 if still && t > Duration::from_millis(400) => {
+                self.adding = Some(native::foreground_window());
+                true
+            }
+            6 if t > Duration::from_millis(300) => {
+                self.capture("quick-add-field");
+                self.adding = None;
+                true
+            }
+            7 if t > Duration::from_millis(200) => {
                 self.selftest = None;
                 self.finish(cx);
                 false
@@ -650,215 +816,6 @@ impl Rack {
             st.phase += 1;
             st.since = Instant::now();
         }
-    }
-
-    fn marker(m: Marker) -> Div {
-        match m {
-            Marker::Circle(c) => div().size(px(8.)).rounded_full().bg(rgb(c)),
-            Marker::Square(c) => div().size(px(8.)).rounded(px(2.)).bg(rgb(c)),
-        }
-    }
-
-    fn readout(&self) -> Div {
-        let moves = self.moves.borrow();
-        let last = self
-            .log
-            .episodes
-            .last()
-            .map(|e| report::episode_line(e, &moves, 0))
-            .map(|l| l.split(';').take(2).collect::<Vec<_>>().join(";"))
-            .unwrap_or_else(|| "Drag or throw the rack".into());
-        let fields = &self.log.fields;
-        let took = fields.iter().filter(|f| f.took_focus == Some(true)).count();
-        let back = fields
-            .iter()
-            .filter(|f| f.handed_back == Some(true))
-            .count();
-        let backs = fields.iter().filter(|f| f.handed_back.is_some()).count();
-        let loops = native::OS_MOVE_LOOPS.load(std::sync::atomic::Ordering::Relaxed);
-        div()
-            .absolute()
-            .left(px(PAD))
-            .right(px(PAD))
-            .bottom(px(PAD))
-            .h(px(READOUT_H))
-            .flex()
-            .flex_col()
-            .gap(px(2.))
-            .text_size(px(11.))
-            .text_color(rgb(TEXT2))
-            .child(last)
-            .child(format!(
-                "Clicks {}, focus stayed put after {}",
-                self.log.clicks, self.log.clicks_kept_focus
-            ))
-            .child(format!(
-                "Field took focus {took} of {}, handed it back {back} of {backs}",
-                fields.len()
-            ))
-            .child(format!("OS move loops {loops}, docked {}", self.log.docks))
-    }
-
-    fn render_rack(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let now = Instant::now();
-        let hold = self
-            .drag
-            .as_ref()
-            .and_then(|d| d.hold)
-            .map(|(side, since)| (side, ((now - since).as_secs_f32() / 1.5).min(1.)));
-        let tiles = self.tiles.iter().enumerate().map(|(i, t)| {
-            let clicks = report::plural(t.clicks as usize, "click", "clicks");
-            div()
-                .id(("tile", i))
-                .h(px(TILE_H))
-                .flex()
-                .items_center()
-                .gap(px(10.))
-                .px(px(12.))
-                .rounded(px(10.))
-                .bg(rgb(TILE))
-                .hover(|s| s.bg(rgb(TILE_HOVER)))
-                .child(Self::marker(t.marker))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .child(
-                            div()
-                                .text_size(px(13.5))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgb(TEXT))
-                                .child(t.title.clone()),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(12.))
-                                .text_color(rgb(TEXT2))
-                                .child(clicks),
-                        ),
-                )
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.click_tile(i, cx)))
-                .into_any_element()
-        });
-        let last = if self.adding.is_some() {
-            div()
-                .h(px(TILE_H))
-                .flex()
-                .items_center()
-                .px(px(8.))
-                .rounded(px(10.))
-                .bg(rgb(TILE))
-                .child(Input::new(&self.input))
-                .into_any_element()
-        } else {
-            div()
-                .id("phantom")
-                .h(px(TILE_H))
-                .flex()
-                .items_center()
-                .justify_center()
-                .gap(px(8.))
-                .rounded(px(10.))
-                .border_1()
-                .border_dashed()
-                .border_color(rgb(BORDER))
-                .text_color(rgb(TEXT2))
-                .child("+")
-                .child(div().text_size(px(11.)).child("Ctrl + Shift + Space"))
-                .on_click(
-                    cx.listener(|this, _: &ClickEvent, window, cx| this.start_adding(window, cx)),
-                )
-                .into_any_element()
-        };
-        let grip = div()
-            .flex()
-            .gap(px(4.))
-            .children((0..6).map(|_| div().size(px(3.)).rounded_full().bg(rgba(0xA3A6AE66))));
-        let quit = div()
-            .id("quit")
-            .absolute()
-            .right(px(10.))
-            .top(px(5.))
-            .text_size(px(13.))
-            .text_color(rgb(TEXT2))
-            .hover(|s| s.text_color(rgb(TEXT)))
-            .child("×")
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                if !this.suppress_click {
-                    this.finish(cx);
-                }
-            }));
-        div()
-            .size_full()
-            .relative()
-            .bg(rgb(BG))
-            .border_1()
-            .border_color(rgb(BORDER))
-            .rounded(px(14.))
-            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_press))
-            .child(
-                div()
-                    .h(px(BAND_H))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .relative()
-                    .child(grip)
-                    .child(quit),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(GAP))
-                    .px(px(PAD))
-                    .children(tiles)
-                    .child(last),
-            )
-            .child(self.readout())
-            .children(hold.map(|(side, p)| {
-                let bar = div()
-                    .absolute()
-                    .top_0()
-                    .w(px(3.))
-                    .h(relative(p))
-                    .bg(rgb(BLUE));
-                match side {
-                    Side::Left => bar.left_0(),
-                    Side::Right => bar.right_0(),
-                }
-            }))
-            .into_any_element()
-    }
-
-    fn render_strip(&mut self, side: Side, cx: &mut Context<Self>) -> AnyElement {
-        let strip = div()
-            .id("strip")
-            .size_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(px(8.))
-            .py(px(10.))
-            .bg(rgb(BG))
-            .border_1()
-            .border_color(rgb(BORDER))
-            .children(self.tiles.iter().map(|t| Self::marker(t.marker)))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _: &MouseDownEvent, _, _| {
-                    this.last_press_focus = native::foreground_window();
-                }),
-            )
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.check_click_focus(cx);
-                this.undock(cx);
-            }));
-        match side {
-            Side::Left => strip.rounded_r(px(8.)),
-            Side::Right => strip.rounded_l(px(8.)),
-        }
-        .into_any_element()
     }
 }
 
@@ -886,7 +843,7 @@ fn main() {
     let focus_before_open = native::foreground_window();
 
     gpui_kit::application()
-        .with_assets(gpui_kit::assets::Assets)
+        .with_assets(assets::Assets)
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
             Theme::change(ThemeMode::Dark, None, cx);
@@ -896,7 +853,7 @@ fn main() {
             cx.global_mut::<Theme>().tokens.background = transparent_black().into();
             let display = cx.primary_display().expect("there should be a display");
             let db = display.bounds();
-            let size = size(px(RACK_W), px(rack_height(4)));
+            let size = size(px(RACK_W), px(rack_height(sample_tiles().len())));
             let origin = point(db.right() - px(RACK_W + 48.), db.top() + px(96.));
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(origin, size))),

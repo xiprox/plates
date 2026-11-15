@@ -27,12 +27,13 @@ pub struct Log {
     pub subclass: Option<bool>,
     pub answers_mouse_activate: bool,
     pub frame: Option<(f64, f64, f64, f64)>,
-    pub squared_off: Option<(bool, bool)>,
+    pub dwm_shadow: Option<bool>,
     pub ex_style: u32,
     pub focus_kept_on_open: Option<bool>,
     pub episodes: Vec<Episode>,
     pub clicks: u32,
     pub clicks_kept_focus: u32,
+    pub clicks_with_rack_focused: u32,
     pub fields: Vec<FieldTest>,
     pub docks: u32,
     pub undocks: u32,
@@ -168,12 +169,11 @@ pub fn write(log: &Log, moves: &[MoveRecord], rack_center: (f64, f64), scale: f6
             "- window rectangle {ww}x{wh}, client area {cw}x{ch}, in physical pixels"
         );
     }
-    if let Some((corners, border)) = log.squared_off {
+    if let Some(extended) = log.dwm_shadow {
         let _ = writeln!(
             s,
-            "- DWM corner rounding turned off: {}; DWM border turned off: {}",
-            yes(corners),
-            yes(border)
+            "- DWM shadow asked for, by extending the frame 1px into the client area: {}",
+            yes(extended)
         );
     }
     if let Some(kept) = log.focus_kept_on_open {
@@ -227,8 +227,14 @@ pub fn write(log: &Log, moves: &[MoveRecord], rack_center: (f64, f64), scale: f6
     let _ = writeln!(s, "Focus");
     let _ = writeln!(
         s,
-        "- clicks on tiles and the strip: {}, after which keyboard focus stayed in the app that had it: {}",
-        log.clicks, log.clicks_kept_focus
+        "- clicks on tiles and the strip while another app had keyboard focus: {}, after which focus stayed in that app: {}",
+        log.clicks - log.clicks_with_rack_focused,
+        log.clicks_kept_focus
+    );
+    let _ = writeln!(
+        s,
+        "- clicks while the inline field had focus, which say nothing about clicks taking focus: {}",
+        log.clicks_with_rack_focused
     );
     for (i, f) in log.fields.iter().enumerate() {
         let took = f.took_focus.map_or("not measured", yes);

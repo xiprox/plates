@@ -1,0 +1,35 @@
+Plates window test, by-hand run
+Date (UTC): 2026-11-15
+OS: Windows 11 25H2, build 26200.9711
+Displays: 1; the rack's is 5120x1440 physical pixels at 100% scale and 240 Hz
+
+Window
+- extended styles: WS_EX_TOOLWINDOW yes, WS_EX_TOPMOST yes, WS_EX_NOACTIVATE yes, WS_EX_APPWINDOW no
+- window subclass installed: yes
+- the subclass answers WM_MOUSEACTIVATE with MA_NOACTIVATE: yes
+- window rectangle 304x376, client area 304x376, in physical pixels
+- DWM corner rounding turned off: yes; DWM border turned off: yes
+- keyboard focus stayed in the app that had it when the rack opened: yes
+
+Motion
+- drag: 757 moves over 3.15s, 240 per second; between moves, median 4.2ms, 95th percentile 4.8ms, longest 6.1ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 1.99ms; frames drawn 240 per second
+- slide out of the dock: 220 moves over 0.91s, 240 per second; between moves, median 4.1ms, 95th percentile 5.0ms, longest 6.9ms; 1 gap longer than 6.2ms; SetWindowPos took a median 0.51ms and at most 2.65ms; frames drawn 240 per second
+- drag: 96 moves over 0.40s, 240 per second; between moves, median 4.2ms, 95th percentile 4.8ms, longest 6.2ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.03ms and at most 0.87ms; frames drawn 240 per second
+- throw: 48 moves over 0.19s, 242 per second; between moves, median 4.1ms, 95th percentile 5.1ms, longest 5.7ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.03ms and at most 1.08ms; frames drawn 240 per second
+- drag: 360 moves over 1.50s, 240 per second; between moves, median 4.1ms, 95th percentile 4.9ms, longest 5.8ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 0.94ms; frames drawn 240 per second
+- slide out of the dock: 310 moves over 1.28s, 241 per second; between moves, median 4.2ms, 95th percentile 5.3ms, longest 6.0ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.39ms and at most 3.91ms; frames drawn 241 per second
+- drag: 380 moves over 1.58s, 240 per second; between moves, median 4.2ms, 95th percentile 4.6ms, longest 5.3ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.02ms and at most 1.32ms; frames drawn 240 per second
+- slide out of the dock: 381 moves over 1.58s, 240 per second; between moves, median 4.2ms, 95th percentile 5.2ms, longest 6.4ms; 1 gap longer than 6.2ms; SetWindowPos took a median 0.04ms and at most 3.43ms; frames drawn 240 per second
+- drag: 53 moves over 0.22s, 241 per second; between moves, median 4.2ms, 95th percentile 5.1ms, longest 7.2ms; 1 gap longer than 6.2ms; SetWindowPos took a median 0.03ms and at most 1.14ms; frames drawn 240 per second
+- throw: 252 moves over 1.05s, 240 per second; between moves, median 4.1ms, 95th percentile 5.1ms, longest 7.7ms; 5 gaps longer than 6.2ms; SetWindowPos took a median 0.03ms and at most 2.63ms; frames drawn 240 per second
+- docked 3 times and undocked 3 times
+
+The OS
+- entered its own move or size loop on the rack: 0 times
+- sent WM_MOUSEACTIVATE: 17 times
+- put the rack somewhere other than where it was moved: 0 of 2863 moves
+
+Focus
+- clicks on tiles and the strip: 6, after which keyboard focus stayed in the app that had it: 6
+- inline field 1: took keyboard focus: yes; ended by a click elsewhere; focus went back to the app you were in: not handed back
+- inline field 2: took keyboard focus: yes; ended by Enter; focus went back to the app you were in: yes
