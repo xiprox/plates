@@ -188,6 +188,14 @@ fn marker(t: &Tile, pip: bool) -> AnyElement {
     let (shape, color, breathe) = match state(t) {
         Some(SessionState::Working) => (base.rounded_full(), Some(BLUE), true),
         Some(SessionState::New) => (base.rounded_full(), Some(BLUE), false),
+        // A your-turn tile you've read keeps its amber as a ring, since your reply is still
+        // owed, without the solid dot that asks for attention (user, 2026-11-15).
+        Some(SessionState::YourTurn) if t.session().is_some_and(|s| s.read) => {
+            return base
+                .rounded_full()
+                .shadow(vec![ring(rgb(AMBER).into(), 1.5)])
+                .into_any_element();
+        }
         Some(SessionState::YourTurn) => (base.rounded_full(), Some(AMBER), false),
         Some(SessionState::Unread) => (base.rounded_full(), Some(GREEN), false),
         Some(SessionState::Done) => (base.rounded_full(), Some(GRAY), false),
@@ -238,6 +246,9 @@ fn state_words(t: &Tile, now: SystemTime) -> Option<String> {
             SessionState::NeedsApproval => {
                 format!("Needs your approval · {}", minutes(in_state))
             }
+            SessionState::YourTurn if s.read => {
+                format!("Your turn · read · waiting {}", minutes(in_state))
+            }
             SessionState::YourTurn => format!("Your turn · waiting {}", minutes(in_state)),
             SessionState::Unread => format!("Finished {} ago · not read yet", minutes(in_state)),
             SessionState::Done => format!("Done · read {} ago", minutes(in_state)),
@@ -284,10 +295,10 @@ impl RackView {
                 .session()
                 .and_then(|s| s.summary.clone())
                 .map(|s| (s, 0xFF9B6E)),
-            Some(SessionState::YourTurn) => t
-                .session()
-                .and_then(|s| s.summary.clone())
-                .map(|s| (s, 0xF2C46A)),
+            Some(SessionState::YourTurn) => t.session().and_then(|s| {
+                let color = if s.read { TEXT2 } else { 0xF2C46A };
+                s.summary.clone().map(|line| (line, color))
+            }),
             // A finished turn you haven't read shows Claude's last line in full white, like a new
             // message, and once you've read it, in the secondary text color (user, 2026-11-15).
             Some(SessionState::Unread) => t

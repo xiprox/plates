@@ -78,7 +78,11 @@ impl Tile {
         }
         match self.session().map(|s| s.state) {
             Some(SessionState::NeedsApproval) => Some(Need::Approval),
-            Some(SessionState::YourTurn) => Some(Need::YourTurn),
+            // A turn you've read still waits for your reply, which its tile shows, but it no
+            // longer asks for your attention (user, 2026-11-15).
+            Some(SessionState::YourTurn) if !self.session().is_some_and(|s| s.read) => {
+                Some(Need::YourTurn)
+            }
             Some(SessionState::Unread) => Some(Need::Unread),
             // A session that's done, one you've read, waits for you without needing you.
             _ => None,
@@ -178,6 +182,7 @@ impl Rack {
             }
             s.state = to;
             s.state_since = now;
+            s.read = false;
             *timer = match to {
                 SessionState::YourTurn | SessionState::NeedsApproval => {
                     Timer::start(now, DEFAULT_MINUTES)
@@ -268,11 +273,15 @@ impl Rack {
             }
             // Only a look after the turn ended reads it: one from before is the look the app
             // last recorded, while the turn ran.
-            SessionEvent::Seen { at } => {
-                if s.state == SessionState::Unread && at >= s.state_since {
-                    set_state(s, &mut tile.timer, SessionState::Done);
+            SessionEvent::Seen { at } if at >= s.state_since => match s.state {
+                SessionState::Unread => set_state(s, &mut tile.timer, SessionState::Done),
+                SessionState::YourTurn if !s.read => {
+                    s.read = true;
+                    tile.timer = Timer::Idle;
                 }
-            }
+                _ => {}
+            },
+            SessionEvent::Seen { .. } => {}
             SessionEvent::TurnFailed { error, text } => {
                 s.pending_tool = None;
                 s.summary = Some(
@@ -510,11 +519,19 @@ impl Rack {
         let Body::Session(s) = &mut tile.body else {
             return false;
         };
-        if s.state != SessionState::Unread {
-            return false;
+        match s.state {
+            SessionState::Unread => {
+                s.state = SessionState::Done;
+                s.state_since = now;
+            }
+            // Your turn stays your turn, since it still waits for your reply, but its reminder
+            // stops.
+            SessionState::YourTurn if !s.read => {
+                s.read = true;
+                tile.timer = Timer::Idle;
+            }
+            _ => return false,
         }
-        s.state = SessionState::Done;
-        s.state_since = now;
         tile.refresh_need(now);
         true
     }
@@ -1198,6 +1215,26 @@ mod tests {
         let t = rack.tile(a).unwrap();
         assert_eq!(t.session().unwrap().state, SessionState::YourTurn);
         assert_eq!(t.need, Some((Need::YourTurn, at(7))));
+    }
+
+    #[test]
+    fn reading_your_turn_stops_its_reminder_but_keeps_it_your_turn() {
+        let mut rack = Rack::new();
+        let a = apply(&mut rack, "a", stop("Commit it?"), 0);
+        assert!(rack.tile(a).unwrap().timer.is_running());
+        assert!(rack.mark_read(a, at(1)));
+        let t = rack.tile(a).unwrap();
+        assert_eq!(t.session().unwrap().state, SessionState::YourTurn);
+        assert!(t.session().unwrap().read);
+        assert_eq!(t.timer, Timer::Idle);
+        assert_eq!(t.need, None);
+
+        // A look from the app reads the next one, and a new turn is unread again.
+        apply(&mut rack, "a", prompt("Go on"), 2);
+        apply(&mut rack, "a", stop("Push it?"), 3);
+        assert!(!session(&rack, a).read);
+        apply(&mut rack, "a", SessionEvent::Seen { at: at(4) }, 4);
+        assert!(session(&rack, a).read);
     }
 
     #[test]

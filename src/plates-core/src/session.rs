@@ -198,6 +198,8 @@ pub struct Session {
     /// Whether the turn's last wrap-up asked you something, or `None` for a turn with no
     /// wrap-up, such as a session in a terminal, whose end counts as your turn.
     pub asks: Option<bool>,
+    /// Whether you've read a turn that's your turn, by opening the session or clicking its tile.
+    pub read: bool,
     /// What a working tile shows: `status` for `STATUS_HOLDS` after it changes, then `activity`
     /// while its tool runs and for at least `TOOL_HOLDS`, and `THINKING` otherwise.
     /// `refresh_line` keeps it current.
@@ -225,6 +227,7 @@ impl Session {
             tool_running: false,
             compacting: false,
             asks: None,
+            read: false,
             line: None,
             pending_tool: None,
             ended_at: None,
