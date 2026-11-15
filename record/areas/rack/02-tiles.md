@@ -43,8 +43,8 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   Clicking it, or pressing the hotkey, brings the rack forward, slides it out of the dock if it's docked, and turns the phantom tile into an inline name field.
   Enter adds the tile, and Esc cancels.
 - Double-clicking your own tile turns its title into the same inline field, to rename it.
-- A check appears on your own tile when you hover it.
-  Clicking the check removes the tile and shows an Undo button for 5s, and there's no archive (user, 2026-11-15).
+- An × appears on your own tile when you hover it, as on an ended session's tile (user, 2026-11-15).
+  Clicking the × removes the tile and shows an Undo button for 5s, and there's no archive (user, 2026-11-15).
 
 ## The timer
 

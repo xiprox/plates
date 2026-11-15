@@ -41,9 +41,9 @@ const RACK_W: f32 = 304.;
 const STRIP_W: f32 = 22.;
 
 // The rack's height: a 28px band, a 60px row for each tile and for the phantom tile with 6px
-// between rows, 8px of padding below, and a 1px border.
+// between rows, 12px of padding below, and a 1px border.
 fn rack_height(tiles: usize) -> f32 {
-    98. + 66. * tiles as f32
+    102. + 66. * tiles as f32
 }
 
 fn strip_height(tiles: usize) -> f32 {

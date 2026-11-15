@@ -163,14 +163,11 @@ impl Rack {
             main = main.cursor_pointer();
         }
 
-        // Your own tile's check sits 2px from the timer slot beside it, and an ended session's ×,
-        // with no timer slot, sits 8px from the tile's edge.
-        let side_icon = match t.kind {
-            Kind::Own => Some(("plates/check.svg", 17., 2.)),
-            Kind::Session(State::Ended) => Some(("plates/x.svg", 16., 8.)),
-            _ => None,
-        };
-        let side = side_icon.map(|(path, size, margin)| {
+        // Your own tile and an ended session's tile both show an × on hover, which removes the
+        // tile, 8px from the timer slot or from the tile's edge (user, 2026-11-15).
+        let removable = matches!(t.kind, Kind::Own | Kind::Session(State::Ended));
+        let side = removable.then(|| {
+            let (path, size, margin) = ("plates/x.svg", 16., 8.);
             let btn_group: SharedString = format!("done-{i}").into();
             div().flex().items_center().mr(px(margin)).child(
                 div()
@@ -393,8 +390,8 @@ impl Rack {
             .rounded(px(14.))
             .border_1()
             .border_color(rgb(BORDER))
-            .px(px(8.))
-            .pb(px(8.))
+            .px(px(12.))
+            .pb(px(12.))
             .cursor(if self.drag.is_some() {
                 CursorStyle::ClosedHand
             } else {

@@ -50,10 +50,6 @@ fn icon(name: &str) -> Option<String> {
             "0 0 24 24",
             format!(r#"<path d="M10 10l4 4M14 10l-4 4" {STROKE} stroke-width="1.6"/>"#),
         ),
-        "check.svg" => svg(
-            "0 0 24 24",
-            format!(r#"<path d="M5 12.5l4.5 4.5L19 7.5" {STROKE} stroke-width="1.8"/>"#),
-        ),
         "x.svg" => svg(
             "0 0 24 24",
             format!(r#"<path d="M7 7l10 10M17 7L7 17" {STROKE} stroke-width="1.8"/>"#),
