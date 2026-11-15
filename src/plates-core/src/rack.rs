@@ -23,6 +23,10 @@ pub struct Own {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a rack holds a few dozen tiles at most, so boxing the session would save nothing that matters"
+)]
 pub enum Body {
     Session(Session),
     Own(Own),
@@ -182,6 +186,7 @@ impl Rack {
                     s.first_prompt = prompt.filter(|p| !prompt_title(p).is_empty());
                 }
                 s.summary = None;
+                s.status = None;
                 s.pending_tool = None;
                 set_state(s, &mut tile.timer, SessionState::Working);
             }
@@ -320,6 +325,22 @@ impl Rack {
         });
         if let Some(s) = session {
             s.first_prompt = Some(prompt.to_string());
+        }
+    }
+
+    /// Sets a session's status line, the first line of the newest text Claude wrote in the turn,
+    /// which a working tile shows.
+    pub fn set_status(&mut self, session_id: &str, text: &str) {
+        let line = first_line(text);
+        if line.is_empty() {
+            return;
+        }
+        let session = self.tiles.iter_mut().find_map(|t| match &mut t.body {
+            Body::Session(s) if s.id == session_id => Some(s),
+            _ => None,
+        });
+        if let Some(s) = session {
+            s.status = Some(line);
         }
     }
 
@@ -786,6 +807,19 @@ mod tests {
         rack.restore(removed);
         let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
         assert_eq!(order, vec![s1, s2, o1, o2]);
+    }
+
+    #[test]
+    fn a_status_line_lasts_until_the_next_prompt() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        rack.set_status("a", "Reading the receiver first.\nThen the rest.");
+        assert_eq!(
+            session(&rack, id).status.as_deref(),
+            Some("Reading the receiver first.")
+        );
+        apply(&mut rack, "a", prompt("Next"), 5);
+        assert_eq!(session(&rack, id).status, None);
     }
 
     #[test]

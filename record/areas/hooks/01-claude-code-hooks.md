@@ -47,6 +47,7 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 - An approval's summary line is built from the tool the `PermissionRequest` names, or else from the `PreToolUse` before it: "Wants to run: " and the command for a shell command, "Wants to edit: " and the file for an edit, and "Wants to use: " and the tool's name for any other tool.
   Where neither names a tool, the summary is the `Notification`'s `message`.
 - Your turn's summary line is the first line of `Stop`'s `last_assistant_message`, because the transcript isn't guaranteed to hold Claude's final message when `Stop` fires.
+- A working tile's summary line is the first line of the newest text Claude wrote since your last prompt, which no hook event carries mid-turn, so Plates reads it from the end of the transcript after each tool event, and it can trail Claude by a record or two.
 
 A transcript is JSON Lines, and a prompt you typed is a `user` record with `origin.kind` `human`, outside a subagent ([hooks log](log.md#2026-11-15-a-desktop-sessions-transcript-marks-a-typed-prompt-with-originkind-human-after-a-system-reminder)).
 

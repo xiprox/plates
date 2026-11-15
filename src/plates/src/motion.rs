@@ -37,6 +37,10 @@ impl Rect {
             bottom: pos.1 + size.1,
         }
     }
+
+    pub fn contains(&self, p: (f64, f64)) -> bool {
+        (self.left..self.right).contains(&p.0) && (self.top..self.bottom).contains(&p.1)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

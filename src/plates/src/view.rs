@@ -5,23 +5,19 @@ use std::time::{Duration, SystemTime};
 
 use gpui_kit::component::{input::Input, tooltip::Tooltip};
 use gpui_kit::*;
-use plates_core::{
-    Need, SessionState, Tile,
-    rack::ENDED_CLEARS_AFTER,
-    timer::{MENU_MINUTES, Timer},
-};
+use plates_core::{Need, SessionState, Tile, rack::ENDED_CLEARS_AFTER, timer::Timer};
 
 use crate::{
     motion::{PEEK, Side},
-    rack_view::{MENU_W, POPOVER_GAP, POPOVER_W, RackView, STRIP_W, TOAST_H, rack_height},
+    rack_view::{POPOVER_GAP, POPOVER_W, RackView, STRIP_W, TOAST_H, rack_height},
 };
 
 const BG: u32 = 0x131417;
-const BORDER: u32 = 0x2A2C31;
-const TILE: u32 = 0x1C1D21;
-const TEXT: u32 = 0xECEDEF;
+pub(crate) const BORDER: u32 = 0x2A2C31;
+pub(crate) const TILE: u32 = 0x1C1D21;
+pub(crate) const TEXT: u32 = 0xECEDEF;
 const TEXT2: u32 = 0xA3A6AE;
-const MUTED: u32 = 0x8B8E97;
+pub(crate) const MUTED: u32 = 0x8B8E97;
 const BLUE: u32 = 0x74AEFF;
 const AMBER: u32 = 0xF2B441;
 const HOT: u32 = 0xFF7A45;
@@ -131,12 +127,12 @@ fn brightened(base: u32, peak: u32, elapsed: Duration, length: Duration) -> Opti
     Some(mix(base, peak, k * (2. - k)))
 }
 
-// A tile's marker, or with `pip` its mark on the docked strip, which turns your own tile's
-// square yellow while its timer runs, since the strip has no room for the timer.
+// A tile's marker, or with `pip` its mark on the docked strip. The strip has no room for the
+// timer, so your own tile's pip is outlined in yellow while its timer runs, and turns solid
+// yellow once it's time-up, which needs you where a running timer doesn't (user, 2026-11-15).
 fn marker(t: &Tile, pip: bool) -> AnyElement {
     let size = if pip { 8. } else { 9. };
     let base = div().flex_none().size(px(size));
-    let own_yellow = t.timer.is_time_up() || (pip && t.timer.is_running());
     let (shape, color, breathe) = match state(t) {
         Some(SessionState::Working) => (base.rounded_full(), Some(BLUE), true),
         Some(SessionState::New) => (base.rounded_full(), Some(BLUE), false),
@@ -145,11 +141,14 @@ fn marker(t: &Tile, pip: bool) -> AnyElement {
         Some(SessionState::Ended) => (base.rounded_full(), None, false),
         None => (
             base.rounded(px(2.)),
-            Some(if own_yellow { YELLOW } else { GRAY }),
+            Some(if t.timer.is_time_up() { YELLOW } else { GRAY }),
             false,
         ),
     };
     let dot = match color {
+        Some(c) if pip && t.is_own() && t.timer.is_running() => {
+            shape.bg(rgb(c)).shadow(vec![ring(rgb(YELLOW).into(), 1.5)])
+        }
         Some(c) => shape.bg(rgb(c)),
         None => shape.shadow(vec![ring(rgb(0x6B6E76).into(), 1.5)]),
     };
@@ -233,6 +232,11 @@ impl RackView {
                 .session()
                 .and_then(|s| s.summary.clone())
                 .map(|s| (s, 0xF2C46A)),
+            // A working tile shows Claude's latest status line (user, 2026-11-15).
+            Some(SessionState::Working) => t
+                .session()
+                .and_then(|s| s.status.clone())
+                .map(|s| (s, 0x9CC4FF)),
             _ => None,
         };
         let ended = state(t) == Some(SessionState::Ended);
@@ -383,7 +387,7 @@ impl RackView {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, e: &MouseDownEvent, _, cx| {
-                    this.open_menu(id, f32::from(e.position.y), cx)
+                    this.open_menu(id, e.position, cx)
                 }),
             )
     }
@@ -521,80 +525,6 @@ impl RackView {
         )
     }
 
-    // The menu of timer lengths, over a scrim that closes it.
-    fn menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let menu = self.menu.as_ref()?;
-        let items = MENU_MINUTES.iter().map(|&m| {
-            let label = if m == 60 {
-                "1 hour".to_string()
-            } else {
-                format!("{m} min")
-            };
-            div()
-                .id(("minutes", m as u64))
-                .h(px(32.))
-                .px(px(10.))
-                .flex()
-                .items_center()
-                .justify_between()
-                .rounded(px(6.))
-                .text_size(px(13.))
-                .text_color(rgb(TEXT))
-                .hover(|s| s.bg(rgb(BORDER)))
-                .cursor_pointer()
-                .child(label)
-                .children((m == 5).then(|| {
-                    div()
-                        .text_size(px(11.))
-                        .text_color(rgb(MUTED))
-                        .child("click")
-                }))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.pick_minutes(m, cx)))
-        });
-        Some(
-            div()
-                .absolute()
-                .inset_0()
-                .child(
-                    div()
-                        .id("scrim")
-                        .absolute()
-                        .inset_0()
-                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.close_menu(cx)))
-                        .on_mouse_down(
-                            MouseButton::Right,
-                            cx.listener(|this, _: &MouseDownEvent, _, cx| this.close_menu(cx)),
-                        ),
-                )
-                .child(
-                    div()
-                        .absolute()
-                        .top(px(menu.top))
-                        .right(px(8.))
-                        .w(px(MENU_W))
-                        .p(px(6.))
-                        .flex()
-                        .flex_col()
-                        .rounded(px(10.))
-                        .bg(rgb(TILE))
-                        .border_1()
-                        .border_color(rgb(0x34363C))
-                        .child(
-                            div()
-                                .pt(px(6.))
-                                .pb(px(4.))
-                                .px(px(10.))
-                                .text_size(px(11.))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgb(MUTED))
-                                .child("REMIND ME IN"),
-                        )
-                        .children(items),
-                )
-                .into_any_element(),
-        )
-    }
-
     pub(crate) fn render_rack(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let now = SystemTime::now();
         let hold = self
@@ -674,12 +604,7 @@ impl RackView {
                     .child(last),
             )
             .children(dwell);
-        div()
-            .size_full()
-            .relative()
-            .child(panel)
-            .children(self.menu(cx))
-            .into_any_element()
+        div().size_full().relative().child(panel).into_any_element()
     }
 
     // The strip sits flush with the screen edge, rounded on its inner side only. Hovering it

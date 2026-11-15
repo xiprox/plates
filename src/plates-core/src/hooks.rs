@@ -21,6 +21,9 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
     let event = message.event?;
     let known = rack.knows(&message.session_id);
     let id = rack.apply(&message.session_id, &message.cwd, event, now);
+    if let Some(status) = &message.status {
+        rack.set_status(&message.session_id, status);
+    }
     if !known
         && let Some(Ok(Some(prompt))) = message
             .transcript_path
@@ -43,6 +46,17 @@ pub struct HookMessage {
     /// The change to the session's tile, or `None` for an event Plates ignores, such as
     /// `Notification` with `idle_prompt`.
     pub event: Option<SessionEvent>,
+    /// The newest text Claude wrote in the turn, which the app reads from the transcript for a
+    /// tool event, since no hook event carries it mid-turn.
+    pub status: Option<String>,
+}
+
+/// The hook events after which the app reads the transcript for the session's status line.
+pub fn wants_status(hook: &str) -> bool {
+    matches!(
+        hook,
+        "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "PermissionRequest"
+    )
 }
 
 #[derive(Debug)]
@@ -103,6 +117,7 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
         cwd,
         transcript_path,
         event,
+        status: None,
     })
 }
 

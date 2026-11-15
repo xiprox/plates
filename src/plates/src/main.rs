@@ -7,6 +7,7 @@ compile_error!("Plates runs on Windows so far, and its macOS half comes in the p
 mod app;
 mod assets;
 mod cli;
+mod menu;
 mod motion;
 mod native;
 mod rack_view;

@@ -19,6 +19,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 - It has 12px of padding on the left, right, and bottom, and its tiles sit 6px apart.
 - Its background is `#131417`, with a 1px `#2A2C31` border.
 - It casts a drop shadow, which on Windows the Desktop Window Manager (DWM) draws outside the window ([rack log](log.md#2026-11-15-dwm-draws-the-racks-drop-shadow-once-the-windows-frame-reaches-1px-into-its-client-area)), and what draws it on macOS is unverified until the plan's step 7.
+  The docked strip casts none, since DWM draws its shadow as a square-cornered rectangle around the whole window (user, 2026-11-15).
 
 ## Drag and throw
 
@@ -36,7 +37,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   Letting go before the bar fills leaves the rack where it is.
 - The strip is 22px wide, with one 8px mark per tile, called a pip, in the tiles' order.
   A session's pip is a circle colored as its tile's marker is.
-  Your own tile's pip is a gray square, which shows yellow while the tile's timer runs or once the tile is time-up ([02-tiles](02-tiles.md#the-timer)), since the strip has no room for the timer.
+  Your own tile's pip is a gray square, outlined in yellow while the tile's timer runs and solid yellow once the tile is time-up ([02-tiles](02-tiles.md#the-timer)), since the strip has no room for the timer, and time-up needs you where a running timer doesn't (user, 2026-11-15).
 - When a tile starts needing you, the strip nudges 12px out of the edge once, then sits still.
 - Hovering the strip peeks it 6px out of the edge and lists the tiles that need you, with their pips.
 - Clicking the strip slides the rack back out of the edge over 200ms, to sit flush with it (user, 2026-11-15).

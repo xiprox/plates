@@ -16,6 +16,7 @@ use plates_core::{
 };
 
 use crate::{
+    menu::{MENU_H, MENU_W, MenuView},
     motion::{self, Ease, Rect, Side, Tween},
     native,
 };
@@ -24,8 +25,6 @@ pub const RACK_W: f32 = 304.;
 pub const STRIP_W: f32 = 22.;
 pub const POPOVER_W: f32 = 176.;
 pub const POPOVER_GAP: f32 = 12.;
-pub const MENU_W: f32 = 156.;
-pub const MENU_H: f32 = 226.;
 pub const TOAST_H: f32 = 44.;
 const TOAST_FOR: Duration = Duration::from_secs(5);
 
@@ -68,11 +67,9 @@ pub(crate) struct Field {
     prev_focus: isize,
 }
 
-/// The menu of timer lengths, which opens over the rack from a right-click on a tile's hourglass.
+/// The menu of timer lengths, open in a window of its own.
 pub(crate) struct Menu {
-    pub(crate) tile: TileId,
-    /// The menu's top, in logical pixels from the window's top.
-    pub(crate) top: f32,
+    window: WindowHandle<MenuView>,
 }
 
 pub(crate) struct Toast {
@@ -269,9 +266,8 @@ impl RackView {
             || self.nudge.is_some()
     }
 
-    // The window's place and size for the rack's state, in physical pixels: the rack, grown
-    // downward while the timer menu needs the room, or the docked strip, widened while it peeks
-    // and lists what needs you.
+    // The window's place and size for the rack's state, in physical pixels: the rack, or the
+    // docked strip, widened while it peeks and lists what needs you.
     fn bounds(&self) -> Rect {
         let s = self.scale;
         match self.docked {
@@ -290,10 +286,7 @@ impl RackView {
                 Rect::new((x, self.pos.1), (w, h))
             }
             None => {
-                let mut h = rack_height(self.rack.tiles().len(), self.toast.is_some());
-                if let Some(menu) = &self.menu {
-                    h = h.max(menu.top + MENU_H + 8.);
-                }
+                let h = rack_height(self.rack.tiles().len(), self.toast.is_some());
                 Rect::new(self.pos, (RACK_W as f64 * s, h as f64 * s))
             }
         }
@@ -355,11 +348,7 @@ impl RackView {
     pub(crate) fn on_press(&mut self, _: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.last_press_focus = native::foreground_window();
         self.suppress_click = false;
-        if self.field.is_some()
-            || self.menu.is_some()
-            || self.docked.is_some()
-            || self.tween.is_some()
-        {
+        if self.field.is_some() || self.docked.is_some() || self.tween.is_some() {
             return;
         }
         let r = native::window_rect(self.hwnd);
@@ -506,7 +495,7 @@ impl RackView {
         self.peek = false;
         self.pos.1 = y;
         self.nudged_for = self.latest_need();
-        native::set_round_corners(self.hwnd, false);
+        native::set_shadow(self.hwnd, false);
     }
 
     // The rack slides back out of the edge and stops flush with it.
@@ -525,7 +514,7 @@ impl RackView {
         self.peek = false;
         self.nudge = None;
         self.pos = (from_x, y);
-        native::set_round_corners(self.hwnd, true);
+        native::set_shadow(self.hwnd, true);
         self.tween = Some((
             Tween {
                 from: (from_x, y),
@@ -585,35 +574,70 @@ impl RackView {
         self.after_change(cx);
     }
 
-    pub(crate) fn open_menu(&mut self, id: TileId, at_y: f32, cx: &mut Context<Self>) {
-        let rack_h = rack_height(self.rack.tiles().len(), self.toast.is_some());
-        let below = at_y + 6.;
-        // Below the pointer, unless the menu would run off the screen's bottom, then above it.
-        let room = ((self.dock_area_or_screen().bottom - self.pos.1) / self.scale) as f32;
-        let top = if below + MENU_H + 8. <= room.max(rack_h) {
+    // The menu opens in a window of its own at the pointer, so it can reach past the rack's edges
+    // without growing the rack's window, whose shadow DWM would draw around the grown rectangle.
+    // It opens below and to the left of the pointer, and above it near the screen's bottom.
+    pub(crate) fn open_menu(&mut self, id: TileId, at: Point<Pixels>, cx: &mut Context<Self>) {
+        self.close_menu(cx);
+        let s = self.scale;
+        let r = native::window_rect(self.hwnd);
+        let pointer = (
+            r.left + f64::from(f32::from(at.x)) * s,
+            r.top + f64::from(f32::from(at.y)) * s,
+        );
+        let area = native::edges_at(pointer).area;
+        let (w, h) = (MENU_W as f64 * s, MENU_H as f64 * s);
+        let x = (pointer.0 - w + 12. * s).clamp(area.left, (area.right - w).max(area.left));
+        let below = pointer.1 + 6. * s;
+        let y = if below + h <= area.bottom {
             below
         } else {
-            (at_y - MENU_H - 6.).max(4.)
+            (pointer.1 - h - 6. * s).max(area.top)
         };
-        self.menu = Some(Menu { tile: id, top });
-        cx.notify();
-    }
-
-    fn dock_area_or_screen(&self) -> Rect {
-        native::edges_at((self.pos.0 + 1., self.pos.1 + 1.)).area
-    }
-
-    pub(crate) fn pick_minutes(&mut self, minutes: u32, cx: &mut Context<Self>) {
-        if let Some(menu) = self.menu.take() {
-            self.rack.start_timer(menu.tile, minutes, SystemTime::now());
-            self.save();
-            self.after_change(cx);
+        let bounds = Rect::new((x, y), (w, h));
+        let rack = cx.entity().downgrade();
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                point(px((x / s) as f32), px((y / s) as f32)),
+                size(px(MENU_W), px(MENU_H)),
+            ))),
+            titlebar: None,
+            focus: false,
+            show: true,
+            kind: WindowKind::PopUp,
+            is_movable: false,
+            is_resizable: false,
+            is_minimizable: false,
+            window_background: WindowBackgroundAppearance::Transparent,
+            inactive_frame_interval: None,
+            ..Default::default()
+        };
+        match cx.open_window(options, |window, cx| {
+            cx.new(|cx| MenuView::new(rack, id, bounds, window, cx))
+        }) {
+            Ok(window) => self.menu = Some(Menu { window }),
+            Err(e) => eprintln!("Couldn't open the timer menu: {e}"),
         }
     }
 
-    pub(crate) fn close_menu(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn pick_minutes(&mut self, id: TileId, minutes: u32, cx: &mut Context<Self>) {
         self.menu = None;
-        cx.notify();
+        self.rack.start_timer(id, minutes, SystemTime::now());
+        self.save();
+        self.after_change(cx);
+    }
+
+    /// The menu window tells the rack it closed itself.
+    pub(crate) fn menu_closed(&mut self) {
+        self.menu = None;
+    }
+
+    fn close_menu(&mut self, cx: &mut Context<Self>) {
+        if let Some(menu) = self.menu.take() {
+            menu.window
+                .update(cx, |_, window, _| window.remove_window())
+                .ok();
+        }
     }
 
     pub(crate) fn remove_tile(&mut self, id: TileId, cx: &mut Context<Self>) {
@@ -665,7 +689,7 @@ impl RackView {
             target,
             prev_focus: native::foreground_window(),
         });
-        self.menu = None;
+        self.close_menu(cx);
         native::allow_activation(hwnd, true);
         self.input.update(cx, |s, cx| {
             s.set_value(text, window, cx);

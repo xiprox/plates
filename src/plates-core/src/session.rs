@@ -92,6 +92,8 @@ pub struct Session {
     /// When the session last changed state, for the hover text, such as "waiting 12m".
     pub state_since: SystemTime,
     pub summary: Option<String>,
+    /// The first line of the newest text Claude wrote in the turn, which a working tile shows.
+    pub status: Option<String>,
     pub pending_tool: Option<Tool>,
     pub ended_at: Option<SystemTime>,
 }
@@ -106,6 +108,7 @@ impl Session {
             state: SessionState::New,
             state_since: now,
             summary: None,
+            status: None,
             pending_tool: None,
             ended_at: None,
         }

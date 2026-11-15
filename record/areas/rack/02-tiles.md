@@ -23,7 +23,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 | State | Starts when | The tile shows |
 | --- | --- | --- |
 | New | the session starts | the tile slides in, and its background brightens blue once |
-| Working | Claude starts a turn, such as when you send a prompt | a blue dot that breathes on a 2.4s cycle |
+| Working | Claude starts a turn, such as when you send a prompt | a blue dot that breathes on a 2.4s cycle, and the first line of the newest text Claude wrote in the turn as a blue summary line (user, 2026-11-15) |
 | Your turn | Claude finishes its turn | an amber dot, the first line of Claude's last message as an amber summary line, and a timer that starts on its own |
 | Needs approval | Claude asks you to approve a tool | an orange dot, what Claude wants to do as an orange summary line, such as "Wants to run: cargo test -p collector", and a timer that starts on its own |
 | Ended | the session ends | a dimmed ring for its marker, and an × on hover that clears the tile |
@@ -49,7 +49,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 ## The timer
 
 - Clicking the hourglass starts a 5-minute timer.
-  Right-clicking it opens a menu of 5, 10, 15, 20, and 30 minutes, and 1 hour, and picking one while a timer runs starts it over.
+  Right-clicking it opens a menu of 5, 10, 15, 20, and 30 minutes, and 1 hour, in a popup at the pointer that can reach past the rack's edges, and picking one while a timer runs starts it over (user, 2026-11-15).
 - While a timer runs, the timer slot shows a yellow ring that drains.
   Hovering the ring shows a faint ×, at 55% opacity, and clicking the ring cancels the timer.
 - A session tile starts a 5-minute timer on its own when it moves to your turn or needs approval, and the timer stops when the session moves to working or ends.
@@ -77,7 +77,7 @@ Plates saves your own tiles, each with its timer, as JSON in its data folder, `%
 | --- | --- |
 | Tile | `#1C1D21` |
 | Text, and secondary text | `#ECEDEF`, `#A3A6AE` |
-| Working and new | `#74AEFF` |
+| Working and new: dot, and working text | `#74AEFF`, `#9CC4FF` |
 | Your turn: dot, and text | `#F2B441`, `#F2C46A` |
 | Approval: dot, and text | `#FF7A45`, `#FF9B6E` |
 | Timer ring, and your own tile's time-up square | `#F4D35E` |

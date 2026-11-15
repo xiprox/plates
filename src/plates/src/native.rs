@@ -22,7 +22,7 @@ use windows::Win32::{
     },
     UI::{
         Controls::MARGINS,
-        Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON},
+        Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON},
         Shell::{DefSubclassProc, SetWindowSubclass},
         WindowsAndMessaging::{
             GWL_EXSTYLE, GetClientRect, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW,
@@ -132,14 +132,7 @@ pub fn allow_activation(h: isize, allowed: bool) {
 fn dwm_shadow(h: isize) {
     // DWMWA_COLOR_NONE, from dwmapi.h.
     const COLOR_NONE: u32 = 0xFFFF_FFFE;
-    let margins = MARGINS {
-        cxLeftWidth: 1,
-        cxRightWidth: 1,
-        cyTopHeight: 1,
-        cyBottomHeight: 1,
-    };
     unsafe {
-        let _ = DwmExtendFrameIntoClientArea(hwnd(h), &margins);
         let _ = DwmSetWindowAttribute(
             hwnd(h),
             DWMWA_BORDER_COLOR,
@@ -147,12 +140,30 @@ fn dwm_shadow(h: isize) {
             size_of::<u32>() as u32,
         );
     }
-    set_round_corners(h, true);
+    set_shadow(h, true);
+}
+
+/// Turns DWM's shadow on or off. DWM draws it around the window's whole rectangle, with 8px
+/// corners, so it fits the rack and the menu, and looks wrong around the docked strip, which is
+/// rounded on its inner side only and widens to list what needs you. Without a frame reaching
+/// into the client area, DWM draws no shadow (record/areas/rack/log.md).
+pub fn set_shadow(h: isize, on: bool) {
+    let width = i32::from(on);
+    let margins = MARGINS {
+        cxLeftWidth: width,
+        cxRightWidth: width,
+        cyTopHeight: width,
+        cyBottomHeight: width,
+    };
+    unsafe {
+        let _ = DwmExtendFrameIntoClientArea(hwnd(h), &margins);
+    }
+    set_round_corners(h, on);
 }
 
 /// DWM rounds a window's corners, and its shadow, at 8px. The rack draws its 14px corners inside
 /// that, and the docked strip, which is flush with the screen edge, takes square corners.
-pub fn set_round_corners(h: isize, round: bool) {
+fn set_round_corners(h: isize, round: bool) {
     let pref: DWM_WINDOW_CORNER_PREFERENCE = if round {
         DWMWCP_ROUND
     } else {
@@ -213,10 +224,14 @@ pub fn cursor_pos() -> (f64, f64) {
     (p.x as f64, p.y as f64)
 }
 
-// GetAsyncKeyState reads the physical left button, so with the buttons swapped for a left hand
-// this reads the wrong one.
+// GetAsyncKeyState reads the physical buttons, so with the buttons swapped for a left hand these
+// read the wrong ones.
 pub fn left_button_down() -> bool {
     unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0 }
+}
+
+pub fn right_button_down() -> bool {
+    unsafe { GetAsyncKeyState(VK_RBUTTON.0 as i32) < 0 }
 }
 
 /// The work area of the monitor at `p`, and which of its edges have another monitor beyond them.

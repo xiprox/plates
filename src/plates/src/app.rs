@@ -6,9 +6,9 @@ use std::{path::PathBuf, sync::mpsc, thread};
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use plates_core::{
-    Rack,
+    Rack, hooks,
     receiver::{PORT, Received, Receiver},
-    store,
+    store, transcript,
 };
 
 use crate::{
@@ -44,7 +44,9 @@ pub fn run() {
     };
 
     // The receiver hands events on from a thread of its own, and the rack takes them on the UI
-    // thread, so a thread between them moves each one onto a channel the UI can await.
+    // thread, so a thread between them moves each one onto a channel the UI can await. That
+    // thread also reads each tool event's transcript for the session's status line, so the read
+    // never holds up the rack.
     let (tx, rx) = mpsc::channel();
     let receiver = Receiver::start(PORT, tx);
     if let Err(e) = &receiver {
@@ -55,9 +57,15 @@ pub fn run() {
         .name("plates-events".into())
         .spawn(move || {
             for received in rx {
-                if let Received::Event(message, _) = received
-                    && events_tx.send_blocking(message).is_err()
+                let Received::Event(mut message, _) = received else {
+                    continue;
+                };
+                if hooks::wants_status(&message.hook)
+                    && let Some(path) = &message.transcript_path
                 {
+                    message.status = transcript::latest_status(path).ok().flatten();
+                }
+                if events_tx.send_blocking(message).is_err() {
                     break;
                 }
             }

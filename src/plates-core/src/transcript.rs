@@ -8,7 +8,7 @@
 
 use std::{
     fs::File,
-    io::{self, BufRead, BufReader},
+    io::{self, BufRead, BufReader, Read, Seek, SeekFrom},
     path::Path,
 };
 
@@ -29,6 +29,54 @@ pub fn first_prompt(path: &Path) -> io::Result<Option<String>> {
         }
     }
     Ok(None)
+}
+
+/// How much of a transcript's end `latest_status` reads, which holds the newest records of even a
+/// long turn.
+const TAIL_BYTES: u64 = 256 * 1024;
+
+/// The newest text Claude wrote since the last prompt you typed, read from the transcript's end,
+/// for a working tile's status line. Claude Code writes the transcript as it goes, so the newest
+/// text can be a record or two behind (documented, https://code.claude.com/docs/en/hooks.md).
+/// An assistant record holds one part, `text`, `thinking`, or `tool_use`
+/// (measured on Windows 11 25H2, 2026-11-15, Claude Code 2.1.325).
+pub fn latest_status(path: &Path) -> io::Result<Option<String>> {
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    let start = len.saturating_sub(TAIL_BYTES);
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let text = String::from_utf8_lossy(&bytes);
+    // A read that starts mid-file starts mid-line, so its first line is left out.
+    let lines = text.lines().skip(usize::from(start > 0));
+    for line in lines.collect::<Vec<_>>().into_iter().rev() {
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if typed_prompt(&record).is_some() {
+            return Ok(None);
+        }
+        if let Some(said) = assistant_text(&record) {
+            return Ok(Some(said));
+        }
+    }
+    Ok(None)
+}
+
+fn assistant_text(record: &Value) -> Option<String> {
+    if record.get("type").and_then(Value::as_str) != Some("assistant")
+        || record.get("isSidechain").and_then(Value::as_bool) == Some(true)
+    {
+        return None;
+    }
+    let parts = record.get("message")?.get("content")?.as_array()?;
+    parts
+        .iter()
+        .filter(|p| p.get("type").and_then(Value::as_str) == Some("text"))
+        .filter_map(|p| p.get("text").and_then(Value::as_str))
+        .find(|t| !t.trim().is_empty())
+        .map(str::to_string)
 }
 
 fn typed_prompt(record: &Value) -> Option<String> {
@@ -95,6 +143,36 @@ mod tests {
             first_prompt(&path).unwrap().as_deref(),
             Some("Fix the dock hold")
         );
+    }
+
+    #[test]
+    fn the_status_is_the_newest_text_since_the_last_typed_prompt() {
+        use serde_json::json;
+        let said = |text: &str| {
+            json!({ "type": "assistant", "isSidechain": false,
+                    "message": { "role": "assistant", "content": [ { "type": "text", "text": text } ] } })
+        };
+        let tool = json!({ "type": "assistant", "isSidechain": false,
+                           "message": { "role": "assistant", "content": [ { "type": "tool_use", "name": "Bash" } ] } });
+        let prompt = json!({ "type": "user", "isSidechain": false, "origin": { "kind": "human" },
+                             "message": { "role": "user", "content": "Next" } });
+        let path = transcript(
+            "status",
+            &[
+                said("An old line"),
+                prompt.clone(),
+                said("Reading the receiver first."),
+                tool.clone(),
+                said("Now the installer."),
+                tool,
+            ],
+        );
+        assert_eq!(
+            latest_status(&path).unwrap().as_deref(),
+            Some("Now the installer.")
+        );
+        let fresh = transcript("fresh", &[said("An old line"), prompt]);
+        assert_eq!(latest_status(&fresh).unwrap(), None);
     }
 
     #[test]

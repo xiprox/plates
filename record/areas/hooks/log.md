@@ -2,6 +2,25 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: The Claude desktop app keeps a file per session with its title and its Claude Code session IDs
+
+**Asked:** where does the title the Claude desktop app shows for a session come from, since `session_title` carries only a custom title?
+
+**Expected:** nowhere Plates could read it.
+
+**Found:** we searched the app's data folder for this repository's session ID (measured on Windows 11 25H2, 2026-11-15, with the app installed as a Windows package).
+
+- The app keeps one JSON file per desktop session, `local_<id>.json`, under `%LOCALAPPDATA%\Claude-Data\claude_<package id>\claude-code-sessions\<two IDs>\`, 332 of them on our PC.
+- Each file holds the session's `title` and its `titleSource`: `auto` for a title the app generated, in 277 files, `user` in 20, `tool` in 25, and none in 10.
+- Each file also holds `cliSessionId`, the `session_id` the hooks carry, and `priorCliSessionIds`, which looks like where the app keeps a session's earlier IDs, such as after a `/clear` (unverified).
+- It holds `sessionId`, the app's own `local_<id>`, `isArchived`, and `interruptedAwaitingPerson`, which was null in every file (unverified what sets it).
+- None of this is documented, so an update to the app can change it without notice.
+
+**Changed:** nothing yet.
+The files could give a session tile the title the app shows, keep one tile across a `/clear`, and name the session for [the plan's step 6](../product/plan.md#6-opening-a-session-from-its-tile).
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#titles-and-summaries).
+
 ## 2026-11-15: In a desktop session, a denial and an interrupt fire nothing until the next prompt, and /clear starts a new session
 
 **Asked:** the questions the hooks design left to the plan's step 3: whether `PermissionRequest` fires in a desktop session, what arrives after you allow or deny a tool, what an interrupt fires, whether a session keeps its `session_id` across a resume and a `/clear`, and whether `UserPromptSubmit`'s `prompt` holds only what you typed.
