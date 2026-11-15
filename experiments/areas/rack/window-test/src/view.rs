@@ -393,8 +393,8 @@ impl Rack {
             .rounded(px(14.))
             .border_1()
             .border_color(rgb(BORDER))
-            .px(px(12.))
-            .pb(px(12.))
+            .px(px(8.))
+            .pb(px(8.))
             .cursor(if self.drag.is_some() {
                 CursorStyle::ClosedHand
             } else {
