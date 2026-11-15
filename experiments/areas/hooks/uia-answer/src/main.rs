@@ -3,14 +3,15 @@
 //!
 //! ```text
 //! uia-answer [--session local_<id>] [--no-open] [--no-restore] [--out <report>] [--tree <file>]
-//!            [--invoke <label>] [--set-text <text>]
+//!            [--invoke <label>] [--set-text <text> [--send]]
 //! ```
 //!
 //! Without `--invoke` or `--set-text` it only reads: it opens the session with
 //! `claude://code/continue?session=local_<id>`, walks the app window's tree, and reports what an
 //! invoke would hit. It never sends mouse or keyboard input. `--invoke` presses the reply button
-//! of that label through InvokePattern, and `--set-text` puts text in the composer through
-//! ValuePattern; both send something real, so they're for a throwaway session only.
+//! of that label through InvokePattern, `--set-text` puts text in the composer through
+//! ValuePattern, and `--send` then presses the composer's send button; each sends something
+//! real, so they're for a throwaway session only.
 //!
 //! `--tree` writes every element of the last walk, message text included, so give it a path
 //! outside the repository.
@@ -19,7 +20,10 @@ mod app;
 mod uia;
 
 use std::fmt::Write as _;
+use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use windows::Win32::Foundation::HWND;
 
 use uia::{BUTTON, DOCUMENT, EDIT, Tree, control_type_name as ctn};
 use windows::Win32::UI::Accessibility::{
@@ -40,6 +44,7 @@ struct Args {
     tree: Option<String>,
     invoke: Option<String>,
     set_text: Option<String>,
+    send: bool,
 }
 
 fn args() -> Args {
@@ -54,6 +59,7 @@ fn args() -> Args {
             "--tree" => a.tree = it.next(),
             "--invoke" => a.invoke = it.next(),
             "--set-text" => a.set_text = it.next(),
+            "--send" => a.send = true,
             other => {
                 eprintln!("unknown argument {other}");
                 std::process::exit(2);
@@ -100,6 +106,7 @@ fn main() {
         None => r.line("session the app opened last: none found"),
     }
     let target = a.session.as_ref().and_then(|id| files.iter().find(|f| &f.id == id));
+    let transcript_path = target.and_then(|f| app::transcript(&f.cli_id));
     let mut transcript = None;
     match (&a.session, target) {
         (None, _) => r.line("no --session given, so the probe reads whatever the app shows"),
@@ -367,12 +374,14 @@ fn main() {
             r.line(format!("{} buttons are named \"{label}\", so the probe invokes none", hits.len()));
         } else {
             let el = &tree.nodes[hits[0]].el;
+            element(&mut r, &tree, hits[0]);
+            let before = transcript_path.as_deref().map(|p| app::transcript_lines(p).len());
             let result = unsafe {
                 el.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
                     .and_then(|p| p.Invoke())
             };
             r.line(format!("Invoke on \"{label}\": {result:?}"));
-            after_action(&mut r, &uia, hwnd, &marks, target.map(|f| f.cli_id.as_str()));
+            after_action(&mut r, &uia, hwnd, &marks, transcript_path.as_deref(), before);
         }
     }
     if let (Some(text), Some(c)) = (&a.set_text, composer) {
@@ -392,6 +401,11 @@ fn main() {
             Ok(v) => r.line(format!("its value 500ms later equals the text set: {}", v.to_string() == *text)),
             Err(e) => r.line(format!("reading its value back failed: {e}")),
         }
+        // A send button may show only once the composer holds text, so walk again to look.
+        match uia::walk(&uia, hwnd, LIMIT) {
+            Err(e) => r.line(format!("the walk after SetValue failed: {e}")),
+            Ok(t) => send(&mut r, &a, &uia, hwnd, &t, &tree.nodes[c].name, &marks, transcript_path.as_deref()),
+        }
     }
 
     // Put back the session the app showed, so the probe leaves the app as it found it.
@@ -406,17 +420,86 @@ fn main() {
     finish(&a, &scrub, &r, Some(&tree));
 }
 
-fn after_action(r: &mut Report, uia: &IUIAutomation, hwnd: windows::Win32::Foundation::HWND, marks: &[(&'static str, String)], cli_id: Option<&str>) {
-    std::thread::sleep(Duration::from_secs(3));
-    if let Ok(t) = uia::walk(uia, hwnd, LIMIT) {
-        r.line(format!("3s later the markers still showing: {:?}", find_markers(&t, marks)));
+/// Looks near the composer for its send button, and with `--send` invokes it when exactly one
+/// enabled button there has "send" in its name.
+#[allow(clippy::too_many_arguments)]
+fn send(
+    r: &mut Report,
+    a: &Args,
+    uia: &IUIAutomation,
+    hwnd: HWND,
+    t: &Tree,
+    composer_name: &str,
+    marks: &[(&'static str, String)],
+    transcript_path: Option<&Path>,
+) {
+    let Some(c) = (0..t.nodes.len()).find(|&i| t.nodes[i].control_type == EDIT && t.nodes[i].name == composer_name) else {
+        r.line("the walk after SetValue found no composer");
+        return;
+    };
+    r.line(format!("the composer after SetValue: {}", describe(t, c)));
+    let mut up = c;
+    for _ in 0..6 {
+        up = t.nodes[up].parent.unwrap_or(up);
     }
-    if let Some(path) = cli_id.and_then(app::transcript) {
-        let t = app::read_transcript(&path);
-        r.line(format!(
-            "3s later the transcript's last wrap-up has {} typed prompts after it",
-            t.wrap_up.map(|w| w.prompts_after).unwrap_or(0)
-        ));
+    let buttons: Vec<usize> = subtree(t, up)
+        .into_iter()
+        .filter(|&i| t.nodes[i].control_type == BUTTON)
+        .collect();
+    r.line(format!("buttons within six levels above the composer: {}", buttons.len()));
+    for &i in buttons.iter().take(30) {
+        r.line(format!("  {}", describe(t, i)));
+    }
+    let sends: Vec<usize> = buttons
+        .iter()
+        .copied()
+        .filter(|&i| t.nodes[i].enabled && t.nodes[i].name.to_lowercase().contains("send"))
+        .collect();
+    if !a.send {
+        return;
+    }
+    r.head("Invoking the send button");
+    if sends.len() != 1 {
+        r.line(format!("{} enabled buttons near the composer have \"send\" in their names, so the probe invokes none", sends.len()));
+        return;
+    }
+    element(r, t, sends[0]);
+    let before = transcript_path.map(|p| app::transcript_lines(p).len());
+    let result = unsafe {
+        t.nodes[sends[0]]
+            .el
+            .GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
+            .and_then(|p| p.Invoke())
+    };
+    r.line(format!("Invoke on \"{}\": {result:?}", t.nodes[sends[0]].name));
+    after_action(r, uia, hwnd, marks, transcript_path, before);
+}
+
+/// What an action changed: whether the session's last turn still shows, and the records the
+/// transcript gained since `before`, its line count just ahead of the action.
+fn after_action(
+    r: &mut Report,
+    uia: &IUIAutomation,
+    hwnd: HWND,
+    marks: &[(&'static str, String)],
+    transcript_path: Option<&Path>,
+    before: Option<usize>,
+) {
+    std::thread::sleep(Duration::from_secs(4));
+    if let Ok(t) = uia::walk(uia, hwnd, LIMIT) {
+        r.line(format!("4s later the markers still showing: {:?}", find_markers(&t, marks)));
+        let composer = (0..t.nodes.len()).find(|&i| t.nodes[i].control_type == EDIT);
+        if let Some(c) = composer {
+            r.line(format!("4s later the composer: {}", describe(&t, c)));
+        }
+    }
+    if let (Some(path), Some(before)) = (transcript_path, before) {
+        let lines = app::transcript_lines(path);
+        let added = lines.len().saturating_sub(before);
+        r.line(format!("4s later the transcript has {added} more records:"));
+        for line in lines.iter().skip(before).take(12) {
+            r.line(format!("  {}", app::describe_record(line)));
+        }
     }
 }
 

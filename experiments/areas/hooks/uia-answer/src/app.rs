@@ -163,6 +163,52 @@ pub fn read_transcript(path: &Path) -> Transcript {
     Transcript { wrap_up, last_text }
 }
 
+/// The transcript's records, one per line, so a later read can show what an action added.
+pub fn transcript_lines(path: &Path) -> Vec<String> {
+    fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// One record as its type, its `origin.kind`, and the start of its text, leaving out the system
+/// reminders the app puts ahead of a typed prompt.
+pub fn describe_record(line: &str) -> String {
+    let Ok(r) = serde_json::from_str::<Value>(line) else {
+        return "(not JSON)".to_string();
+    };
+    let kind = r.get("type").and_then(Value::as_str).unwrap_or("?");
+    let origin = r
+        .get("origin")
+        .and_then(|o| o.get("kind"))
+        .and_then(Value::as_str)
+        .unwrap_or("-");
+    let text = match r.get("message").and_then(|m| m.get("content")) {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Array(parts)) => parts
+            .iter()
+            .filter_map(|p| match p.get("type").and_then(Value::as_str) {
+                Some("text") => p
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .filter(|t| !t.trim_start().starts_with("<system-reminder>"))
+                    .map(str::to_string),
+                Some("tool_use") => Some(format!(
+                    "[tool_use {}]",
+                    p.get("name").and_then(Value::as_str).unwrap_or("?")
+                )),
+                Some("tool_result") => Some("[tool_result]".to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => String::new(),
+    };
+    let text: String = text.replace(['\r', '\n'], " ").chars().take(80).collect();
+    format!("{kind} origin={origin} \"{text}\"")
+}
+
 // A desktop session's transcript marks a prompt you typed with `origin.kind` "human"
 // (record/areas/hooks/log.md, the 2026-11-15 entry on typed prompts).
 fn is_typed_prompt(r: &Value) -> bool {

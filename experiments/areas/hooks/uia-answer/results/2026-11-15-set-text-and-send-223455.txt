@@ -1,0 +1,169 @@
+uia-answer, run at 2026-11-15 22:34:55 UTC
+Windows: Microsoft Windows [Version 10.0.26200.9711]
+
+== Session ==
+session the app opened last (newest lastFocusedAt): local_e91f373e-7479-4e67-bbc5-8e2bd64a4baf "Probe answering a desktop session through UI Automation"
+target: local_6a85929e-7c11-49d2-98b7-bfb84022133b "Test Throw Session", archived=false
+last wrap-up at 2026-11-15T22:32:06.635Z, prompts typed since: 1
+  ask: "Do you want to start planning a flight?"
+  reply labels: ["Yes", "No"]
+  app actions: []
+  recap starts: "Nothing has been done in this session ye..."
+last assistant text starts: "OK, I won't start anything. When you wan..."
+
+== Before the first walk ==
+UiaClientsAreListening: true
+app command lines, processes read: 30
+window 0x50520 pid=1936 class="Chrome_WidgetWin_1" title="Claude" rect=(362,15 2626x1375) app=5.11492.5.0
+walking window 0x50520
+
+== Question 5: the tree on the first walk and after ==
+walk at +0ms: 1377 elements, depth 43, 1373 with FrameworkId Chrome, 233 buttons, 4 documents with [1, 0, 1, 1] children, took 125ms by one cached subtree request
+walk at +300ms: 1377 elements, depth 43, 1373 with FrameworkId Chrome, 233 buttons, 4 documents with [1, 0, 1, 1] children, took 119ms by one cached subtree request
+walk at +700ms: 1377 elements, depth 43, 1373 with FrameworkId Chrome, 233 buttons, 4 documents with [1, 0, 1, 1] children, took 100ms by one cached subtree request
+selected item: RadioButton name="Code" automationId="base-ui-_r_1m_" className="cds-reset relative z-[1] inline-flex h-full items-center justify-center gap-1.5 ..." ariaRole="radio" framework="Chrome" patterns=[Invoke, Value(readOnly=false, length=0), SelectionItem(selected=true)] enabled=true offscreen=false focusable=true focused=false rect=(615,20 34x26) defaultAction="Check" children=0
+
+== Opening the session ==
+foreground before: 0x50520, the app's: true
+ShellExecuteW claude://code/continue?session=local_6a85929e-7c11-49d2-98b7-bfb84022133b: ok
+the session's last turn showed within 765ms, by ["wrap-up ask", "wrap-up recap"]
+foreground after: 0x50520, the app's: true
+walk after opening: 771 elements, depth 41, 767 with FrameworkId Chrome, 196 buttons, 4 documents with [1, 0, 1, 1] children, took 60ms by one cached subtree request
+
+== Question 3: the wrap-up's buttons ==
+label "Yes": 0 element(s) named exactly so
+  contains it: Text name="You said: End your turn with a wrap-up question that has two reply buttons, Yes and No." automationId="" className="sr-only select-none" ariaRole="heading" framework="Chrome" patterns=[] enabled=true offscreen=false focusable=false focused=false rect=(1290,98 1x1) defaultAction="" children=1
+  contains it: Text name="You said: End your turn with a wrap-up question that has two reply buttons, Yes and No." automationId="" className="" ariaRole="description" framework="Chrome" patterns=[Text] enabled=true offscreen=true focusable=false focused=false rect=(1290,99 612x19) defaultAction="" children=0
+  contains it: Text name="End your turn with a wrap-up question that has two reply buttons, Yes and No. Do nothing else." automationId="" className="" ariaRole="description" framework="Chrome" patterns=[Text] enabled=true offscreen=false focusable=false focused=false rect=(1438,112 573x40) defaultAction="" children=0
+  contains it: Button name="Show message actions for You said: End your turn with a wrap-up question that has two reply buttons,..." automationId="" className="sr-only" ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(2025,184 1x2) defaultAction="Press" children=0
+  contains it: Text name="Claude responded: I've added the Yes/No question to the next-step box." automationId="" className="sr-only select-none" ariaRole="heading" framework="Chrome" patterns=[] enabled=true offscreen=false focusable=false focused=false rect=(1290,204 1x1) defaultAction="" children=1
+  FindAll(Descendants, Name="Yes" and ControlType=Button): 0 in 18ms
+label "No": 2 element(s) named exactly so
+  Text name="No" automationId="" className="" ariaRole="description" framework="Chrome" patterns=[Text] enabled=true offscreen=false focusable=false focused=false rect=(1311,365 20x18) defaultAction="" children=0
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[1]/Group[3]/Group[0]/Group[2]/Text[0]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Test Throw Session - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+      Group name="Chat messages" automationId="" ariaRole="feed" depth=33
+    selectors: AutomationId empty; Name+ControlType shared by 2; AriaRole "description" shared by 132
+  Text name="No" automationId="" className="" ariaRole="description" framework="Chrome" patterns=[Text] enabled=true offscreen=false focusable=false focused=false rect=(1990,444 21x19) defaultAction="" children=0
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[1]/Group[4]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Text[0]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Test Throw Session - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+      Group name="Chat messages" automationId="" ariaRole="feed" depth=33
+      Group name="Message 3" automationId="" ariaRole="article" depth=36
+      Group name="" automationId="_r_6bup_" ariaRole="group" depth=38
+      Group name="" automationId="_r_6bui_0bb6fd31-d8eb-4198-8e81-66d8c30b0c0b" ariaRole="group" depth=39
+    selectors: AutomationId empty; Name+ControlType shared by 2; AriaRole "description" shared by 132
+  FindAll(Descendants, Name="No" and ControlType=Button): 0 in 17ms
+elements whose Name holds the ask: 1
+  Text name="Do you want to start planning a flight?" automationId="" className="" ariaRole="description" framework="Chrome" patterns=[Text] enabled=true offscreen=false focusable=false focused=false rect=(1311,343 252x18) defaultAction="" children=0
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[1]/Group[3]/Group[0]/Group[1]/Text[0]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Test Throw Session - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+      Group name="Chat messages" automationId="" ariaRole="feed" depth=33
+    selectors: AutomationId empty; Name+ControlType shared by 1; AriaRole "description" shared by 132
+the smallest element holding all of them:
+  Group name="" automationId="" className="" ariaRole="group" framework="Chrome" patterns=[] enabled=true offscreen=false focusable=false focused=false rect=(676,51 1974x699) defaultAction="" children=7
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[1]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Test Throw Session - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+      Group name="Chat messages" automationId="" ariaRole="feed" depth=33
+    selectors: AutomationId empty; Name+ControlType shared by 339; AriaRole "group" shared by 339
+the invokable elements inside it:
+  Button name="Show message actions for You said: End your turn with a wrap-up question that has two reply buttons,..." automationId="" className="sr-only" ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(2025,184 1x2) defaultAction="Press" children=0
+  Button name="Show message actions for Claude responded: I've added the Yes/No question to the next-step box." automationId="" className="sr-only" ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1288,245 1x2) defaultAction="Press" children=0
+  Button name="Show message actions for You said: No" automationId="" className="sr-only" ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(2025,495 1x2) defaultAction="Press" children=0
+  Group name="" automationId="" className="contents" ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1290,557 1x1) defaultAction="Press" children=2
+  Group name="" automationId="" className="" ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(0,0 0x0) defaultAction="Press" children=0
+  Group name="" automationId="" className="mx-auto [.epitaxy-chat-panel_&]:[@container_tile-slot_(max-width:560px)]:[--chat..." ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1251,566 824x24) defaultAction="Press" children=1
+  Button name="Copy" automationId="_r_6bus_" className="cds-reset group/btn relative isolate inline-flex shrink-0 items-center justify-c..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1289,566 24x24) defaultAction="Press" children=0
+  Group name="" automationId="_r_6bv0_" className="inline-flex rounded-[calc(var(--cds-radius)+var(--cds-button-radius-add,0px))] o..." ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1313,566 24x24) defaultAction="Press" children=1
+  Button name="Fork from here" automationId="_r_6bv3_" className="cds-reset group/btn relative isolate inline-flex shrink-0 items-center justify-c..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1313,566 24x24) defaultAction="Press" children=0
+  Button name="Read aloud" automationId="_r_6bvc_" className="cds-reset group/btn relative isolate inline-flex shrink-0 items-center justify-c..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1361,566 24x24) defaultAction="Press" children=0
+  Text name="" automationId="_r_6bvf_" className="flex h-control items-center first:ps-0 last:pe-0 font-normal select-none text-bo..." ariaRole="time" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1389,566 64x24) defaultAction="Press" children=1
+
+== Question 4: the composer ==
+editable candidates (Edit or Document, with Value or Text, focusable, not read-only): 1
+  Edit name="Prompt" automationId="" className="tiptap ProseMirror ProseMirror-focused" ariaRole="textbox" framework="Chrome" patterns=[Value(readOnly=false, length=1), Text] enabled=true offscreen=false focusable=true focused=true rect=(1319,1309 644x22) defaultAction="" children=1
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[2]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[0]/Edit[0]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Test Throw Session - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+    selectors: AutomationId empty; Name+ControlType shared by 1; ClassName+ControlType shared by 1; AriaRole "textbox" shared by 1
+  shares an ancestor with the session's last turn at depth 28 (the candidate is at 36)
+  FindAll(Descendants, Name="Prompt" and ControlType=Edit): 1 in 17ms
+every Edit element: 1
+  Edit name="Prompt" automationId="" className="tiptap ProseMirror ProseMirror-focused" ariaRole="textbox" framework="Chrome" patterns=[Value(readOnly=false, length=1), Text] enabled=true offscreen=false focusable=true focused=true rect=(1319,1309 644x22) defaultAction="" children=1
+the invokable elements within four levels above the composer:
+  Group name="" automationId="" className="w-full max-h-96 min-h-[var(--cmp-row-h)] overflow-y-auto break-words [--cmp-type..." ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1319,1306 644x28) defaultAction="Press" children=2
+  Group name="" automationId="" className="contents" ariaRole="group" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=false focused=false rect=(1283,1306 36x10) defaultAction="Press" children=0
+
+== Setting the composer's text ==
+SetValue on Edit name="Prompt" automationId="" className="tiptap ProseMirror ProseMirror-focused" ariaRole="textbox" framework="Chrome" patterns=[Value(readOnly=false, length=1), Text] enabled=true offscreen=false focusable=true focused=true rect=(1319,1309 644x22) defaultAction="" children=1: Ok(())
+its value 500ms later equals the text set: true
+the composer after SetValue: Edit name="Prompt" automationId="" className="tiptap ProseMirror ProseMirror-focused" ariaRole="textbox" framework="Chrome" patterns=[Value(readOnly=false, length=25), Text] enabled=true offscreen=false focusable=true focused=true rect=(1319,1309 644x22) defaultAction="" children=1
+buttons within six levels above the composer: 6
+  Button name="Add" automationId="_r_2u0u_" className="cds-reset group/btn relative isolate inline-flex items-center justify-center gap..." ariaRole="button" framework="Chrome" patterns=[] enabled=true offscreen=false focusable=true focused=false rect=(1283,1306 28x28) defaultAction="Press" children=0
+  Button name="Send" automationId="" className="cds-reset group/btn relative isolate inline-flex shrink-0 items-center justify-c..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1971,1306 28x28) defaultAction="Press" children=0
+  Button name="Press and hold to record" automationId="_r_2u18_" className="cds-reset group/btn relative isolate inline-flex shrink-0 items-center justify-c..." ariaRole="button" framework="Chrome" patterns=[] enabled=true offscreen=false focusable=true focused=false rect=(2007,1306 28x28) defaultAction="Press" children=0
+  Button name="Model: Opus 5.5 Extra" automationId="base-ui-_r_685n_" className="cds-reset group/btn relative isolate inline-flex items-center justify-center gap..." ariaRole="button" framework="Chrome" patterns=[] enabled=true offscreen=false focusable=true focused=false rect=(1850,1350 109x24) defaultAction="Press" children=3
+  Button name="Auto" automationId="_r_685t_" className="cds-reset group/btn relative isolate inline-flex items-center justify-center gap..." ariaRole="button" framework="Chrome" patterns=[] enabled=true offscreen=false focusable=true focused=false rect=(1962,1350 42x24) defaultAction="Press" children=0
+  Button name="Usage: 64% of 5-hour limit, Resets Mon 12:20 AM" automationId="_r_6853_" className="cds-reset group/btn relative isolate inline-flex items-center justify-center gap..." ariaRole="button" framework="Chrome" patterns=[] enabled=true offscreen=false focusable=true focused=false rect=(2009,1350 24x24) defaultAction="Press" children=0
+
+== Invoking the send button ==
+  Button name="Send" automationId="" className="cds-reset group/btn relative isolate inline-flex shrink-0 items-center justify-c..." ariaRole="button" framework="Chrome" patterns=[Invoke] enabled=true offscreen=false focusable=true focused=false rect=(1971,1306 28x28) defaultAction="Press" children=0
+    provider: [pid:1936,providerId:0x0 Main(parent link):Unidentified Provider (unmanaged:Claude.exe)]
+    path: Window/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Pane[1]/Pane[0]/Pane[0]/Document[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[2]/Group[0]/Group[0]/Group[0]/Group[1]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[0]/Group[1]/Group[2]/Group[0]/Group[2]/Group[0]/Group[2]/Group[0]/Group[0]/Button[0]
+    named ancestors, outermost first:
+      Window name="Claude" automationId="" ariaRole="" depth=0
+      Pane name="Claude" automationId="" ariaRole="region" depth=1
+      Pane name="Chrome Legacy Window" automationId="38" ariaRole="" depth=9
+      Document name="Test Throw Session - Claude Code" automationId="RootWebArea" ariaRole="document" depth=10
+      Group name="" automationId="root" ariaRole="group" depth=12
+      Group name="Primary pane" automationId="" ariaRole="region" depth=17
+      Group name="" automationId="_r_6c26_" ariaRole="group" depth=34
+    selectors: AutomationId empty; Name+ControlType shared by 1; ClassName+ControlType shared by 8; AriaRole "button" shared by 196
+Invoke on "Send": Ok(())
+4s later the markers still showing: ["wrap-up ask", "wrap-up recap"]
+4s later the composer: Edit name="Prompt" automationId="" className="tiptap ProseMirror ProseMirror-focused" ariaRole="textbox" framework="Chrome" patterns=[Value(readOnly=false, length=1), Text] enabled=true offscreen=false focusable=true focused=true rect=(1319,1309 644x22) defaultAction="" children=1
+4s later the transcript has 8 more records:
+  queue-operation origin=- ""
+  queue-operation origin=- ""
+  user origin=human "uia-answer test, reply OK"
+  file-history-snapshot origin=- ""
+  api-request origin=- ""
+  assistant origin=- ""
+  assistant origin=- "OK"
+  system origin=- ""
+
+== Restoring the session the app showed ==
+opened local_e91f373e-7479-4e67-bbc5-8e2bd64a4baf "Probe answering a desktop session through UI Automation": ok
