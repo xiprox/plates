@@ -1,0 +1,85 @@
+Ways into a Claude desktop app session from another local program, 2026-11-15.
+Claude desktop app 5.11492.5.0, Claude Code 2.1.284, Windows 11 25H2.
+Code excerpts are verbatim from the minified bundles, extracted from the app's
+asar archives into a temporary folder and searched; nothing in the app was run.
+
+== The claude:// link handler (app.asar, .vite/build/index.chunk-DL8fZzVo.js) ==
+
+code/continue and code/needs-input read only `session` and `source`.
+code/continue needs `session` to be `last` or to match /^local_[A-Za-z0-9-]{1,64}$/.
+code/<cse_|session_|cshk_ id> reads only `artifact` and `org`.
+code/project/<id> reads `thread` and `msg`.
+code/new is the only path that takes text:
+  let s=(a.searchParams.get("q")??a.searchParams.get("prompt"))?.slice(0,TM)
+  with TM=14336; it also reads folder, file, ssh_host, ssh_port, ssh_folder,
+  environment, and runner_pool, and navigates to /epitaxy?q=...
+Renderer (ion-dist.asar, assets/v1/c11959232-CIIiVTw4.js, Dv()):
+  d=t.q??t.prompt becomes initialPrompt, then the composer's initialText,
+  under the flag isPromptPrefill. Nothing sends it.
+
+== How the app feeds Claude Code (app.asar, index.chunk-DnCtChOM.js) ==
+
+CLAUDE_AGENT_SDK_VERSION="0.3.325"
+["--output-format","stream-json","--verbose","--input-format","stream-json"]
+spawned with stdio:["pipe","pipe","pipe"]; prompts are stream-json `user`
+messages written from an in-memory queue to the CLI's stdin.
+The only input kept on disk is waiting-input/<local_id>.json, which the app
+restores at launch as messages "held until the person sends them".
+
+== The app's send_message tool (app.asar, index.chunk-C8t6FVtC.js) ==
+
+Ul="send_message"
+wraps the text as <cross-session-message from="..." from-name="...">...</cross-session-message>
+s.sendPeerMessage(d,v,{messageId:n,toolUseId:...,origin:{kind:"peer",from:...,name:...,body:g}})
+  -> this.deps.sendMessage(e,n,void 0,{origin:i,peerMessageId:a})
+  -> enqueueCliInput -> t.enqueue(n) on the session's inputStream
+The app builds its internal MCP servers with the Agent SDK's createSdkMcpServer
+(InternalMcpServerManager.createProxyServers, index.chunk-MTMuqK7n.js), type "sdk",
+so their calls travel over the CLI's stdio; no port, pipe, or token file.
+
+== Wrap-up buttons (ion-dist.asar) ==
+
+cb27dab29-nJPglHF4.js, Ge(): each action becomes {kind:"action",action} or
+  {kind:"send",label[,message]}.
+c96d752d0-B7j9Y5kz.js, l3: {key:`wrap:${n}`,source:"model",kind:"send",text:s3(n)};
+  s3 turns @, /, and a leading ! into full-width forms.
+c9bd7af9c-B2WtQE6V.js: a click calls sendWithOutcome with {ref:t,text:f,uuid:crypto.randomUUID()}.
+cbba38c7a-uN03u-3L.js: commit and verify send a fixed, translated prompt;
+  fix_ci, address_comments, and resolve_conflicts have prompts of their own;
+  create_pr, archive, and new_session are kind:"command" and run in the app.
+
+== Local listeners in app.asar ==
+
+OAuth callback servers on 127.0.0.1, only during a sign-in, checking state.
+_mo: a free-port check that listens and closes at once.
+browser-bridge, b.sock in a ccd-br-XXXXXX folder, keyed per session; switched
+  off in this build: function C(){return!1}
+SSH askpass pipe \\.\pipe\claude-ssh-askpass-<hex>, guarded by a random token.
+frameLocalWorker.js, "Claude Desktop Typed Artifact Service", HTTP and
+  WebSocket on 127.0.0.1 and ::1, serving artifact pages, checking Host.
+The app strips the remote-debugging-port and remote-debugging-pipe switches.
+None accepts a message for a session.
+
+== Claude Code's cross-session inbox, from a Bash command in a desktop session ==
+
+CLAUDE_CODE_MESSAGING_SOCKET = \\.\pipe\LOCAL\cc-msg-<32 hex digits>
+CLAUDE_CODE_MESSAGING_TOKEN set (value not recorded)
+
+== Claude Code docs, as of 2026-11-15 ==
+
+https://code.claude.com/docs/en/cross-session-messaging.md
+  Hooks and Bash commands get CLAUDE_CODE_MESSAGING_SOCKET and
+  CLAUDE_CODE_MESSAGING_TOKEN; on Windows a connection's first line is
+  {"type":"auth","token":"<token>"}, and the format after it isn't documented.
+  A message arriving there is labeled as coming from another session, and
+  can't approve a permission or change configuration.
+https://code.claude.com/docs/en/channels.md
+  An MCP server can push messages into a session only if Claude Code was
+  started with --channels (or --dangerously-load-development-channels);
+  research preview.
+https://code.claude.com/docs/en/remote-control.md
+  Connects claude.ai/code or the mobile app through the Anthropic API; no
+  local API.
+https://code.claude.com/docs/en/hooks.md
+  asyncRewake: an async hook that exits with code 2 wakes Claude, which sees
+  its stderr as a system reminder.

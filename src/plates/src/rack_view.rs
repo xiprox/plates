@@ -2,7 +2,10 @@
 //! as record/areas/rack/01-window.md designs it. view.rs draws it.
 
 use std::{
+    cell::RefCell,
+    collections::HashMap,
     path::PathBuf,
+    rc::Rc,
     time::{Duration, Instant, SystemTime},
 };
 
@@ -16,6 +19,7 @@ use plates_core::{
 };
 
 use crate::{
+    card::{CARD_DELAY, CardView},
     menu::{MENU_W, MenuKind, MenuView},
     motion::{self, Ease, Rect, Side, Tween},
     native,
@@ -79,6 +83,20 @@ pub(crate) struct Menu {
     window: WindowHandle<MenuView>,
 }
 
+/// A session tile's hover card, open in a window of its own, or about to be.
+pub(crate) struct Card {
+    tile: TileId,
+    window: Option<WindowHandle<CardView>>,
+}
+
+/// Where a session tile and its text sat in the rack's window at the last layout, in logical
+/// pixels.
+#[derive(Clone, Default)]
+pub(crate) struct Spot {
+    pub(crate) tile: Bounds<Pixels>,
+    pub(crate) main: Bounds<Pixels>,
+}
+
 pub(crate) struct Toast {
     pub(crate) removed: Removed,
     /// What the Undo row says, such as "Dismissed “Plates”".
@@ -109,6 +127,12 @@ pub struct RackView {
     pub(crate) input: Entity<InputState>,
     pub(crate) field: Option<Field>,
     pub(crate) menu: Option<Menu>,
+    card: Option<Card>,
+    /// The session tile the pointer last moved over, and when, which opens the tile's card once
+    /// the pointer has rested there for `CARD_DELAY`.
+    rest: Option<(TileId, Instant)>,
+    /// Filled in by the tiles' layout each frame.
+    pub(crate) spots: Rc<RefCell<HashMap<TileId, Spot>>>,
     pub(crate) toast: Option<Toast>,
     pub(crate) docked: Option<Side>,
     dock_area: Rect,
@@ -232,6 +256,9 @@ impl RackView {
             input,
             field: None,
             menu: None,
+            card: None,
+            rest: None,
+            spots: Rc::default(),
             toast: None,
             docked: None,
             dock_area: Rect::default(),
@@ -693,7 +720,12 @@ impl RackView {
             self.start_field(FieldFor::Rename(id), window, cx);
             return;
         }
-        // Clicking a finished session's tile reads it, as opening the session in the app does.
+        self.open_tile(id, cx);
+    }
+
+    /// What a click on a tile or its card does: it reads a finished session's turn, as opening
+    /// the session in the app does, opens the session there, and clears time-up.
+    pub(crate) fn open_tile(&mut self, id: TileId, cx: &mut Context<Self>) {
         if self.rack.mark_read(id, SystemTime::now()) {
             self.after_change(cx);
         }
@@ -730,12 +762,157 @@ impl RackView {
         self.after_change(cx);
     }
 
+    pub(crate) fn cancel_timer(&mut self, id: TileId, cx: &mut Context<Self>) {
+        self.rack.cancel_timer(id, SystemTime::now());
+        self.save();
+        self.after_change(cx);
+    }
+
+    /// Notes the pointer moving over a session tile's text. A task waits until it has rested
+    /// there for `CARD_DELAY`, then opens the tile's card, and each move pushes the wait back.
+    pub(crate) fn pointer_moved(&mut self, id: TileId, cx: &mut Context<Self>) {
+        if self.card.as_ref().is_some_and(|c| c.tile == id) {
+            return;
+        }
+        let waiting = self.rest.is_some();
+        self.rest = Some((id, Instant::now()));
+        if waiting {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            loop {
+                let Ok(Some(wait)) = this.update(cx, |this, cx| this.rest_left(cx)) else {
+                    break;
+                };
+                cx.background_executor().timer(wait).await;
+            }
+        })
+        .detach();
+    }
+
+    // How long the pointer has yet to rest, or `None` once the wait is over and the card has had
+    // its chance to open.
+    fn rest_left(&mut self, cx: &mut Context<Self>) -> Option<Duration> {
+        let (id, at) = self.rest?;
+        let left = (at + CARD_DELAY).saturating_duration_since(Instant::now());
+        if !left.is_zero() {
+            return Some(left);
+        }
+        self.rest = None;
+        self.open_card(id, cx);
+        None
+    }
+
+    // The card opens in a window of its own over the tile, like the menu, so it can reach past
+    // the rack's edges. A pointer that left the rack sends the rack no more moves, so the card
+    // opens only if the pointer is still on the tile's text.
+    fn open_card(&mut self, id: TileId, cx: &mut Context<Self>) {
+        let busy = self.press.is_some()
+            || self.drag.is_some()
+            || self.field.is_some()
+            || self.menu.is_some()
+            || self.card.is_some()
+            || self.docked.is_some()
+            || self.tween.is_some()
+            || native::left_button_down()
+            || native::right_button_down();
+        let Some(folder) = self
+            .rack
+            .tile(id)
+            .and_then(|t| t.session())
+            .map(|s| s.folder.clone())
+        else {
+            return;
+        };
+        let Some(spot) = self.spots.borrow().get(&id).cloned().filter(|_| !busy) else {
+            return;
+        };
+        let s = self.scale;
+        let r = native::window_rect(self.hwnd);
+        let on_screen = |b: &Bounds<Pixels>| {
+            let n = |p: Pixels| f64::from(f32::from(p)) * s;
+            Rect::new(
+                (r.left + n(b.origin.x), r.top + n(b.origin.y)),
+                (n(b.size.width), n(b.size.height)),
+            )
+        };
+        if !on_screen(&spot.main).contains(native::cursor_pos()) {
+            return;
+        }
+        let from = on_screen(&spot.tile);
+        let rack = cx.entity().downgrade();
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                point(px((from.left / s) as f32), px((from.top / s) as f32)),
+                size(
+                    px(((from.right - from.left) / s) as f32),
+                    px(((from.bottom - from.top) / s) as f32),
+                ),
+            ))),
+            titlebar: None,
+            focus: false,
+            show: true,
+            kind: WindowKind::PopUp,
+            is_movable: false,
+            is_resizable: false,
+            is_minimizable: false,
+            window_background: WindowBackgroundAppearance::Transparent,
+            inactive_frame_interval: None,
+            ..Default::default()
+        };
+        self.card = Some(Card {
+            tile: id,
+            window: None,
+        });
+        // GPUI draws a new window once before open_window returns, and the card's frame reads
+        // the rack, which it can't while the rack is being updated, as it is here. (read in
+        // gpui-pre 0.3.12, src/app.rs, App::open_window)
+        cx.defer(move |cx| {
+            let opened = cx.open_window(options, |window, cx| {
+                cx.new(|cx| CardView::new(rack.clone(), id, from, folder, window, cx))
+            });
+            rack.update(cx, |this, _| match opened {
+                Ok(window) => {
+                    if let Some(card) = this.card.as_mut().filter(|c| c.tile == id) {
+                        card.window = Some(window);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Couldn't open a tile's card: {e}");
+                    this.card_closed(id);
+                }
+            })
+            .ok();
+        });
+    }
+
+    /// The card window tells the rack it closed itself.
+    pub(crate) fn card_closed(&mut self, id: TileId) {
+        if self.card.as_ref().is_some_and(|c| c.tile == id) {
+            self.card = None;
+        }
+    }
+
+    // Closing a window can run while the rack draws, as when the rack docks, so it waits for
+    // GPUI to finish the frame.
+    fn close_card(&mut self, cx: &mut Context<Self>) {
+        self.rest = None;
+        if let Some(window) = self.card.take().and_then(|c| c.window) {
+            cx.defer(move |cx| {
+                window
+                    .update(cx, |_, window, _| window.remove_window())
+                    .ok();
+            });
+        }
+    }
+
     // The menu opens in a window of its own at the pointer, so it can reach past the rack's edges
     // without growing the rack's window, whose shadow DWM would draw around the grown rectangle.
     // It opens below and to the right of the pointer, to the left near the screen's right edge,
     // and above it near the screen's bottom (user, 2026-11-15).
     pub(crate) fn open_menu(&mut self, kind: MenuKind, at: Point<Pixels>, cx: &mut Context<Self>) {
         self.close_menu(cx);
+        self.close_card(cx);
         let s = self.scale;
         let r = native::window_rect(self.hwnd);
         let pointer = (
@@ -866,6 +1043,7 @@ impl RackView {
             prev_focus: native::foreground_window(),
         });
         self.close_menu(cx);
+        self.close_card(cx);
         native::allow_activation(hwnd, true);
         self.input.update(cx, |s, cx| {
             s.set_value(text, window, cx);

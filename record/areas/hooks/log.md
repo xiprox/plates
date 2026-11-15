@@ -2,6 +2,55 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: Stop lists the tasks still running, and a background agent's report starts a new turn
+
+**Asked:** a session's tile showed your turn while the session waited on two background agents it had started; can Plates tell such a turn from one that's yours?
+
+**Expected:** no, since no hook event fires as a background task starts or finishes.
+
+**Found:** we read the docs, and watched a session in the Claude desktop app (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input) and [tools reference](https://code.claude.com/docs/en/tools-reference.md#background-commands), as of 2026-11-15; measured on Windows 11 25H2, 2026-11-15, Claude Code 2.1.284).
+
+- `Stop`'s `background_tasks` lists each task "in flight" as the turn ends, with an `id`, a `type`, a `status`, and a `description`.
+  The docs give `shell`, `subagent`, `monitor`, `workflow`, `teammate`, `cloud session`, and `MCP task` as examples of `type`, which "Falls back to the raw discriminant for unrecognized types", and they don't list the `status` values.
+- In this repository's own desktop session, a turn ended with two background agents running, and each agent's report later started a turn of its own, with no prompt from us.
+  We haven't captured a `Stop` body whose `background_tasks` holds entries.
+- `UserPromptSubmit` fires for a turn a background agent's report starts (documented, [hooks](https://code.claude.com/docs/en/hooks.md), as of 2026-11-15).
+- A workflow's result arrives as a task notification when it completes (read in the Workflow tool's own description, Claude Code 2.1.284).
+  Nothing we read says how a teammate reports back.
+- A background command in a local session, a desktop one included, has no time limit, and runs until it exits or someone stops it.
+- The docs don't say whether a background command that exits starts a turn in an interactive session.
+- The Monitor tool's watch has a deadline of 5 minutes by default and 30 minutes at most, and Claude takes up each line it prints as it arrives; the docs also give a `monitor` entry `server` and `tool` fields, so whether that `type` is the Monitor tool's watch is unclear.
+- No hook event Plates installs says that a background command or agent has finished.
+  Whether `SubagentStop` does, for a background agent, is unverified ([01-claude-code-hooks](01-claude-code-hooks.md#events)), and `TaskCreated` and `TaskCompleted` follow the task list Claude keeps with its `TaskCreate` tool.
+
+**Changed:** a turn that ends with a `subagent`, `workflow`, or `teammate` still running, and whose wrap-up asks you nothing, keeps its tile working, with "Waiting on 2 background tasks" as its summary line.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#background-tasks) and [02-tiles](../rack/02-tiles.md#session-tiles).
+
+## 2026-11-15: No supported channel puts a message into a Claude desktop app session
+
+**Asked:** can the hover card send a session a message, or answer the question a turn's wrap-up asks, the way the wrap-up's buttons do in the app?
+
+**Expected:** a link that carries text, or the app's own tool for one session to message another.
+
+**Found:** we read the app's code and Claude Code's docs, and printed the environment a Bash command gets in a desktop session (read in the Claude desktop app 5.11492.5.0, app.asar and ion-dist.asar; documented, [cross-session messaging](https://code.claude.com/docs/en/cross-session-messaging.md), [channels](https://code.claude.com/docs/en/channels.md), and [remote control](https://code.claude.com/docs/en/remote-control.md), as of 2026-11-15; measured on Windows 11 25H2, 2026-11-15, Claude Code 2.1.284; [results/2026-11-15-input-channels.txt](results/2026-11-15-input-channels.txt)).
+
+- Of the app's `claude://code/` links, only `code/new` takes text, in `q` or `prompt`, and it fills the message box of a new session without sending it.
+  `code/continue` takes only `session` and `source`.
+- The app runs each session's Claude Code through the Agent SDK, writing your messages to its stdin, a pipe only the app holds.
+- The app's `send_message` tool, which lets one session message another, is an MCP server inside the app's own process, with no port or pipe another program could reach.
+- A click on one of the wrap-up's buttons sends its label as an ordinary message from you, and a few app actions, such as `commit`, send a fixed prompt instead.
+- The app's local listeners serve sign-ins, artifact pages, and SSH passwords, and none takes a message for a session.
+- Claude Code gives each desktop session an inbox for messages from other sessions, on Windows a named pipe such as `\\.\pipe\LOCAL\cc-msg-<32 hex digits>`, whose name and token reach hooks and Bash commands as `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN`.
+  The docs say a message arriving there is labeled as coming from another session and can't approve a permission, so it can't stand in for an answer of yours.
+- An MCP server can push messages into a session only if Claude Code started with the `--channels` flag, a research preview that the app gives us no way to add.
+- Remote Control reaches a session through the Anthropic API, with no local API.
+
+**Changed:** the hover card names the wrap-up's choices without acting on them, and clicking one opens the session.
+Whether Windows UI Automation can press the app's own button for you is untested.
+
+**Affects:** [02-tiles](../rack/02-tiles.md#the-hover-card).
+
 ## 2026-11-15: A transcript shows when a turn ended, through Claude's end_turn record
 
 **Asked:** a session's tile vanished when Plates restarted after the session's turn ended, since no event came to bring it back; can Plates tell from the transcript how a turn stands, to restore and catch up its tiles?

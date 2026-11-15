@@ -3,9 +3,9 @@
 
 use std::time::{Duration, Instant, SystemTime};
 
-use gpui_kit::component::{input::Input, tooltip::Tooltip};
+use gpui_kit::component::input::Input;
 use gpui_kit::*;
-use plates_core::{Need, SessionState, Tile, rack::ENDED_CLEARS_AFTER, timer::Timer};
+use plates_core::{Need, Session, SessionState, Tile, rack::ENDED_CLEARS_AFTER};
 
 use crate::{
     markup::{self, Mark},
@@ -18,14 +18,22 @@ const BG: u32 = 0x131417;
 pub(crate) const BORDER: u32 = 0x2A2C31;
 pub(crate) const TILE: u32 = 0x1C1D21;
 pub(crate) const TEXT: u32 = 0xECEDEF;
-const TEXT2: u32 = 0xA3A6AE;
+pub(crate) const TEXT2: u32 = 0xA3A6AE;
 pub(crate) const MUTED: u32 = 0x8B8E97;
 const BLUE: u32 = 0x74AEFF;
 const AMBER: u32 = 0xF2B441;
 const HOT: u32 = 0xFF7A45;
-const YELLOW: u32 = 0xF4D35E;
+pub(crate) const YELLOW: u32 = 0xF4D35E;
 const GREEN: u32 = 0x5BCB8A;
 const GRAY: u32 = 0x5E626B;
+/// The text colors of a working tile, a your-turn tile, and an approval.
+pub(crate) const WORKING_TEXT: u32 = 0x9CC4FF;
+pub(crate) const YOUR_TURN_TEXT: u32 = 0xF2C46A;
+pub(crate) const APPROVAL_TEXT: u32 = 0xFF9B6E;
+
+/// Tiles shrinking out are drawn with indexes from here up, so their group and element names
+/// never match a present tile's.
+const LEAVING: usize = 10_000;
 
 /// How long a tile's background brightens when it starts needing you.
 const BRIGHTEN: Duration = Duration::from_millis(1400);
@@ -33,11 +41,11 @@ const BRIGHTEN: Duration = Duration::from_millis(1400);
 const ENTER: Duration = crate::rows::ENTER;
 
 /// The font the rack's text uses. The root of the rack's view sets the same family.
-const SANS: &str = "Inter";
+pub(crate) const SANS: &str = "Inter";
 /// A monospace font each OS ships with, for the code in Claude's lines.
-const MONO: &str = if cfg!(windows) { "Consolas" } else { "Menlo" };
+pub(crate) const MONO: &str = if cfg!(windows) { "Consolas" } else { "Menlo" };
 
-fn white(alpha: f32) -> Hsla {
+pub(crate) fn white(alpha: f32) -> Hsla {
     hsla(0., 0., 1., alpha)
 }
 
@@ -55,37 +63,51 @@ fn grown(row: AnyElement, full: f32, factor: f32) -> AnyElement {
 
 // A line Claude wrote, with its `code` in the monospace font on a faint background and its
 // **bold** in bold, and the marks around each left out.
-fn styled_line(line: &str, color: impl Into<Hsla>) -> StyledText {
-    let color = color.into();
+pub(crate) fn styled_line(line: &str, color: impl Into<Hsla>) -> StyledText {
+    let color: Hsla = color.into();
     let (text, spans) = markup::parse(line);
-    let run = |len: usize, font: Font, background_color: Option<Hsla>| TextRun {
-        len,
-        font,
-        color,
-        background_color,
-        underline: None,
-        strikethrough: None,
-    };
-    let mut runs = Vec::new();
-    let mut at = 0;
-    for (range, mark) in spans {
-        if range.start > at {
-            runs.push(run(range.start - at, font(SANS), None));
-        }
-        runs.push(match mark {
-            Mark::Code => run(range.len(), font(MONO), Some(white(0.08))),
-            Mark::Bold => run(range.len(), font(SANS).bold(), None),
-        });
-        at = range.end;
-    }
-    if text.len() > at {
-        runs.push(run(text.len() - at, font(SANS), None));
-    }
+    // A link's text holds marks of its own, so the line splits into runs at every span's edges,
+    // and each run takes the marks of every span around it.
+    let mut cuts: Vec<usize> = vec![0, text.len()];
+    cuts.extend(spans.iter().flat_map(|(r, _)| [r.start, r.end]));
+    cuts.sort_unstable();
+    cuts.dedup();
+    // A link is underlined, faintly, and isn't clickable (user, 2026-11-15).
+    let mut underline = color;
+    underline.a *= 0.45;
+    let runs = cuts
+        .windows(2)
+        .map(|w| {
+            let has = |mark: Mark| {
+                spans
+                    .iter()
+                    .any(|(r, m)| *m == mark && r.start <= w[0] && w[1] <= r.end)
+            };
+            let code = has(Mark::Code);
+            let mut f = font(if code { MONO } else { SANS });
+            if has(Mark::Bold) {
+                f = f.bold();
+            }
+            TextRun {
+                len: w[1] - w[0],
+                font: f,
+                color,
+                background_color: code.then(|| white(0.08)),
+                underline: has(Mark::Link).then_some(UnderlineStyle {
+                    thickness: px(1.),
+                    color: Some(underline),
+                    wavy: false,
+                }),
+                strikethrough: None,
+            }
+        })
+        .filter(|r| r.len > 0)
+        .collect::<Vec<_>>();
     StyledText::new(text).with_runs(runs)
 }
 
 // The mockups' text color, #ECEDEF, at an alpha.
-fn text(alpha: f32) -> Hsla {
+pub(crate) fn text(alpha: f32) -> Hsla {
     let mut c: Hsla = rgb(TEXT).into();
     c.a = alpha;
     c
@@ -127,7 +149,7 @@ fn since(t: SystemTime, now: SystemTime) -> Duration {
     now.duration_since(t).unwrap_or_default()
 }
 
-fn minutes(d: Duration) -> String {
+pub(crate) fn minutes(d: Duration) -> String {
     let m = d.as_secs() / 60;
     match m {
         0 => "under a minute".into(),
@@ -182,7 +204,7 @@ fn brightened(base: u32, peak: u32, elapsed: Duration, length: Duration) -> Opti
 // A tile's marker, or with `pip` its mark on the docked strip. The strip has no room for the
 // timer, so your own tile's pip is outlined in yellow while its timer runs, and turns solid
 // yellow once it's time-up, which needs you where a running timer doesn't (user, 2026-11-15).
-fn marker(t: &Tile, pip: bool) -> AnyElement {
+pub(crate) fn marker(t: &Tile, pip: bool) -> AnyElement {
     let size = if pip { 8. } else { 9. };
     let base = div().flex_none().size(px(size));
     let (shape, color, breathe) = match state(t) {
@@ -230,38 +252,28 @@ fn marker(t: &Tile, pip: bool) -> AnyElement {
     .into_any_element()
 }
 
-// A session tile's state in words, for its tooltip.
-fn state_words(t: &Tile, now: SystemTime) -> Option<String> {
-    let s = t.session()?;
+/// A session's state in words, with how long it has been in it, such as "Your turn · waiting
+/// 12m", for the hover card and an ended tile's summary line.
+pub(crate) fn session_words(s: &Session, now: SystemTime) -> String {
     let in_state = since(s.state_since, now);
-    let words = match t.timer {
-        Timer::TimeUp { .. } => "Time's up".to_string(),
-        Timer::Running { .. } => format!(
-            "Reminder in {}",
-            minutes(t.timer.remaining(now).unwrap_or_default() + Duration::from_secs(59))
-        ),
-        Timer::Idle => match s.state {
-            SessionState::New => "New".into(),
-            SessionState::Working => "Working".into(),
-            SessionState::NeedsApproval => {
-                format!("Needs your approval · {}", minutes(in_state))
-            }
-            SessionState::YourTurn if s.read => {
-                format!("Your turn · read · waiting {}", minutes(in_state))
-            }
-            SessionState::YourTurn => format!("Your turn · waiting {}", minutes(in_state)),
-            SessionState::Unread => format!("Finished {} ago · not read yet", minutes(in_state)),
-            SessionState::Done => format!("Done · read {} ago", minutes(in_state)),
-            SessionState::Ended => {
-                let left = ENDED_CLEARS_AFTER.saturating_sub(in_state);
-                format!(
-                    "Ended · clears in {}",
-                    minutes(left + Duration::from_secs(59))
-                )
-            }
-        },
-    };
-    Some(words)
+    match s.state {
+        SessionState::New => "New".into(),
+        SessionState::Working => format!("Working for {}", minutes(in_state)),
+        SessionState::NeedsApproval => format!("Needs your approval · {}", minutes(in_state)),
+        SessionState::YourTurn if s.read => {
+            format!("Your turn · read · waiting {}", minutes(in_state))
+        }
+        SessionState::YourTurn => format!("Your turn · waiting {}", minutes(in_state)),
+        SessionState::Unread => format!("Finished {} ago · not read yet", minutes(in_state)),
+        SessionState::Done => format!("Done · read {} ago", minutes(in_state)),
+        SessionState::Ended => {
+            let left = ENDED_CLEARS_AFTER.saturating_sub(in_state);
+            format!(
+                "Ended · clears in {}",
+                minutes(left + Duration::from_secs(59))
+            )
+        }
+    }
 }
 
 impl RackView {
@@ -294,9 +306,9 @@ impl RackView {
             Some(SessionState::NeedsApproval) => t
                 .session()
                 .and_then(|s| s.summary.clone())
-                .map(|s| (s, 0xFF9B6E)),
+                .map(|s| (s, APPROVAL_TEXT)),
             Some(SessionState::YourTurn) => t.session().and_then(|s| {
-                let color = if s.read { TEXT2 } else { 0xF2C46A };
+                let color = if s.read { TEXT2 } else { YOUR_TURN_TEXT };
                 s.summary.clone().map(|line| (line, color))
             }),
             // A finished turn you haven't read shows Claude's last line in full white, like a new
@@ -311,24 +323,15 @@ impl RackView {
                 .map(|s| (s, TEXT2)),
             // An ended tile says when it clears itself, which a tooltip alone hid (user,
             // 2026-11-15).
-            Some(SessionState::Ended) => state_words(t, now).map(|w| (w, MUTED)),
+            Some(SessionState::Ended) => t.session().map(|s| (session_words(s, now), MUTED)),
             // A working tile shows Claude's newest text and the tool it used after it, as the
             // core's Session::line picks them (user, 2026-11-15).
             Some(SessionState::Working) => t
                 .session()
                 .and_then(|s| s.line.clone())
-                .map(|s| (s, 0x9CC4FF)),
+                .map(|s| (s, WORKING_TEXT)),
             _ => None,
         };
-        // The tile cuts its subtitle to one line, so the tooltip shows it whole, above the
-        // tile's state in words (user, 2026-11-15).
-        let tip = state_words(t, now).map(|words| {
-            let full = summary
-                .as_ref()
-                .map(|(s, _)| s.clone())
-                .filter(|s| *s != words);
-            (full, words)
-        });
         let ended = state(t) == Some(SessionState::Ended);
         let title = div()
             .text_size(px(13.5))
@@ -356,6 +359,7 @@ impl RackView {
             }));
         let mut main = div()
             .id(("main", id.0))
+            .relative()
             .flex_1()
             .min_w_0()
             .flex()
@@ -371,21 +375,26 @@ impl RackView {
         if self.drag.is_none() {
             main = main.cursor_pointer();
         }
-        if let Some((full, words)) = tip {
-            main = main.tooltip(move |window, cx| {
-                let (full, words) = (full.clone(), words.clone());
-                Tooltip::element(move |_, _| {
-                    div()
-                        .max_w(px(260.))
-                        .py(px(2.))
-                        .flex()
-                        .flex_col()
-                        .gap(px(2.))
-                        .children(full.as_deref().map(|f| styled_line(f, rgb(TEXT))))
-                        .child(div().text_color(rgb(MUTED)).child(words.clone()))
-                })
-                .build(window, cx)
-            });
+        // Resting the pointer on a session tile's text grows the tile into its hover card, which
+        // shows what the tile cuts short (user, 2026-11-15). The × and the timer slot sit beside
+        // the text, so a pointer on its way to them opens no card.
+        let live = i < LEAVING;
+        if live && t.session().is_some() {
+            let spots = self.spots.clone();
+            main = main
+                .on_mouse_move(
+                    cx.listener(move |this, _: &MouseMoveEvent, _, cx| this.pointer_moved(id, cx)),
+                )
+                .child(
+                    canvas(
+                        move |b, _, _| spots.borrow_mut().entry(id).or_default().main = b,
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                );
         }
 
         // Every tile shows an × on hover, 8px from the timer slot or from the tile's edge, which
@@ -420,10 +429,23 @@ impl RackView {
         };
 
         let hg = (!ended).then(|| self.timer_slot(i, t, now, cx));
+        // The card grows from the tile's own rectangle, which only layout knows.
+        let spot = (live && t.session().is_some()).then(|| {
+            let spots = self.spots.clone();
+            canvas(
+                move |b, _, _| spots.borrow_mut().entry(id).or_default().tile = b,
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+        });
 
         div()
             .id(("tile", id.0))
             .group(group)
+            .relative()
             .h(px(60.))
             .flex()
             .rounded(px(10.))
@@ -433,6 +455,7 @@ impl RackView {
             .child(main)
             .child(side)
             .children(hg)
+            .children(spot)
             .into_any_element()
     }
 
@@ -632,10 +655,10 @@ impl RackView {
                 let p = since.elapsed().as_secs_f32() / crate::motion::HOLD.as_secs_f32();
                 (side, p.min(1.))
             });
-        // A shrinking tile is drawn above the tile it sat above, or after the last tile. Its
-        // group and element names count from LEAVING, so they never match a present tile's.
-        const LEAVING: usize = 10_000;
+        // A shrinking tile is drawn above the tile it sat above, or after the last tile.
         let at = Instant::now();
+        // Each frame's layout records where the tiles are again, so a tile that went has none.
+        self.spots.borrow_mut().clear();
         let present = self.rack.tiles();
         let leaving = self.rows.leaving();
         let mut tiles: Vec<AnyElement> = Vec::new();

@@ -3,7 +3,7 @@
 ```text
 Purpose:     How Plates learns what each Claude Code session is doing.
 Depends on:  02-tiles (../rack/02-tiles.md), for the states a session tile shows.
-Decides:     Which hook events Plates listens to and what each does to a tile, where a tile's title and summary come from, how the hooks get installed and reach Plates, and what clicking a session tile opens.
+Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, where a tile's title and summary come from, how the hooks get installed and reach Plates, and what clicking a session tile opens.
 ```
 
 Claude Code runs a small program, `plates-hook`, for each session's hook events, and `plates-hook` forwards each event to a receiver Plates runs on `127.0.0.1`, which turns it into a change to a session tile.
@@ -18,17 +18,20 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 | --- | --- |
 | `SessionStart` | adds the session's tile, as new, and brings back a tile it shows as ended, as new; any other tile it shows stays as it is, since `SessionStart` also fires on a resume, a `/clear`, and a compaction |
 | `UserPromptSubmit` | moves the tile to working, which stops its timer, while a tile already working keeps a timer you started on it |
-| `PreToolUse` | keeps the tool's name and input, for the summary line of an approval that follows, and for what a working tile shows Claude doing; for `mcp__ccd_turn__wrap_up`, the tool the Claude desktop app has Claude call at a turn's end, it keeps whether the call asks you something, through a non-empty `ask` or a `blocked` of true (read in the tool's own description, Claude desktop app 5.11492.5.0) |
+| `PreToolUse` | keeps the tool's name and input, for the summary line of an approval that follows, and for what a working tile shows Claude doing, and for `mcp__ccd_turn__wrap_up`, what the paragraph below the table says |
 | `PermissionRequest` | moves the tile to needs approval as Claude Code is about to ask you, and starts its timer |
 | `Notification` with `notification_type` `permission_prompt` | moves the tile to needs approval if it isn't already, which covers an approval that fired no `PermissionRequest` |
 | `PostToolUse`, or `PostToolUseFailure` for a tool that failed | moves a tile that needed approval back to working, and stops its timer, since the tool ran |
-| `Stop` | moves the tile to unread when the turn's last wrap-up asked nothing, and otherwise to your turn, starting its timer, so a turn with no wrap-up, such as in a terminal, is your turn (user, 2026-11-15) |
+| `Stop` | moves the tile to your turn, starting its timer, if the turn's last wrap-up asked you something; else keeps it working while a task that counts still runs ([Background tasks](#background-tasks)); else moves it to unread if the turn had a wrap-up, and to your turn if it had none, such as in a terminal (user, 2026-11-15) |
 | `StopFailure`, which fires in place of `Stop` when an API error ends the turn | moves the tile to your turn, with the error's text as its summary line, or its `error` when the text is missing, and starts its timer |
 | `SessionEnd` | moves the tile to ended |
 | `PreCompact` | moves the tile to working, with "Compacting session…", the Claude desktop app's words, as its summary line until `PostCompact` |
 | `PostCompact` | ends "Compacting session…"; for a `trigger` of `manual`, a `/compact` you typed, it moves the tile to your turn with "Compacted session" as its summary line and starts its timer, since no turn follows one ([hooks log](log.md#2026-11-15-claude-code-documents-33-hook-events-and-the-apps-status-line-shows-8-states)), and for `auto` the turn goes on |
 | `Elicitation`, when an MCP server asks you to fill in a form or open a page | moves the tile to needs approval, with its `mcp_server_name`, " asks: ", and the first line of its `message` as its summary line, such as "github asks: Pick a repository", and starts its timer |
 | `ElicitationResult`, once you've answered | moves a tile that needed approval back to working |
+
+For `mcp__ccd_turn__wrap_up`, the tool the Claude desktop app has Claude call at a turn's end, `PreToolUse` keeps the call's `recap` and `ask`, and for each of its `actions`, its `label`, or where that's empty, its `action` in words, such as "Commit" for `commit`, for the [hover card](../rack/02-tiles.md#the-hover-card).
+It also keeps whether the call asks you something, through a non-empty `ask` or a `blocked` of true (read in the tool's own description, Claude desktop app 5.11492.5.0).
 
 Claude Code documents 19 more events, and Plates installs no hook for them, because none changes what a tile shows (documented, [hooks](https://code.claude.com/docs/en/hooks.md), as of 2026-11-15):
 
@@ -47,7 +50,7 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
   The others report things outside a session's turn, such as `auth_success`, or things another event already shows (unverified: the docs list the values without saying what each reports, and an `agent_needs_input` arriving in a session would show what it means).
 - The Claude desktop app's status line also shows states that no event carries as they happen: a thinking step, an API request being retried, a wait for something such as a message being sent, and Claude stopping after you press stop ([hooks log](log.md#2026-11-15-claude-code-documents-33-hook-events-and-the-apps-status-line-shows-8-states)).
   It also counts background tasks, and only `Stop` and `SubagentStop` carry them, as the `background_tasks` still in flight when the turn or the subagent ends (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input), as of 2026-11-15).
-  Plates shows none of them except thinking, as [Titles and summaries](#titles-and-summaries) says.
+  Of these states, Plates shows thinking, as [Titles and summaries](#titles-and-summaries) says, and the background tasks that keep a tile working, as [Background tasks](#background-tasks) says.
 - An event from a `session_id` Plates doesn't show adds that session's tile, in the state the event moves a tile to, and in working for an event that moves none, such as `PreToolUse`.
 - Opening a session in the Claude desktop app fires no event, but the app then saves the time in its file for the session as `lastFocusedAt` (read in the Claude desktop app 5.11492.5.0, app.asar, the handler that logs `desktop_ccd_session_visibility_changed`; [hooks log](log.md#2026-11-15-the-app-records-when-you-open-a-session-but-not-whether-a-turn-asked-you-anything)).
   So once a second, Plates reads each session's file, and a `lastFocusedAt` later than a turn's end reads the turn: an unread tile moves to done, and a your-turn tile is marked read.
@@ -64,6 +67,20 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
 - `UserPromptSubmit` also fires for a subagent's report and a task notification, which start a turn as a prompt does, so the tile moves to working (same entry).
 - Every hook runs in the background, and Claude Code ignores what a background hook decides, so the approval stays yours (documented, [hooks](https://code.claude.com/docs/en/hooks.md), as of 2026-11-15).
 
+## Background tasks
+
+`Stop`'s `background_tasks` lists the tasks still running as the turn ends, each with an `id`, a `type`, a `status`, and a `description` (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input), as of 2026-11-15).
+
+- A `subagent` task, a background agent, reports back to the session, and its report starts a new turn, which fires `UserPromptSubmit` ([hooks log](log.md#2026-11-15-stop-lists-the-tasks-still-running-and-a-background-agents-report-starts-a-new-turn)).
+  So while one of them runs, the tile stays working, as [02-tiles](../rack/02-tiles.md#session-tiles) says, until the turn the report starts.
+- A `workflow` task counts too, since a workflow's result arrives as a task notification when it completes (read in the Workflow tool's own description, Claude Code 2.1.284), and so does a `teammate` task, on the guess that it reports back the same way (unverified; ending a turn with a teammate running and watching for the turn its message starts would settle it).
+- A `shell` task doesn't keep the tile working, because a background command in a desktop session has no time limit and runs until it exits or someone stops it (documented, [tools reference](https://code.claude.com/docs/en/tools-reference.md#background-commands), as of 2026-11-15), so counting one would keep a dev server's tile working for good.
+  A turn that leaves a background build running so Claude can pick up its result therefore shows as your turn or unread.
+  The docs don't say whether the build's end starts a turn in an interactive session, and watching a desktop session end a turn with a build running would settle it.
+- A `monitor` task doesn't keep the tile working, because what a `monitor` entry is remains unverified: the hooks docs give it the MCP `server` and `tool` fields an `MCP task` has, while the Monitor tool's watch ends within 30 minutes and has Claude take up each line it prints (documented, [tools reference](https://code.claude.com/docs/en/tools-reference.md#monitor-tool), as of 2026-11-15).
+  Reading a `Stop` body from a turn that ends with a watch running would settle it.
+- A `cloud session` or `MCP task` entry doesn't keep the tile working either, since whether either reports back into the session is unverified; ending a turn with one running and watching for a turn its result starts would settle it.
+
 ## Titles and summaries
 
 - A tile's title is the one the Claude desktop app shows for the session, which Plates reads from the app's own file for that session, the file whose `cliSessionId` or `priorCliSessionIds` holds the hook's `session_id` ([hooks log](log.md#2026-11-15-the-claude-desktop-app-keeps-a-file-per-session-with-its-title-and-its-claude-code-session-ids)).
@@ -79,7 +96,8 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
 - The session's folder comes from `cwd`, and its name is the tile's title until another title arrives.
 - An approval's summary line is built from the tool the `PermissionRequest` names, or else from the `PreToolUse` before it: "Wants to run: " and the command for a shell command, "Wants to edit: " and the file for an edit, and "Wants to use: " and the tool's name for any other tool.
   Where neither names a tool, the summary is the `Notification`'s `message`.
-- Your turn's summary line is the first line of `Stop`'s `last_assistant_message`, because the transcript isn't guaranteed to hold Claude's final message when `Stop` fires.
+- Your turn's summary line is the first line of `Stop`'s `last_assistant_message`, because the transcript isn't guaranteed to hold Claude's final message when `Stop` fires (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input), as of 2026-11-15).
+  The hover card shows the rest of the message, as [02-tiles](../rack/02-tiles.md#the-hover-card) says.
 - A working tile's summary line is the first line of the newest text Claude wrote since your last prompt, for 4s after that text changes, so the text can be read even when a tool follows it at once (user, 2026-11-15).
   No hook event carries the text mid-turn, so Plates reads it from the end of the transcript after each tool event, and it can trail Claude by a record or two.
 - After those 4s, the line shows what Claude is doing with a tool from its `PreToolUse` until its `PostToolUse`, and for at least 1s after its `PreToolUse`, so a tool that runs for a few milliseconds can still be read.
@@ -134,5 +152,4 @@ On macOS, Plates doesn't know where the app keeps its session files, so it reads
 
 - What Plates does when another program holds port 47231, which `receiver::PORT` sets.
 - Sessions that started while Plates was closed, whose tiles appear only at their next event, since Plates restores only the sessions it had.
-- Whether a tile at your turn shows the tasks that `Stop`'s `background_tasks` lists as still running.
 - Whether Plates keeps one tile across a `/clear`, through the app file's `priorCliSessionIds`, which may hold a session's earlier IDs (unverified).

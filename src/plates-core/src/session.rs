@@ -7,6 +7,10 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+/// How many of the turn's newest tools a session keeps, for the hover card.
+pub const RECENT_TOOLS: usize = 4;
 
 /// How long a working tile shows Claude's newest text before what Claude does next, so the text
 /// can be read even when a tool follows it at once.
@@ -62,8 +66,11 @@ pub enum SessionEvent {
     ApprovalNotified { message: String },
     /// `PostToolUse` or `PostToolUseFailure`.
     ToolFinished,
-    /// `Stop`.
-    TurnEnded { last_message: Option<String> },
+    /// `Stop`, with the tasks still running as the turn ended.
+    TurnEnded {
+        last_message: Option<String>,
+        background: Vec<BackgroundTask>,
+    },
     /// `StopFailure`.
     TurnFailed { error: String, text: Option<String> },
     /// `SessionEnd`.
@@ -80,8 +87,8 @@ pub enum SessionEvent {
     /// `ElicitationResult`: you answered the MCP server.
     InputGiven,
     /// `PreToolUse` for the Claude desktop app's `mcp__ccd_turn__wrap_up`, which Claude calls at
-    /// the end of a turn, with whether it asks you to decide something.
-    WrappedUp { asks: bool },
+    /// the end of a turn.
+    WrappedUp(WrapUp),
     /// You opened the session in the Claude desktop app at `at`, which the app records in its
     /// file for the session as `lastFocusedAt`.
     Seen { at: SystemTime },
@@ -99,7 +106,7 @@ impl SessionEvent {
             | SessionEvent::ToolFinished
             | SessionEvent::CompactFinished { .. }
             | SessionEvent::InputGiven
-            | SessionEvent::WrappedUp { .. }
+            | SessionEvent::WrappedUp(_)
             | SessionEvent::Seen { .. } => None,
             SessionEvent::ApprovalAsked { .. }
             | SessionEvent::ApprovalNotified { .. }
@@ -110,6 +117,94 @@ impl SessionEvent {
             SessionEvent::Ended => Some(SessionState::Ended),
         }
     }
+}
+
+/// A task still running when Claude ended its turn, one of `Stop`'s `background_tasks`
+/// (documented, https://code.claude.com/docs/en/hooks.md#stop-input, as of 2026-11-15).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackgroundTask {
+    /// The task's `type`, such as `subagent`, `workflow`, or `shell`.
+    pub kind: String,
+    pub description: String,
+}
+
+impl BackgroundTask {
+    /// Whether Claude takes the session up again once the task finishes, so its tile keeps
+    /// working. A background agent's result starts a new turn, while a background command, such
+    /// as a dev server, can run until someone stops it, so it doesn't keep a tile working
+    /// (record/areas/hooks/01-claude-code-hooks.md, "Background tasks").
+    pub fn reports_back(&self) -> bool {
+        matches!(self.kind.as_str(), "subagent" | "workflow" | "teammate")
+    }
+}
+
+/// What Claude passed the Claude desktop app's wrap-up tool at the end of a turn: a recap, and a
+/// question with buttons that answer it when a decision waits for you. Its `ask` and `blocked`
+/// say a decision waits, and a `recap` alone says nothing does (read in the tool's own
+/// description, Claude desktop app 5.11492.5.0).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WrapUp {
+    pub recap: Option<String>,
+    pub ask: Option<String>,
+    pub blocked: bool,
+    /// What the wrap-up's buttons say, such as "Yes, fix 1".
+    pub choices: Vec<String>,
+}
+
+impl WrapUp {
+    /// Reads the wrap-up tool's input, whose `actions` is a list of buttons, each with a `label`,
+    /// an `action` the app draws its own button for, such as `commit`, or both.
+    pub fn read(input: &Value) -> WrapUp {
+        let text = |key: &str| {
+            input
+                .get(key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+        };
+        // Claude can pass the list as a JSON string rather than a list.
+        let actions = match input.get("actions") {
+            Some(Value::String(s)) => serde_json::from_str(s).unwrap_or(Value::Null),
+            Some(v) => v.clone(),
+            None => Value::Null,
+        };
+        let choices = actions
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|a| {
+                let field = |key: &str| a.get(key).and_then(Value::as_str).map(str::trim);
+                match (field("label"), field("action")) {
+                    (Some(label), _) if !label.is_empty() => Some(label.to_string()),
+                    (_, Some(action)) if !action.is_empty() => Some(app_action(action)),
+                    _ => None,
+                }
+            })
+            .collect();
+        WrapUp {
+            recap: text("recap"),
+            ask: text("ask"),
+            blocked: input.get("blocked").and_then(Value::as_bool) == Some(true),
+            choices,
+        }
+    }
+
+    /// Whether a decision waits for you.
+    pub fn asks(&self) -> bool {
+        self.ask.is_some() || self.blocked
+    }
+}
+
+// An app action's name in words, such as "create_pr" as "Create pr". The app draws these buttons
+// itself, and what it labels them is unverified, so the card says the action's name.
+fn app_action(name: &str) -> String {
+    let words = name.replace('_', " ");
+    let mut chars = words.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 /// A tool Claude is about to use, which names what an approval is for and what a working tile
@@ -188,6 +283,14 @@ pub struct Session {
     /// When the session last changed state, for the hover text, such as "waiting 12m".
     pub state_since: SystemTime,
     pub summary: Option<String>,
+    /// Claude's last message in the turn, whole, for the hover card.
+    pub message: Option<String>,
+    /// What Claude passed the turn's wrap-up tool.
+    pub wrap_up: Option<WrapUp>,
+    /// The turn's newest tools in words, oldest first, at most `RECENT_TOOLS` of them.
+    pub recent: Vec<String>,
+    /// The tasks still running when the turn ended.
+    pub background: Vec<BackgroundTask>,
     /// The first line of the newest text Claude wrote in the turn.
     pub status: Option<String>,
     /// When `status` last changed.
@@ -227,6 +330,10 @@ impl Session {
             state: SessionState::New,
             state_since: now,
             summary: None,
+            message: None,
+            wrap_up: None,
+            recent: Vec::new(),
+            background: Vec::new(),
             status: None,
             status_at: now,
             activity: None,
@@ -245,8 +352,11 @@ impl Session {
     pub fn refresh_line(&mut self, now: SystemTime) -> bool {
         let within =
             |at: SystemTime, hold: Duration| now.duration_since(at).is_ok_and(|d| d < hold);
+        let waiting = self.waiting_on();
         let line = match (&self.status, &self.activity) {
             _ if self.compacting => COMPACTING.to_string(),
+            _ if waiting == 1 => "Waiting on 1 background task".to_string(),
+            _ if waiting > 1 => format!("Waiting on {waiting} background tasks"),
             (Some(status), _) if within(self.status_at, STATUS_HOLDS) => status.clone(),
             (_, Some(activity)) if self.tool_running || within(self.activity_at, TOOL_HOLDS) => {
                 activity.clone()
@@ -257,6 +367,12 @@ impl Session {
         let changed = line != self.line;
         self.line = line;
         changed
+    }
+
+    /// How many of the tasks still running at the turn's end Claude waits on to take the
+    /// session up again.
+    pub fn waiting_on(&self) -> usize {
+        self.background.iter().filter(|t| t.reports_back()).count()
     }
 
     /// The title the Claude desktop app shows for the session, or else its custom title, or else

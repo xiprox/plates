@@ -3,7 +3,7 @@
 ```text
 Purpose:     What each tile in the rack shows, and how you act on it.
 Depends on:  01-window (01-window.md), and 01-claude-code-hooks (../hooks/01-claude-code-hooks.md) for where a session's state comes from.
-Decides:     The tiles' layout and states, the timer, how a tile asks for attention, adding, renaming, and removing tiles, the hotkey, what Plates saves, and the tiles' colors and type.
+Decides:     The tiles' layout and states, the hover card, the timer, how a tile asks for attention, adding, renaming, and removing tiles, the hotkey, what Plates saves, and the tiles' colors and type.
 ```
 
 A tile is one 60px row of the rack: a session tile for each Claude Code session, and your own tiles for anything else you want kept in view.
@@ -36,14 +36,51 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 
 [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) says which hook event starts each state.
 
+- A turn that ends with background agents still running keeps its tile working, unless its wrap-up, the `mcp__ccd_turn__wrap_up` call the Claude desktop app has Claude make at a turn's end, asks you something (user, 2026-11-15).
+  It stays working because an agent's report starts a new turn ([hooks log](../hooks/log.md#2026-11-15-stop-lists-the-tasks-still-running-and-a-background-agents-report-starts-a-new-turn)), and its summary line counts the agents, as in "Waiting on 2 background tasks".
+  [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#background-tasks) says which tasks count.
 - On Windows, clicking a session tile opens that session in the Claude desktop app, and clicking the tile of a session the app doesn't keep, such as one in a terminal, does nothing ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session)).
 - A summary line draws text between backticks in a monospace font on a background of 8% white, and text between double asterisks in bold, and leaves out the backticks and asterisks (user, 2026-11-15).
-- Hovering a session tile shows its summary line whole, which the tile cuts to one line, and its state in words, such as "Your turn · waiting 12m" (user, 2026-11-15).
+  It draws a markdown link, `[text](target)`, as its text with a 1px underline in the line's color at 45% opacity, and the link can't be clicked (user, 2026-11-15).
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
 - An ended tile clears itself 30 minutes after the session ends, and its × clears it at once.
 - Every other session tile shows an × on hover too, which dismisses the session: its tile shrinks out, with an Undo button for 5s, and the session is read and its timer stops (user, 2026-11-15).
   A dismissed session stays off the rack while it works, compacts, or is opened, and comes back after the last session tile once it needs you again, with an approval, a question, an unread turn, or an MCP server's request, or once you send it a new prompt (user, 2026-11-15).
   A dismissed session that ends doesn't come back.
+
+## The hover card
+
+Resting the pointer on a session tile's text for 400ms opens its hover card: a popup window 360px wide that grows out of the tile over the rack, like the menus in [01-window](01-window.md#launching-and-quitting), and shows what the tile cuts short (user, 2026-11-15).
+
+- Each move of the pointer starts the wait again, so a pointer crossing the rack opens no card.
+  The × and the timer slot sit beside the tile's text, so a pointer on its way to them, or resting on them, opens none either.
+- The card grows from the tile's own rectangle to its full size over 180ms, easing out, and its text shows once it's full size, without a fade (user, 2026-11-15).
+  It grows right and down from the tile's top-left corner, left from the tile's right edge where the monitor's work area leaves no room on the right, and up from the tile's bottom edge where it leaves no room below.
+- It can reach past the rack's edges, and it closes as soon as the pointer is off both the card and the tile.
+- Clicking the card above its folder line, or its Open button, does what clicking the tile does.
+
+From the top, the card shows:
+
+1. The tile's marker, its title on up to two lines, and the session's state in words with how long it has been in it, such as "Your turn · waiting 12m".
+2. What the session's state calls for, as the table below gives it, in a part that scrolls once it's taller than 300px, so a long message can be read whole while the rest of the card stays in place (user, 2026-11-15).
+3. For a tile at your turn, unread, done, or ended whose turn called the wrap-up, the wrap-up's box, which the bullets below describe.
+4. The session's folder and its branch, such as "plates · main".
+5. The timer's controls, except on an ended tile: a chip for each length the timer's menu offers, or, while a timer runs, the time left and a Cancel chip.
+   Beside them, an Open button, for a session the Claude desktop app keeps.
+
+| State | The scrolling part shows |
+| --- | --- |
+| Working | the turn's newest four tools in words, oldest first, in the muted color, and then the summary line in the working text color |
+| Working, waiting on background agents | Claude's last message, the agents it waits on, and then the summary line |
+| Needs approval | the summary line, and below it the whole command, for a shell command |
+| Your turn, unread, done, or ended | Claude's last message, or for a turn with neither a message nor a wrap-up, the summary line |
+
+- The card shows at most 12,000 characters of Claude's last message, cut at a space, with "…" where it stops, and draws it as paragraphs: a heading loses its #s, a list item's - or * becomes •, and a fenced code block is in the monospace font.
+- The card runs in the order the Claude desktop app draws a session, with what came first at the top, so it reads like the session it opens (user, 2026-11-15).
+- The wrap-up's box holds what the app draws under Claude's last message, in its order: the recap in the secondary text color, then the question in the your-turn text color, then its choices, one for each of the wrap-up's `actions` (user, 2026-11-15; read in the wrap-up tool's own description, Claude desktop app 5.11492.5.0, which says the app draws its box under the message Claude writes after the call).
+  It sits below the scrolling part, so the question stays in view however far the message scrolls (user, 2026-11-15).
+- The choices are the app's own buttons, so the card only names them, and clicking one opens the session.
+  The card can't answer for you, because no supported channel lets a program outside the app send a message into one of its sessions as you ([hooks log](../hooks/log.md#2026-11-15-no-supported-channel-puts-a-message-into-a-claude-desktop-app-session)).
 
 ## Your own tiles
 
@@ -82,7 +119,8 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 
 Plates saves your own tiles, each with its timer, as JSON in its data folder, `%APPDATA%\Plates\` on Windows and `~/Library/Application Support/Plates/` on macOS, and loads them when it starts.
 In the same folder, it saves where the rack last came to rest, as [01-window](01-window.md#launching-and-quitting) describes.
-It also saves the session tiles, shown and dismissed, each with its state, summary line, and timer, so a session that finished before Plates restarted, and so sends no more events, keeps its tile (user, 2026-11-15).
+It also saves the session tiles, shown and dismissed, so a session that finished before Plates restarted, and so sends no more events, keeps its tile (user, 2026-11-15).
+Each keeps its state, summary line, and timer, and the last turn's message, wrap-up, and background tasks, which its card shows.
 When it starts, Plates brings each restored tile up to date with any turn that ended or began while it was closed, from the session's transcript ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries)).
 
 ## Colors and type
@@ -102,6 +140,7 @@ When it starts, Plates brings each restored tile up to date with any turn that e
 
 The type is Inter: titles at 13.5px semibold, summary lines and secondary text at 12px, and the hotkey's name on the phantom tile at 11px.
 Code in a summary line is in a monospace font each OS ships with: Consolas on Windows and Menlo on macOS.
+On the hover card, Claude's text is 12px with a line height 1.35 times its size, and code blocks are 11.5px.
 
 ## Left open
 

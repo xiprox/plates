@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     rack::Rack,
-    session::{Session, SessionState},
+    session::{BackgroundTask, Session, SessionState, WrapUp},
     timer::Timer,
 };
 
@@ -113,6 +113,13 @@ struct SavedSession {
     /// Milliseconds since 1970, as `rack.json` writes its times.
     state_since: u64,
     summary: Option<String>,
+    /// A file without these, such as one an older Plates wrote, loads with them empty.
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    wrap_up: Option<WrapUp>,
+    #[serde(default)]
+    background: Vec<BackgroundTask>,
     asks: Option<bool>,
     read: bool,
     ended_at: Option<u64>,
@@ -146,6 +153,9 @@ pub fn save_sessions(rack: &Rack, path: &Path) -> io::Result<()> {
                 state: s.state,
                 state_since: ms(s.state_since),
                 summary: s.summary.clone(),
+                message: s.message.clone(),
+                wrap_up: s.wrap_up.clone(),
+                background: s.background.clone(),
                 asks: s.asks,
                 read: s.read,
                 ended_at: s.ended_at.map(ms),
@@ -192,6 +202,9 @@ pub fn load_sessions(rack: &mut Rack, path: &Path, now: SystemTime) -> io::Resul
         session.first_prompt = s.first_prompt;
         session.state = s.state;
         session.summary = s.summary;
+        session.message = s.message;
+        session.wrap_up = s.wrap_up;
+        session.background = s.background;
         session.asks = s.asks;
         session.read = s.read;
         session.ended_at = s.ended_at.map(time);
@@ -253,6 +266,7 @@ mod tests {
             Path::new("/work/a"),
             SessionEvent::TurnEnded {
                 last_message: Some("Commit it?".into()),
+                background: Vec::new(),
             },
             at(1_000),
         );
@@ -275,6 +289,7 @@ mod tests {
         assert_eq!(s.id, "a");
         assert_eq!(s.state, SessionState::YourTurn);
         assert_eq!(s.summary.as_deref(), Some("Commit it?"));
+        assert_eq!(s.message.as_deref(), Some("Commit it?"));
         assert_eq!(s.state_since, at(1_000));
         assert_eq!(s.transcript.as_deref(), Some(Path::new("/t/a.jsonl")));
         assert_eq!(shown[0].0.timer, rack.tile(a).unwrap().timer);

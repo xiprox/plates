@@ -8,7 +8,9 @@ use std::{
 
 use crate::{
     desktop::AppSession,
-    session::{COMPACTED, Session, SessionEvent, SessionState, first_line, prompt_title},
+    session::{
+        COMPACTED, RECENT_TOOLS, Session, SessionEvent, SessionState, first_line, prompt_title,
+    },
     timer::{DEFAULT_MINUTES, Timer},
 };
 
@@ -214,6 +216,10 @@ impl Rack {
                     s.first_prompt = prompt.filter(|p| !prompt_title(p).is_empty());
                 }
                 s.summary = None;
+                s.message = None;
+                s.wrap_up = None;
+                s.recent.clear();
+                s.background.clear();
                 s.status = None;
                 s.activity = None;
                 s.tool_running = false;
@@ -221,11 +227,19 @@ impl Rack {
                 s.asks = None;
                 set_state(s, &mut tile.timer, SessionState::Working);
             }
-            SessionEvent::WrappedUp { asks } => {
-                s.asks = Some(asks);
+            SessionEvent::WrappedUp(wrap_up) => {
+                s.asks = Some(wrap_up.asks());
+                s.wrap_up = Some(wrap_up);
             }
             SessionEvent::ToolPending { tool } => {
-                s.activity = Some(tool.activity());
+                let activity = tool.activity();
+                if s.recent.last() != Some(&activity) {
+                    if s.recent.len() == RECENT_TOOLS {
+                        s.recent.remove(0);
+                    }
+                    s.recent.push(activity.clone());
+                }
+                s.activity = Some(activity);
                 s.activity_at = now;
                 s.tool_running = true;
                 s.pending_tool = Some(tool);
@@ -256,18 +270,26 @@ impl Rack {
                     set_state(s, &mut tile.timer, SessionState::Working);
                 }
             }
-            // A turn whose wrap-up asked you nothing is unread until you look at it, and any
-            // other turn's end is your turn, so a session with no wrap-up still asks for you as
-            // it always has (user, 2026-11-15).
-            SessionEvent::TurnEnded { last_message } => {
+            // A turn whose wrap-up asked you something is your turn. Otherwise a turn that left
+            // background agents running stays working, since Claude takes it up again when they
+            // report back, and a turn whose wrap-up asked you nothing is unread until you look at
+            // it. Any other turn's end is your turn, so a session with no wrap-up still asks for
+            // you as it always has (user, 2026-11-15).
+            SessionEvent::TurnEnded {
+                last_message,
+                background,
+            } => {
                 s.pending_tool = None;
-                s.summary = last_message
-                    .map(|m| first_line(&m))
+                s.message = last_message
+                    .map(|m| m.trim().to_string())
                     .filter(|m| !m.is_empty());
-                let to = if s.asks == Some(false) {
-                    SessionState::Unread
-                } else {
-                    SessionState::YourTurn
+                s.summary = s.message.as_deref().map(first_line);
+                s.background = background;
+                let to = match s.asks {
+                    Some(true) => SessionState::YourTurn,
+                    _ if s.waiting_on() > 0 => SessionState::Working,
+                    Some(false) => SessionState::Unread,
+                    None => SessionState::YourTurn,
                 };
                 set_state(s, &mut tile.timer, to);
             }
@@ -284,15 +306,14 @@ impl Rack {
             SessionEvent::Seen { .. } => {}
             SessionEvent::TurnFailed { error, text } => {
                 s.pending_tool = None;
-                s.summary = Some(
-                    text.map(|t| first_line(&t))
-                        .filter(|t| !t.is_empty())
-                        .unwrap_or(error),
-                );
+                s.background.clear();
+                s.message = text.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+                s.summary = Some(s.message.as_deref().map(first_line).unwrap_or(error));
                 set_state(s, &mut tile.timer, SessionState::YourTurn);
             }
             SessionEvent::Ended => {
                 s.pending_tool = None;
+                s.background.clear();
                 s.summary = None;
                 s.ended_at = Some(now);
                 set_state(s, &mut tile.timer, SessionState::Ended);
@@ -325,6 +346,7 @@ impl Rack {
                 }
             }
             SessionEvent::Interrupted { denied } => {
+                s.background.clear();
                 s.summary = Some(match (denied, s.pending_tool.take()) {
                     (true, Some(tool)) => format!("Denied: {}", tool.subject()),
                     (true, None) => "Denied".to_string(),
@@ -702,7 +724,7 @@ impl Rack {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::Tool;
+    use crate::session::{BackgroundTask, Tool, WrapUp};
     use std::time::UNIX_EPOCH;
 
     fn at(s: u64) -> SystemTime {
@@ -744,7 +766,84 @@ mod tests {
     fn stop(message: &str) -> SessionEvent {
         SessionEvent::TurnEnded {
             last_message: Some(message.into()),
+            background: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_turn_that_leaves_agents_running_stays_working_until_they_report_back() {
+        let task = |kind: &str| BackgroundTask {
+            kind: kind.into(),
+            description: "Search the app".into(),
+        };
+        let ended = |background: Vec<BackgroundTask>| SessionEvent::TurnEnded {
+            last_message: Some("Two agents are on it.".into()),
+            background,
+        };
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(
+            &mut rack,
+            "a",
+            ended(vec![task("subagent"), task("subagent")]),
+            5,
+        );
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::Working);
+        assert_eq!(s.line.as_deref(), Some("Waiting on 2 background tasks"));
+        assert_eq!(rack.tile(id).unwrap().need, None);
+
+        // An agent's result starts a turn, which ends with nothing left running.
+        apply(&mut rack, "a", prompt("<task-notification>"), 60);
+        apply(&mut rack, "a", stop("Both found it."), 70);
+        assert_eq!(session(&rack, id).state, SessionState::YourTurn);
+
+        // A dev server in the background doesn't hold the turn.
+        apply(&mut rack, "a", prompt("Serve it"), 80);
+        apply(&mut rack, "a", ended(vec![task("shell")]), 90);
+        assert_eq!(session(&rack, id).state, SessionState::YourTurn);
+
+        // And a wrap-up that asks you something makes it your turn, agents or not.
+        apply(&mut rack, "a", prompt("Go"), 100);
+        apply(&mut rack, "a", wrapped(true), 104);
+        apply(&mut rack, "a", ended(vec![task("subagent")]), 105);
+        assert_eq!(session(&rack, id).state, SessionState::YourTurn);
+    }
+
+    fn wrapped(asks: bool) -> SessionEvent {
+        SessionEvent::WrappedUp(WrapUp {
+            recap: Some("Built it.".into()),
+            ask: asks.then(|| "Commit it?".into()),
+            ..WrapUp::default()
+        })
+    }
+
+    #[test]
+    fn a_turn_keeps_its_whole_message_its_wrap_up_and_its_newest_tools_until_the_next_prompt() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        for (i, command) in ["a", "b", "b", "c", "d", "e"].iter().enumerate() {
+            apply(&mut rack, "a", bash(command), 1 + i as u64);
+        }
+        assert_eq!(
+            session(&rack, id).recent,
+            ["Running b", "Running c", "Running d", "Running e"],
+            "the newest four, with a repeat kept once"
+        );
+        apply(&mut rack, "a", wrapped(true), 8);
+        apply(&mut rack, "a", stop("Built it.\n\nCommit it?"), 9);
+        let s = session(&rack, id);
+        assert_eq!(s.message.as_deref(), Some("Built it.\n\nCommit it?"));
+        assert_eq!(s.summary.as_deref(), Some("Built it."));
+        assert_eq!(
+            s.wrap_up.as_ref().and_then(|w| w.ask.as_deref()),
+            Some("Commit it?")
+        );
+
+        apply(&mut rack, "a", prompt("Yes"), 10);
+        let s = session(&rack, id);
+        assert_eq!((&s.message, &s.wrap_up), (&None, &None));
+        assert!(s.recent.is_empty());
     }
 
     #[test]
@@ -1162,7 +1261,7 @@ mod tests {
     fn a_turn_that_asks_nothing_is_unread_until_you_look_and_then_done() {
         let mut rack = Rack::new();
         let id = apply(&mut rack, "a", prompt("Go"), 0);
-        apply(&mut rack, "a", SessionEvent::WrappedUp { asks: false }, 1);
+        apply(&mut rack, "a", wrapped(false), 1);
         apply(&mut rack, "a", stop("All pushed."), 2);
         let t = rack.tile(id).unwrap();
         assert_eq!(t.session().unwrap().state, SessionState::Unread);
@@ -1181,7 +1280,7 @@ mod tests {
         assert_eq!(t.need, None);
 
         apply(&mut rack, "a", prompt("Next"), 3);
-        apply(&mut rack, "a", SessionEvent::WrappedUp { asks: true }, 4);
+        apply(&mut rack, "a", wrapped(true), 4);
         apply(&mut rack, "a", stop("Which fix first?"), 5);
         assert_eq!(session(&rack, id).state, SessionState::YourTurn);
 
@@ -1194,7 +1293,7 @@ mod tests {
         );
 
         apply(&mut rack, "a", prompt("Once more"), 8);
-        apply(&mut rack, "a", SessionEvent::WrappedUp { asks: false }, 9);
+        apply(&mut rack, "a", wrapped(false), 9);
         apply(&mut rack, "a", stop("Done."), 10);
         assert!(rack.mark_read(id, at(11)), "clicking the tile reads it");
         assert_eq!(session(&rack, id).state, SessionState::Done);
@@ -1245,7 +1344,7 @@ mod tests {
     fn a_dismissed_session_stays_off_the_rack_until_it_needs_you() {
         let mut rack = Rack::new();
         let a = apply(&mut rack, "a", prompt("Go"), 0);
-        apply(&mut rack, "a", SessionEvent::WrappedUp { asks: false }, 1);
+        apply(&mut rack, "a", wrapped(false), 1);
         apply(&mut rack, "a", stop("Pushed."), 2);
         assert!(rack.remove(a).is_some());
         assert!(rack.tile(a).is_none());
@@ -1263,7 +1362,7 @@ mod tests {
         assert!(rack.tile(a).is_none());
 
         // A turn that asks you something brings it back, needing you.
-        apply(&mut rack, "a", SessionEvent::WrappedUp { asks: true }, 6);
+        apply(&mut rack, "a", wrapped(true), 6);
         apply(&mut rack, "a", stop("Commit it?"), 7);
         let t = rack.tile(a).unwrap();
         assert_eq!(t.session().unwrap().state, SessionState::YourTurn);

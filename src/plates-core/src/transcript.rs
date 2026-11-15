@@ -15,6 +15,8 @@ use std::{
 
 use serde_json::Value;
 
+use crate::session::WrapUp;
+
 /// Records past this many lines are left unread, since the first prompt comes near the top.
 const MAX_LINES: usize = 2000;
 
@@ -69,11 +71,11 @@ pub fn latest_status(path: &Path) -> io::Result<Option<String>> {
 /// session whose events came while Plates was closed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Turn {
-    /// Claude ended the turn, with its newest text and whether the turn's last wrap-up asked you
-    /// something, or `None` for a turn with no wrap-up.
+    /// Claude ended the turn, with its newest text and the turn's last wrap-up, or `None` for a
+    /// turn with no wrap-up.
     Finished {
         last_text: Option<String>,
-        asks: Option<bool>,
+        wrap_up: Option<WrapUp>,
     },
     /// You interrupted Claude, or denied a tool, and whether it was a denial.
     Interrupted { denied: bool },
@@ -134,7 +136,7 @@ pub fn newest_turn(path: &Path) -> io::Result<Option<(Turn, SystemTime)>> {
             .collect();
         Turn::Finished {
             last_text: turn.iter().find_map(|r| assistant_text(r)),
-            asks: turn.iter().find_map(|r| wrap_up_asks(r)),
+            wrap_up: turn.iter().find_map(|r| wrap_up(r)),
         }
     } else {
         Turn::Running
@@ -159,9 +161,9 @@ fn is_marker(record: &Value) -> bool {
     text.is_some_and(|t| t.starts_with("[Request interrupted by user"))
 }
 
-// Whether an assistant record's call to the Claude desktop app's wrap-up tool asks you
-// something, as hooks::parse reads the same call from its PreToolUse.
-fn wrap_up_asks(record: &Value) -> Option<bool> {
+// An assistant record's call to the Claude desktop app's wrap-up tool, as hooks::parse reads the
+// same call from its PreToolUse.
+fn wrap_up(record: &Value) -> Option<WrapUp> {
     let parts = record.get("message")?.get("content")?.as_array()?;
     let input = parts.iter().find_map(|p| {
         (p.get("type").and_then(Value::as_str) == Some("tool_use")
@@ -169,12 +171,7 @@ fn wrap_up_asks(record: &Value) -> Option<bool> {
         .then(|| p.get("input"))
         .flatten()
     })?;
-    let ask = input
-        .get("ask")
-        .and_then(Value::as_str)
-        .is_some_and(|a| !a.trim().is_empty());
-    let blocked = input.get("blocked").and_then(Value::as_bool) == Some(true);
-    Some(ask || blocked)
+    Some(WrapUp::read(input))
 }
 
 /// Reads a transcript record's `timestamp`, such as `2026-11-15T20:22:39.123Z`, which Claude
@@ -367,7 +364,10 @@ mod tests {
             Some((
                 Turn::Finished {
                     last_text: Some("Pushed as abc123.".into()),
-                    asks: Some(false)
+                    wrap_up: Some(WrapUp {
+                        recap: Some("Pushed.".into()),
+                        ..WrapUp::default()
+                    })
                 },
                 parse_timestamp("2026-11-15T10:00:09Z").unwrap()
             ))

@@ -110,7 +110,8 @@ mod tests {
         assert_eq!(
             message.event,
             Some(SessionEvent::TurnEnded {
-                last_message: Some("Done.".into())
+                last_message: Some("Done.".into()),
+                background: Vec::new(),
             })
         );
 

@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::{
     desktop::AppSession,
     rack::{Rack, TileId},
-    session::{SessionEvent, SessionState, Tool, first_line},
+    session::{BackgroundTask, SessionEvent, SessionState, Tool, WrapUp, first_line},
     transcript::{self, Turn},
 };
 
@@ -79,15 +79,17 @@ pub fn catch_up(rack: &mut Rack) {
                     rack.apply(&id, &folder, started, at);
                 }
             }
-            Turn::Finished { last_text, asks } => {
+            Turn::Finished { last_text, wrap_up } => {
                 if !in_turn {
                     rack.apply(&id, &folder, started, at);
                 }
-                if let Some(asks) = asks {
-                    rack.apply(&id, &folder, SessionEvent::WrappedUp { asks }, at);
+                if let Some(wrap_up) = wrap_up {
+                    rack.apply(&id, &folder, SessionEvent::WrappedUp(wrap_up), at);
                 }
+                // The transcript doesn't say what was left running.
                 let ended = SessionEvent::TurnEnded {
                     last_message: last_text,
+                    background: Vec::new(),
                 };
                 rack.apply(&id, &folder, ended, at);
             }
@@ -157,23 +159,10 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
             title: text("session_title"),
             prompt: text("prompt"),
         }),
-        // The Claude desktop app has Claude end each turn with its wrap-up tool, whose `ask` and
-        // `blocked` say a decision waits for you, and whose `recap` alone says nothing does
-        // (read in the tool's own description, Claude desktop app 5.11492.5.0).
-        "PreToolUse" if text("tool_name").as_deref() == Some("mcp__ccd_turn__wrap_up") => {
-            let input = v.get("tool_input");
-            let ask = input
-                .and_then(|i| i.get("ask"))
-                .and_then(Value::as_str)
-                .is_some_and(|a| !a.trim().is_empty());
-            let blocked = input
-                .and_then(|i| i.get("blocked"))
-                .and_then(Value::as_bool)
-                == Some(true);
-            Some(SessionEvent::WrappedUp {
-                asks: ask || blocked,
-            })
-        }
+        // The Claude desktop app has Claude end each turn with its wrap-up tool.
+        "PreToolUse" if text("tool_name").as_deref() == Some("mcp__ccd_turn__wrap_up") => Some(
+            SessionEvent::WrappedUp(WrapUp::read(v.get("tool_input").unwrap_or(&Value::Null))),
+        ),
         "PreToolUse" => tool(&v, &cwd).map(|tool| SessionEvent::ToolPending { tool }),
         "PermissionRequest" => Some(SessionEvent::ApprovalAsked {
             tool: tool(&v, &cwd),
@@ -186,6 +175,7 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
         "PostToolUse" | "PostToolUseFailure" => Some(SessionEvent::ToolFinished),
         "Stop" => Some(SessionEvent::TurnEnded {
             last_message: text("last_assistant_message"),
+            background: background_tasks(&v),
         }),
         "StopFailure" => Some(SessionEvent::TurnFailed {
             error: text("error").unwrap_or_else(|| "API error".to_string()),
@@ -261,6 +251,26 @@ fn tool(v: &Value, cwd: &Path) -> Option<Tool> {
         file,
         target,
     })
+}
+
+// Each of Stop's `background_tasks` has a `type`, such as `subagent` or `shell`, and a
+// `description` of up to 1,000 characters, of which the card shows the first line.
+fn background_tasks(v: &Value) -> Vec<BackgroundTask> {
+    v.get("background_tasks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            Some(BackgroundTask {
+                kind: t.get("type")?.as_str()?.to_string(),
+                description: t
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .map(first_line)
+                    .unwrap_or_default(),
+            })
+        })
+        .collect()
 }
 
 fn file_name(path: &str) -> String {
@@ -436,12 +446,27 @@ mod tests {
     fn a_turn_ends_with_claudes_message_or_an_api_error() {
         let stop = with(
             "Stop",
-            json!({ "stop_hook_active": false, "last_assistant_message": "Done." }),
+            json!({ "stop_hook_active": false, "last_assistant_message": "Done.",
+                    "background_tasks": [
+                        { "id": "a1", "type": "subagent", "status": "running",
+                          "description": "Search the app\nin detail", "agent_type": "general-purpose" },
+                        { "id": "b2", "type": "shell", "status": "running",
+                          "description": "Dev server", "command": "npm run dev" } ] }),
         );
         assert_eq!(
             event(stop),
             Some(SessionEvent::TurnEnded {
-                last_message: Some("Done.".into())
+                last_message: Some("Done.".into()),
+                background: vec![
+                    BackgroundTask {
+                        kind: "subagent".into(),
+                        description: "Search the app".into()
+                    },
+                    BackgroundTask {
+                        kind: "shell".into(),
+                        description: "Dev server".into()
+                    },
+                ],
             })
         );
         let failure = with(
@@ -501,22 +526,32 @@ mod tests {
     #[test]
     fn a_wrap_up_asks_when_it_has_a_question_or_blocks() {
         let wrap = |input: Value| {
-            event(with(
+            let body = with(
                 "PreToolUse",
                 json!({ "tool_name": "mcp__ccd_turn__wrap_up", "tool_input": input }),
-            ))
+            );
+            let Some(SessionEvent::WrappedUp(wrap_up)) = event(body) else {
+                panic!("the wrap-up's PreToolUse should be WrappedUp");
+            };
+            wrap_up
         };
+        assert!(!wrap(json!({ "recap": "Pushed." })).asks());
+        assert!(!wrap(json!({ "recap": "Pushed.", "ask": "  " })).asks());
+        assert!(wrap(json!({ "recap": "Stuck.", "blocked": true })).asks());
         assert_eq!(
-            wrap(json!({ "recap": "Pushed." })),
-            Some(SessionEvent::WrappedUp { asks: false })
+            wrap(json!({ "recap": "Built.", "ask": "Commit it?",
+                         "actions": [ { "action": "commit", "label": "" }, { "label": "Not now" } ] })),
+            WrapUp {
+                recap: Some("Built.".into()),
+                ask: Some("Commit it?".into()),
+                blocked: false,
+                choices: vec!["Commit".into(), "Not now".into()],
+            }
         );
         assert_eq!(
-            wrap(json!({ "recap": "Built.", "ask": "Commit it?" })),
-            Some(SessionEvent::WrappedUp { asks: true })
-        );
-        assert_eq!(
-            wrap(json!({ "recap": "Stuck.", "blocked": true })),
-            Some(SessionEvent::WrappedUp { asks: true })
+            wrap(json!({ "ask": "Which?", "actions": "[{\"label\":\"Fix 1\"}]" })).choices,
+            ["Fix 1"],
+            "a list passed as a JSON string"
         );
     }
 

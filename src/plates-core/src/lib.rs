@@ -4,6 +4,7 @@
 
 pub mod cuts;
 pub mod desktop;
+pub mod git;
 pub mod hooks;
 pub mod install;
 pub mod rack;
@@ -14,5 +15,5 @@ pub mod timer;
 pub mod transcript;
 
 pub use rack::{Body, Need, Own, Rack, Removed, Tile, TileId};
-pub use session::{Session, SessionEvent, SessionState, Tool};
+pub use session::{Session, SessionEvent, SessionState, Tool, WrapUp};
 pub use timer::Timer;
