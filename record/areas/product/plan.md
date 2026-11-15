@@ -51,10 +51,15 @@ Done when clicking a session tile opens that session, or else brings the Claude 
 
 ## 7. macOS
 
-Every step's behavior on the Mac, the window test's macOS half included, run in one session there, as [CLAUDE.md](../../../CLAUDE.md) and [decision 002](../../decisions/002-build-on-windows-first.md) ask.
+Every step's behavior on the Mac, the window test's macOS half included, run in one session there from the macOS installer on step 8's release, as [CLAUDE.md](../../../CLAUDE.md) and [decision 002](../../decisions/002-build-on-windows-first.md) ask.
 Done when every step's "done when" holds on macOS too, with no Dock entry for the rack, the rack on every Space and over a full-screen app, and macOS window tiling leaving it alone.
 If GPUI can't give the rack its window on macOS, we weigh the options then.
 
+## 8. Releases
+
+A Release workflow that builds Windows and macOS, packs each with Velopack, and attaches the installers to a GitHub release, as [decision 003](../../decisions/003-releases-with-release-please-and-velopack.md) and [releasing](../build/releasing.md) describe.
+Done when a GitHub release holds both platforms' installers, built by the workflow.
+
 ## Later
 
-Packaging as an installer and an app bundle, launching at login on macOS, and the questions [01-window](../rack/01-window.md#left-open) leaves open.
+Plates looking for its own updates while it runs, and the questions [01-window](../rack/01-window.md#left-open) leaves open.

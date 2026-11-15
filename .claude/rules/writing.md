@@ -350,7 +350,13 @@ Leave out commented-out code.
 
 ## Commit messages
 
-A commit's title says what changed.
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/), because release-please reads them to choose the next version and to write the changelog.
+A `feat:` or `fix:` title, without its type, becomes a line in `CHANGELOG.md`, so it says what changed for someone using Plates: `feat: remind you of a tile tomorrow morning`.
+Every other title says what changed.
+
+- `feat:` is something a user notices, and `fix:` is a bug a user could hit.
+- `docs:` is the record, `test:` is tests, `ci:` and `build:` are the pipeline and the build, `refactor:` is a change no user notices, and `chore:` is the rest.
+- A change that breaks what an earlier version saved or installed, such as `sessions.json` or the hooks in Claude Code's settings, gets `!` after the type and says so in the body.
 
 ## Instructions for agents
 
