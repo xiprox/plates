@@ -60,7 +60,6 @@ A timer runs on the wall clock, so a timer that runs out while Plates is closed,
 - Each save writes `rack.json.new` beside the old file and renames it over `rack.json`, so if Plates crashes mid-save, the old file is whole.
   After a power cut mid-save, whether the renamed file holds its data is unverified on Windows and macOS, since the save doesn't flush the new file to disk before renaming it.
 - A file that doesn't parse, or whose `version` isn't 1, is renamed `rack.json.broken`, replacing any earlier one, and Plates starts with no tiles of your own.
-
-## Left open
-
-- How long the app waits after a change before saving, which step 4 picks once the rack makes changes.
+- Session tiles go to `sessions.json` in the same way, with what a tile shows between turns but not what changes within one, such as the activity line, which the session's next event brings again.
+  The app saves `rack.json` after each change to your own tiles, and `sessions.json` at the next tick after a session tile changes, so a burst of tool events writes it once.
+- `hooks::catch_up` runs on the restored tiles before the rack opens, and moves each one to what its transcript's newest turn shows, if the transcript's record for that turn is later than the tile's last change.

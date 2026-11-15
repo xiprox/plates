@@ -2,6 +2,23 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: A transcript shows when a turn ended, through Claude's end_turn record
+
+**Asked:** a session's tile vanished when Plates restarted after the session's turn ended, since no event came to bring it back; can Plates tell from the transcript how a turn stands, to restore and catch up its tiles?
+
+**Expected:** no record of a turn's end, since `Stop` is a hook event.
+
+**Found:** we read the end of the session's transcript, titled "Controller/HOTAS support for Cyberpunk" in the app (measured on Windows 11 25H2, 2026-11-15).
+
+- The turn's last two Claude records, a `thinking` part and a `text` part, both carried a `message.stop_reason` of `end_turn`, and a `system` record with a `subtype` of `stop_hook_summary` came 8s after the text.
+- The app's file for the session gave `lastTurnEdgeAt` the time of that `system` record, and Plates had restarted 66s later.
+- Records of other types, such as `attachment` and `api-request`, sit among the conversation's, and some carry no `timestamp`.
+- `user` records, the tool results included, carry a `promptId`, and Claude's records don't, so we keyed a turn on its records' `timestamp` instead.
+
+**Changed:** Plates saves session tiles to `sessions.json`, restores them on starting, and moves each to what its transcript's newest turn shows, when that turn's record is later than the tile's last change.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#titles-and-summaries), [02-tiles](../rack/02-tiles.md#saving), and [01-core](../core/01-core.md#saving).
+
 ## 2026-11-15: The app records when you open a session, but not whether a turn asked you anything
 
 **Asked:** after a finished turn showed as done before the user had read it, can Plates tell a turn you've read from one you haven't, and one that asks you something from one that doesn't?

@@ -67,7 +67,7 @@ fn new_looks(
 
 pub fn run() {
     let data_file = data_dir().join("rack.json");
-    let rack = match store::load(&data_file) {
+    let mut rack = match store::load(&data_file) {
         Ok(loaded) => {
             if let Some(broken) = loaded.broken {
                 eprintln!(
@@ -83,6 +83,24 @@ pub fn run() {
             Rack::new()
         }
     };
+    // The session tiles from before Plates last closed come back, caught up with any turn that
+    // ended or began while it was closed.
+    let sessions_file = data_dir().join("sessions.json");
+    match store::load_sessions(&mut rack, &sessions_file, SystemTime::now()) {
+        Ok(Some(broken)) => eprintln!(
+            "{} didn't load, so it was moved to {}.",
+            sessions_file.display(),
+            broken.display()
+        ),
+        Ok(None) => {}
+        Err(e) => eprintln!("Couldn't read {}: {e}", sessions_file.display()),
+    }
+    hooks::catch_up(&mut rack);
+    let restored: Vec<(String, PathBuf)> = rack
+        .session_tiles()
+        .filter_map(|(t, _)| t.session())
+        .map(|s| (s.id.clone(), s.folder.clone()))
+        .collect();
 
     // The receiver hands events on from a thread of its own, and the rack takes them on the UI
     // thread, so a thread between them moves each one onto a channel the UI can await. That
@@ -100,9 +118,12 @@ pub fn run() {
         .spawn(move || {
             let mut app_sessions = AppSessions::new(desktop::sessions_folder());
             let mut cuts = Cuts::new();
-            // Each session Plates has heard from, with its folder and the last time the app
-            // says you opened it.
-            let mut looks: HashMap<String, (PathBuf, Option<SystemTime>)> = HashMap::new();
+            // Each session Plates has heard from, or restored, with its folder and the last time
+            // the app says you opened it.
+            let mut looks: HashMap<String, (PathBuf, Option<SystemTime>)> = restored
+                .into_iter()
+                .map(|(id, folder)| (id, (folder, None)))
+                .collect();
             let mut polled = Instant::now();
             loop {
                 let mut messages = Vec::new();

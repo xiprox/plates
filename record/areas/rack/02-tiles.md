@@ -82,6 +82,8 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 
 Plates saves your own tiles, each with its timer, as JSON in its data folder, `%APPDATA%\Plates\` on Windows and `~/Library/Application Support/Plates/` on macOS, and loads them when it starts.
 In the same folder, it saves where the rack last came to rest, as [01-window](01-window.md#launching-and-quitting) describes.
+It also saves the session tiles, shown and dismissed, each with its state, summary line, and timer, so a session that finished before Plates restarted, and so sends no more events, keeps its tile (user, 2026-11-15).
+When it starts, Plates brings each restored tile up to date with any turn that ended or began while it was closed, from the session's transcript ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries)).
 
 ## Colors and type
 

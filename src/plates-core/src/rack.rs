@@ -483,6 +483,59 @@ impl Rack {
         }
     }
 
+    /// Sets where a session's transcript is.
+    pub fn set_transcript(&mut self, session_id: &str, path: &Path) {
+        let session = self
+            .tiles
+            .iter_mut()
+            .chain(self.hidden.iter_mut())
+            .find_map(|t| match &mut t.body {
+                Body::Session(s) if s.id == session_id => Some(s),
+                _ => None,
+            });
+        if let Some(s) = session {
+            s.transcript = Some(path.to_path_buf());
+        }
+    }
+
+    /// Every session tile, shown or dismissed, with whether it's dismissed, for saving.
+    pub fn session_tiles(&self) -> impl Iterator<Item = (&Tile, bool)> {
+        let shown = self.tiles.iter().filter(|t| !t.is_own());
+        shown
+            .map(|t| (t, false))
+            .chain(self.hidden.iter().map(|t| (t, true)))
+    }
+
+    /// Puts back a session tile saved before Plates last closed, after the other session tiles,
+    /// or among the dismissed.
+    pub fn restore_session(
+        &mut self,
+        session: Session,
+        timer: Timer,
+        dismissed: bool,
+        now: SystemTime,
+    ) -> TileId {
+        let id = self.new_id();
+        let mut tile = Tile {
+            id,
+            body: Body::Session(session),
+            timer,
+            need: None,
+        };
+        if dismissed {
+            self.hidden.push(tile);
+        } else {
+            tile.refresh_need(now);
+            let index = self
+                .tiles
+                .iter()
+                .rposition(|t| t.session().is_some())
+                .map_or(0, |i| i + 1);
+            self.tiles.insert(index, tile);
+        }
+        id
+    }
+
     /// Sets the title and ID the Claude desktop app keeps for a session, from its file for it.
     pub fn set_app_session(&mut self, session_id: &str, app: &AppSession) {
         let session = self

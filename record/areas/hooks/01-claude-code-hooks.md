@@ -103,6 +103,10 @@ What Claude is doing comes from the tool's `PreToolUse`:
 
 A transcript is JSON Lines, and a prompt you typed is a `user` record with `origin.kind` `human`, outside a subagent ([hooks log](log.md#2026-11-15-a-desktop-sessions-transcript-marks-a-typed-prompt-with-originkind-human-after-a-system-reminder)).
 
+When Plates starts, it reads each restored session's transcript to catch up on what the session did while Plates was closed ([hooks log](log.md#2026-11-15-a-transcript-shows-when-a-turn-ended-through-claudes-end_turn-record)).
+Its newest `user` or `assistant` record, outside a subagent, says where the newest turn stands: a marker record says you interrupted Claude or denied a tool, a Claude record with a `stop_reason` of `end_turn` says the turn finished, with its text and its last wrap-up, and any other record says the turn goes on.
+The turn counts only if that record's `timestamp` is later than the tile's last change.
+
 ## Installing
 
 `plates hooks install` adds Plates' hooks to Claude Code's user settings file, `~/.claude/settings.json`.
@@ -129,6 +133,6 @@ On macOS, Plates doesn't know where the app keeps its session files, so it reads
 ## Left open
 
 - What Plates does when another program holds port 47231, which `receiver::PORT` sets.
-- Sessions from before Plates started, which sent their events while no receiver was listening, and whose tiles appear only at their next event.
+- Sessions that started while Plates was closed, whose tiles appear only at their next event, since Plates restores only the sessions it had.
 - Whether a tile at your turn shows the tasks that `Stop`'s `background_tasks` lists as still running.
 - Whether Plates keeps one tile across a `/clear`, through the app file's `priorCliSessionIds`, which may hold a session's earlier IDs (unverified).

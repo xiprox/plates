@@ -6,6 +6,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use serde::{Deserialize, Serialize};
+
 /// How long a working tile shows Claude's newest text before what Claude does next, so the text
 /// can be read even when a tool follows it at once.
 pub const STATUS_HOLDS: Duration = Duration::from_secs(4);
@@ -27,7 +29,8 @@ pub const COMPACTING: &str = "Compacting session…";
 /// Your turn's summary line after a `/compact` you typed, in the app's words for it.
 pub const COMPACTED: &str = "Compacted session";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum SessionState {
     New,
     Working,
@@ -172,6 +175,9 @@ impl Tool {
 pub struct Session {
     pub id: String,
     pub folder: PathBuf,
+    /// The session's transcript, which Plates reads on starting to catch up on a turn that
+    /// ended while it was closed.
+    pub transcript: Option<PathBuf>,
     /// The title the Claude desktop app shows for the session, from its own file for it.
     pub app_title: Option<String>,
     /// The Claude desktop app's own ID for the session, which a link opens it by.
@@ -213,6 +219,7 @@ impl Session {
         Session {
             id: id.to_string(),
             folder: folder.to_path_buf(),
+            transcript: None,
             app_title: None,
             app_id: None,
             custom_title: None,

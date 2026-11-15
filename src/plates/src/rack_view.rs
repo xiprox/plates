@@ -98,6 +98,10 @@ pub struct RackView {
     pub(crate) rack: Rack,
     data_file: PathBuf,
     place_file: PathBuf,
+    sessions_file: PathBuf,
+    /// Whether a session tile changed since the last save of sessions.json, which the tick
+    /// saves, so a burst of tool events writes the file once.
+    sessions_dirty: bool,
     /// The place last saved, which is `None` until the window has taken its saved place, so the
     /// window's first position isn't saved over it.
     saved_place: Option<Place>,
@@ -215,11 +219,14 @@ impl RackView {
 
         let r = native::window_rect(hwnd);
         let place_file = data_file.with_file_name("place.json");
+        let sessions_file = data_file.with_file_name("sessions.json");
         let mut view = RackView {
             hwnd,
             rack,
             data_file,
             place_file,
+            sessions_file,
+            sessions_dirty: true,
             saved_place: None,
             rows: Rows::default(),
             input,
@@ -269,6 +276,12 @@ impl RackView {
         {
             self.toast = None;
         }
+        if self.sessions_dirty {
+            self.sessions_dirty = false;
+            if let Err(e) = store::save_sessions(&self.rack, &self.sessions_file) {
+                eprintln!("Couldn't save {}: {e}", self.sessions_file.display());
+            }
+        }
         // The rings drain and the hover text counts minutes, so the rack redraws each second.
         cx.notify();
     }
@@ -284,6 +297,7 @@ impl RackView {
     // When a tile starts needing you while the rack is docked, the strip nudges out of its edge
     // once, as record/areas/rack/01-window.md asks.
     fn after_change(&mut self, cx: &mut Context<Self>) {
+        self.sessions_dirty = true;
         let latest = self.latest_need();
         if latest > self.nudged_for {
             if self.docked.is_some() && self.tween.is_none() {

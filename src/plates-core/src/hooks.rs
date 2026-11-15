@@ -11,8 +11,8 @@ use serde_json::Value;
 use crate::{
     desktop::AppSession,
     rack::{Rack, TileId},
-    session::{SessionEvent, Tool, first_line},
-    transcript,
+    session::{SessionEvent, SessionState, Tool, first_line},
+    transcript::{self, Turn},
 };
 
 /// Applies a hook message to the rack, and names a session Plates first sees after its first
@@ -33,6 +33,9 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
     if let Some(app) = &message.app {
         rack.set_app_session(&message.session_id, app);
     }
+    if let Some(path) = &message.transcript_path {
+        rack.set_transcript(&message.session_id, path);
+    }
     if !known
         && let Some(Ok(Some(prompt))) = message
             .transcript_path
@@ -42,6 +45,57 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
         rack.set_first_prompt(&message.session_id, &prompt);
     }
     Some(id)
+}
+
+/// Brings session tiles restored from `sessions.json` up to date with what each session did while
+/// Plates was closed, which sent its events to no receiver. A turn counts as new when the
+/// transcript's record for it is later than the tile's last change, so the records Claude Code
+/// adds after a turn ends, such as its `system` record, don't replay the turn.
+pub fn catch_up(rack: &mut Rack) {
+    let sessions: Vec<_> = rack
+        .session_tiles()
+        .filter_map(|(tile, _)| tile.session())
+        .filter(|s| s.state != SessionState::Ended)
+        .filter_map(|s| {
+            let path = s.transcript.clone()?;
+            Some((s.id.clone(), s.folder.clone(), path, s.state, s.state_since))
+        })
+        .collect();
+    for (id, folder, path, state, since) in sessions {
+        let Ok(Some((turn, at))) = transcript::newest_turn(&path) else {
+            continue;
+        };
+        if at <= since {
+            continue;
+        }
+        let in_turn = matches!(state, SessionState::Working | SessionState::NeedsApproval);
+        let started = SessionEvent::PromptSubmitted {
+            title: None,
+            prompt: None,
+        };
+        match turn {
+            Turn::Running => {
+                if !in_turn {
+                    rack.apply(&id, &folder, started, at);
+                }
+            }
+            Turn::Finished { last_text, asks } => {
+                if !in_turn {
+                    rack.apply(&id, &folder, started, at);
+                }
+                if let Some(asks) = asks {
+                    rack.apply(&id, &folder, SessionEvent::WrappedUp { asks }, at);
+                }
+                let ended = SessionEvent::TurnEnded {
+                    last_message: last_text,
+                };
+                rack.apply(&id, &folder, ended, at);
+            }
+            Turn::Interrupted { denied } => {
+                rack.apply(&id, &folder, SessionEvent::Interrupted { denied }, at);
+            }
+        }
+    }
 }
 
 /// One hook event as the receiver got it.
@@ -401,6 +455,47 @@ mod tests {
                 text: Some("API Error: Rate limit reached".into())
             })
         );
+    }
+
+    #[test]
+    fn catching_up_finishes_a_turn_that_ended_while_plates_was_closed_and_only_that() {
+        use crate::rack::Rack;
+        use std::time::Duration;
+        let path =
+            std::env::temp_dir().join(format!("plates-core-catch-up-{}.jsonl", std::process::id()));
+        let lines = [
+            json!({ "type": "user", "isSidechain": false, "timestamp": "2026-11-15T10:00:00Z",
+                    "origin": { "kind": "human" }, "message": { "role": "user", "content": "Go" } }),
+            json!({ "type": "assistant", "isSidechain": false, "timestamp": "2026-11-15T10:00:09Z",
+                    "message": { "role": "assistant", "stop_reason": "end_turn",
+                                 "content": [ { "type": "text", "text": "Pushed." } ] } }),
+        ];
+        let text: Vec<String> = lines.iter().map(Value::to_string).collect();
+        std::fs::write(&path, text.join("\n")).unwrap();
+        let prompt_at = transcript::parse_timestamp("2026-11-15T10:00:00Z").unwrap();
+        let end_at = transcript::parse_timestamp("2026-11-15T10:00:09Z").unwrap();
+
+        let mut rack = Rack::new();
+        let id = rack.apply(
+            "a",
+            Path::new("/w"),
+            SessionEvent::PromptSubmitted {
+                title: None,
+                prompt: None,
+            },
+            prompt_at,
+        );
+        rack.set_transcript("a", &path);
+        catch_up(&mut rack);
+        let s = rack.tile(id).unwrap().session().unwrap();
+        assert_eq!(s.state, SessionState::YourTurn);
+        assert_eq!(s.summary.as_deref(), Some("Pushed."));
+        assert_eq!(s.state_since, end_at);
+
+        // Read, and caught up again, the same turn stays read.
+        rack.mark_read(id, end_at + Duration::from_secs(5));
+        catch_up(&mut rack);
+        assert!(rack.tile(id).unwrap().session().unwrap().read);
     }
 
     #[test]

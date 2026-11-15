@@ -10,6 +10,7 @@ use std::{
     fs::File,
     io::{self, BufRead, BufReader, Read, Seek, SeekFrom},
     path::Path,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use serde_json::Value;
@@ -62,6 +63,146 @@ pub fn latest_status(path: &Path) -> io::Result<Option<String>> {
         }
     }
     Ok(None)
+}
+
+/// Where a session's newest turn stands, read from the transcript's end, for catching up on a
+/// session whose events came while Plates was closed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Turn {
+    /// Claude ended the turn, with its newest text and whether the turn's last wrap-up asked you
+    /// something, or `None` for a turn with no wrap-up.
+    Finished {
+        last_text: Option<String>,
+        asks: Option<bool>,
+    },
+    /// You interrupted Claude, or denied a tool, and whether it was a denial.
+    Interrupted { denied: bool },
+    /// The turn goes on.
+    Running,
+}
+
+/// The newest turn in the transcript, and the time of the record that says where it stands:
+/// Claude's record with a `stop_reason` of `end_turn` for a finished turn, the marker record for
+/// an interrupted one, and the newest record you or Claude added for one that goes on.
+/// (measured on Windows 11 25H2, 2026-11-15, record/areas/hooks/log.md)
+pub fn newest_turn(path: &Path) -> io::Result<Option<(Turn, SystemTime)>> {
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    let start = len.saturating_sub(TAIL_BYTES);
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let text = String::from_utf8_lossy(&bytes);
+    let records: Vec<Value> = text
+        .lines()
+        .skip(usize::from(start > 0))
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(|r| {
+            let kind = r.get("type").and_then(Value::as_str);
+            matches!(kind, Some("user" | "assistant"))
+                && r.get("isSidechain").and_then(Value::as_bool) != Some(true)
+        })
+        .collect();
+    let Some(newest) = records.last() else {
+        return Ok(None);
+    };
+    let Some(at) = newest
+        .get("timestamp")
+        .and_then(Value::as_str)
+        .and_then(parse_timestamp)
+    else {
+        return Ok(None);
+    };
+    let stop_reason = newest
+        .get("message")
+        .and_then(|m| m.get("stop_reason"))
+        .and_then(Value::as_str);
+    let turn = if is_marker(newest) {
+        let denied = records.len() >= 2
+            && records[records.len() - 2]
+                .get("toolDenialKind")
+                .and_then(Value::as_str)
+                == Some("user-rejected");
+        Turn::Interrupted { denied }
+    } else if newest.get("type").and_then(Value::as_str) == Some("assistant")
+        && stop_reason == Some("end_turn")
+    {
+        let turn: Vec<&Value> = records
+            .iter()
+            .rev()
+            .take_while(|r| typed_prompt(r).is_none())
+            .collect();
+        Turn::Finished {
+            last_text: turn.iter().find_map(|r| assistant_text(r)),
+            asks: turn.iter().find_map(|r| wrap_up_asks(r)),
+        }
+    } else {
+        Turn::Running
+    };
+    Ok(Some((turn, at)))
+}
+
+fn is_marker(record: &Value) -> bool {
+    if record.get("type").and_then(Value::as_str) != Some("user") {
+        return false;
+    }
+    let content = record.get("message").and_then(|m| m.get("content"));
+    let text = match content {
+        Some(Value::String(s)) => Some(s.as_str()),
+        Some(Value::Array(parts)) => parts
+            .iter()
+            .find(|p| p.get("type").and_then(Value::as_str) == Some("text"))
+            .and_then(|p| p.get("text"))
+            .and_then(Value::as_str),
+        _ => None,
+    };
+    text.is_some_and(|t| t.starts_with("[Request interrupted by user"))
+}
+
+// Whether an assistant record's call to the Claude desktop app's wrap-up tool asks you
+// something, as hooks::parse reads the same call from its PreToolUse.
+fn wrap_up_asks(record: &Value) -> Option<bool> {
+    let parts = record.get("message")?.get("content")?.as_array()?;
+    let input = parts.iter().find_map(|p| {
+        (p.get("type").and_then(Value::as_str) == Some("tool_use")
+            && p.get("name").and_then(Value::as_str) == Some("mcp__ccd_turn__wrap_up"))
+        .then(|| p.get("input"))
+        .flatten()
+    })?;
+    let ask = input
+        .get("ask")
+        .and_then(Value::as_str)
+        .is_some_and(|a| !a.trim().is_empty());
+    let blocked = input.get("blocked").and_then(Value::as_bool) == Some(true);
+    Some(ask || blocked)
+}
+
+/// Reads a transcript record's `timestamp`, such as `2026-11-15T20:22:39.123Z`, which Claude
+/// Code writes in UTC.
+pub fn parse_timestamp(text: &str) -> Option<SystemTime> {
+    let (date, rest) = text.split_once('T')?;
+    let mut ymd = date.split('-').map(str::parse::<i64>);
+    let (y, m, d) = (ymd.next()?.ok()?, ymd.next()?.ok()?, ymd.next()?.ok()?);
+    let clock = rest.strip_suffix('Z')?;
+    let (hms, frac) = clock.split_once('.').unwrap_or((clock, "0"));
+    let mut parts = hms.split(':').map(str::parse::<i64>);
+    let (h, min, s) = (
+        parts.next()?.ok()?,
+        parts.next()?.ok()?,
+        parts.next()?.ok()?,
+    );
+    let ms: i64 = format!("{frac:0<3}").get(..3)?.parse().ok()?;
+    // Days from 1970-01-01 to the date, by Howard Hinnant's days_from_civil.
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    let total = ((days * 86_400 + h * 3_600 + min * 60 + s) * 1_000 + ms)
+        .try_into()
+        .ok()?;
+    Some(UNIX_EPOCH + Duration::from_millis(total))
 }
 
 fn assistant_text(record: &Value) -> Option<String> {
@@ -173,6 +314,82 @@ mod tests {
         );
         let fresh = transcript("fresh", &[said("An old line"), prompt]);
         assert_eq!(latest_status(&fresh).unwrap(), None);
+    }
+
+    #[test]
+    fn a_timestamp_reads_as_utc() {
+        assert_eq!(
+            parse_timestamp("1970-01-01T00:00:01.5Z"),
+            Some(UNIX_EPOCH + Duration::from_millis(1_500))
+        );
+        assert_eq!(
+            parse_timestamp("2026-11-15T16:32:25.402Z"),
+            Some(UNIX_EPOCH + Duration::from_millis(1_794_760_345_402))
+        );
+        assert_eq!(parse_timestamp("2026-11-15 16:32:25"), None);
+    }
+
+    #[test]
+    fn the_newest_turn_is_finished_interrupted_or_running() {
+        use serde_json::json;
+        let rec = |kind: &str, at: &str, content: Value, extra: Value| {
+            let mut r = json!({ "type": kind, "isSidechain": false, "timestamp": at,
+                                "message": { "role": kind, "content": content } });
+            r.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            r
+        };
+        let prompt = rec(
+            "user",
+            "2026-11-15T10:00:00Z",
+            json!("Ship it"),
+            json!({ "origin": { "kind": "human" } }),
+        );
+        let wrap = rec(
+            "assistant",
+            "2026-11-15T10:00:05Z",
+            json!([{ "type": "tool_use", "name": "mcp__ccd_turn__wrap_up",
+                     "input": { "recap": "Pushed." } }]),
+            json!({}),
+        );
+        let mut last = rec(
+            "assistant",
+            "2026-11-15T10:00:09Z",
+            json!([{ "type": "text", "text": "Pushed as abc123." }]),
+            json!({}),
+        );
+        last["message"]["stop_reason"] = json!("end_turn");
+        let system = json!({ "type": "system", "subtype": "stop_hook_summary" });
+        let finished = transcript("turn-finished", &[prompt.clone(), wrap, last, system]);
+        assert_eq!(
+            newest_turn(&finished).unwrap(),
+            Some((
+                Turn::Finished {
+                    last_text: Some("Pushed as abc123.".into()),
+                    asks: Some(false)
+                },
+                parse_timestamp("2026-11-15T10:00:09Z").unwrap()
+            ))
+        );
+
+        let marker = rec(
+            "user",
+            "2026-11-15T10:00:03Z",
+            json!([{ "type": "text", "text": "[Request interrupted by user]" }]),
+            json!({}),
+        );
+        let interrupted = transcript("turn-interrupted", &[prompt.clone(), marker]);
+        assert_eq!(
+            newest_turn(&interrupted).unwrap().map(|(t, _)| t),
+            Some(Turn::Interrupted { denied: false })
+        );
+
+        let running = transcript("turn-running", &[prompt]);
+        assert_eq!(
+            newest_turn(&running).unwrap().map(|(t, _)| t),
+            Some(Turn::Running)
+        );
     }
 
     #[test]
