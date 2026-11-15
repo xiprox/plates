@@ -377,10 +377,10 @@ impl RackView {
             });
         }
 
-        // Your own tile and an ended session's tile both show an × on hover, which removes the
-        // tile, 8px from the timer slot or from the tile's edge (user, 2026-11-15).
-        let removable = t.is_own() || ended;
-        let side = removable.then(|| {
+        // Every tile shows an × on hover, 8px from the timer slot or from the tile's edge, which
+        // removes your own tile or an ended session's, and dismisses any other session's until
+        // it needs you again (user, 2026-11-15).
+        let side = {
             let btn: SharedString = format!("x-{i}").into();
             div().flex().items_center().mr(px(8.)).child(
                 div()
@@ -406,7 +406,7 @@ impl RackView {
                         cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_tile(id, cx)),
                     ),
             )
-        });
+        };
 
         let hg = (!ended).then(|| self.timer_slot(i, t, now, cx));
 
@@ -420,7 +420,7 @@ impl RackView {
             .bg(rgb(bg))
             .hover(move |s| s.bg(rgb(hover_bg)))
             .child(main)
-            .children(side)
+            .child(side)
             .children(hg)
             .into_any_element()
     }
@@ -590,12 +590,7 @@ impl RackView {
             .border_color(rgb(BORDER))
             .text_size(px(12.5))
             .text_color(rgb(TEXT))
-            .child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .child(format!("Removed \u{201c}{title}\u{201d}")),
-            )
+            .child(div().min_w_0().truncate().child(title.to_string()))
             .child(
                 div()
                     .id("undo")

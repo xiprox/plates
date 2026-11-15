@@ -40,7 +40,10 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 - A summary line draws text between backticks in a monospace font on a background of 8% white, and text between double asterisks in bold, and leaves out the backticks and asterisks (user, 2026-11-15).
 - Hovering a session tile shows its summary line whole, which the tile cuts to one line, and its state in words, such as "Your turn · waiting 12m" (user, 2026-11-15).
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
-- An ended tile clears itself 30 minutes after the session ends.
+- An ended tile clears itself 30 minutes after the session ends, and its × clears it at once.
+- Every other session tile shows an × on hover too, which dismisses the session: its tile shrinks out, with an Undo button for 5s, and the session is read and its timer stops (user, 2026-11-15).
+  A dismissed session stays off the rack while it works, compacts, or is opened, and comes back after the last session tile once it needs you again, with an approval, a question, an unread turn, or an MCP server's request, or once you send it a new prompt (user, 2026-11-15).
+  A dismissed session that ends doesn't come back.
 
 ## Your own tiles
 

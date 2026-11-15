@@ -9,7 +9,7 @@ use std::{
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::*;
 use plates_core::{
-    Rack, Removed, TileId, desktop,
+    Rack, Removed, SessionState, TileId, desktop,
     hooks::{self, HookMessage},
     store,
     timer::DEFAULT_MINUTES,
@@ -81,6 +81,7 @@ pub(crate) struct Menu {
 
 pub(crate) struct Toast {
     pub(crate) removed: Removed,
+    /// What the Undo row says, such as "Dismissed “Plates”".
     pub(crate) title: String,
     until: Instant,
 }
@@ -793,16 +794,29 @@ impl RackView {
         if self.suppress_click {
             return;
         }
-        let title = self.rack.tile(id).map(|t| t.title()).unwrap_or_default();
+        let Some(tile) = self.rack.tile(id) else {
+            return;
+        };
+        // Your own tile and a dismissed session can come back with Undo, and an ended session's
+        // tile, which has nothing left to show, goes without one.
+        let title = tile.title();
+        let label = match tile.session().map(|s| s.state) {
+            None => Some(format!("Removed \u{201c}{title}\u{201d}")),
+            Some(SessionState::Ended) => None,
+            Some(_) => Some(format!("Dismissed \u{201c}{title}\u{201d}")),
+        };
+        let own = tile.is_own();
         let Some(removed) = self.rack.remove(id) else {
             return;
         };
-        if removed.tile.is_own() {
+        if let Some(title) = label {
             self.toast = Some(Toast {
                 removed,
                 title,
                 until: Instant::now() + TOAST_FOR,
             });
+        }
+        if own {
             self.save();
         }
         self.after_change(cx);

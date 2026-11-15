@@ -105,7 +105,16 @@ pub struct Removed {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Rack {
     tiles: Vec<Tile>,
+    /// The tiles of sessions you dismissed, kept up to date off the rack until one needs you
+    /// again or you send it a new prompt.
+    hidden: Vec<Tile>,
     next_id: u64,
+}
+
+/// Where `apply` found a session's tile.
+enum Place {
+    Shown(usize),
+    Hidden(usize),
 }
 
 impl Rack {
@@ -143,18 +152,24 @@ impl Rack {
         event: SessionEvent,
         now: SystemTime,
     ) -> TileId {
-        let index = match self
-            .tiles
-            .iter()
-            .position(|t| t.session().is_some_and(|s| s.id == session_id))
-        {
-            Some(i) => i,
-            None => self.add_session(session_id, folder, &event, now),
+        let holds = |t: &Tile| t.session().is_some_and(|s| s.id == session_id);
+        let place = match (
+            self.tiles.iter().position(holds),
+            self.hidden.iter().position(holds),
+        ) {
+            (Some(i), _) => Place::Shown(i),
+            (None, Some(i)) => Place::Hidden(i),
+            (None, None) => Place::Shown(self.add_session(session_id, folder, &event, now)),
         };
-        let tile = &mut self.tiles[index];
+        let new_prompt = matches!(event, SessionEvent::PromptSubmitted { .. });
+        let tile = match place {
+            Place::Shown(i) => &mut self.tiles[i],
+            Place::Hidden(i) => &mut self.hidden[i],
+        };
         let Body::Session(s) = &mut tile.body else {
             unreachable!("the tile found by its session id holds that session");
         };
+        let was = s.state;
         s.folder = folder.to_path_buf();
 
         let set_state = |s: &mut Session, timer: &mut Timer, to: SessionState| {
@@ -315,8 +330,34 @@ impl Rack {
             s.compacting = false;
         }
         s.refresh_line(now);
-        tile.refresh_need(now);
-        tile.id
+        let id = tile.id;
+        let state = s.state;
+        let needs_you = state != was
+            && matches!(
+                state,
+                SessionState::NeedsApproval | SessionState::YourTurn | SessionState::Unread
+            );
+        match place {
+            Place::Shown(_) => tile.refresh_need(now),
+            // A dismissed session comes back, after the last session tile, once it needs you or
+            // you send it a new prompt, and a session that ends while dismissed goes for good
+            // (user, 2026-11-15).
+            Place::Hidden(i) if new_prompt || needs_you => {
+                let mut tile = self.hidden.remove(i);
+                tile.refresh_need(now);
+                let index = self
+                    .tiles
+                    .iter()
+                    .rposition(|t| t.session().is_some())
+                    .map_or(0, |i| i + 1);
+                self.tiles.insert(index, tile);
+            }
+            Place::Hidden(i) if state == SessionState::Ended => {
+                self.hidden.remove(i);
+            }
+            Place::Hidden(_) => {}
+        }
+        id
     }
 
     // A new session's tile goes after the last session tile, so no session tile above it moves,
@@ -396,10 +437,14 @@ impl Rack {
         if prompt_title(prompt).is_empty() {
             return;
         }
-        let session = self.tiles.iter_mut().find_map(|t| match &mut t.body {
-            Body::Session(s) if s.id == session_id => Some(s),
-            _ => None,
-        });
+        let session = self
+            .tiles
+            .iter_mut()
+            .chain(self.hidden.iter_mut())
+            .find_map(|t| match &mut t.body {
+                Body::Session(s) if s.id == session_id => Some(s),
+                _ => None,
+            });
         if let Some(s) = session {
             s.first_prompt = Some(prompt.to_string());
         }
@@ -412,10 +457,14 @@ impl Rack {
         if line.is_empty() {
             return;
         }
-        let session = self.tiles.iter_mut().find_map(|t| match &mut t.body {
-            Body::Session(s) if s.id == session_id => Some(s),
-            _ => None,
-        });
+        let session = self
+            .tiles
+            .iter_mut()
+            .chain(self.hidden.iter_mut())
+            .find_map(|t| match &mut t.body {
+                Body::Session(s) if s.id == session_id => Some(s),
+                _ => None,
+            });
         if let Some(s) = session
             && s.status.as_deref() != Some(line.as_str())
         {
@@ -427,10 +476,14 @@ impl Rack {
 
     /// Sets the title and ID the Claude desktop app keeps for a session, from its file for it.
     pub fn set_app_session(&mut self, session_id: &str, app: &AppSession) {
-        let session = self.tiles.iter_mut().find_map(|t| match &mut t.body {
-            Body::Session(s) if s.id == session_id => Some(s),
-            _ => None,
-        });
+        let session = self
+            .tiles
+            .iter_mut()
+            .chain(self.hidden.iter_mut())
+            .find_map(|t| match &mut t.body {
+                Body::Session(s) if s.id == session_id => Some(s),
+                _ => None,
+            });
         if let Some(s) = session {
             if app.title.is_some() {
                 s.app_title = app.title.clone();
@@ -441,9 +494,11 @@ impl Rack {
         }
     }
 
+    /// Whether the rack shows the session, or holds it dismissed.
     pub fn knows(&self, session_id: &str) -> bool {
         self.tiles
             .iter()
+            .chain(&self.hidden)
             .any(|t| t.session().is_some_and(|s| s.id == session_id))
     }
 
@@ -490,30 +545,47 @@ impl Rack {
         }
     }
 
-    /// Takes your own tile, or an ended session's tile, off the rack, for an Undo to put back.
-    /// A session that hasn't ended stays, since its next event would bring it back anyway.
+    /// Takes a tile off the rack, for an Undo to put back. Your own tile and an ended session's
+    /// go, and a session that hasn't ended is dismissed: it's read, its timer stops, and it waits
+    /// off the rack until it needs you or you send it a new prompt.
     pub fn remove(&mut self, id: TileId) -> Option<Removed> {
         let index = self.tiles.iter().position(|t| t.id == id)?;
-        let removable = match &self.tiles[index].body {
-            Body::Own(_) => true,
-            Body::Session(s) => s.state == SessionState::Ended,
-        };
-        if !removable {
-            return None;
-        }
         let own = self.tiles[index].is_own();
         let index_in_group = self.tiles[..index]
             .iter()
             .filter(|t| t.is_own() == own)
             .count();
+        let mut tile = self.tiles.remove(index);
+        if let Body::Session(s) = &mut tile.body
+            && s.state != SessionState::Ended
+        {
+            if s.state == SessionState::Unread {
+                s.state = SessionState::Done;
+            }
+            tile.timer = Timer::Idle;
+            tile.need = None;
+            self.hidden.push(tile.clone());
+        }
         Some(Removed {
-            tile: self.tiles.remove(index),
+            tile,
             index_in_group,
         })
     }
 
-    // Session tiles always come before your own, so a group's tiles sit together.
+    // Session tiles always come before your own, so a group's tiles sit together. A dismissed
+    // session comes back as it stands now, since its events kept it up to date, and not at all
+    // if it came back or ended meanwhile.
     pub fn restore(&mut self, removed: Removed) {
+        let tile = match removed.tile.session() {
+            Some(s) if s.state != SessionState::Ended => {
+                match self.hidden.iter().position(|t| t.id == removed.tile.id) {
+                    Some(i) => self.hidden.remove(i),
+                    None => return,
+                }
+            }
+            _ => removed.tile,
+        };
+        let removed = Removed { tile, ..removed };
         let own = removed.tile.is_own();
         let sessions = self.tiles.iter().filter(|t| !t.is_own()).count();
         let (start, len) = if own {
@@ -1100,12 +1172,63 @@ mod tests {
     }
 
     #[test]
-    fn only_your_own_tiles_and_ended_sessions_can_be_removed() {
+    fn a_dismissed_session_stays_off_the_rack_until_it_needs_you() {
         let mut rack = Rack::new();
-        let live = apply(&mut rack, "a", prompt("Go"), 0);
-        let ended = apply(&mut rack, "b", SessionEvent::Ended, 0);
-        assert!(rack.remove(live).is_none());
-        assert!(rack.remove(ended).is_some());
+        let a = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(&mut rack, "a", SessionEvent::WrappedUp { asks: false }, 1);
+        apply(&mut rack, "a", stop("Pushed."), 2);
+        assert!(rack.remove(a).is_some());
+        assert!(rack.tile(a).is_none());
+        assert!(rack.knows("a"));
+
+        // Its tool events and a look keep it off the rack, but up to date.
+        apply(&mut rack, "a", SessionEvent::Seen { at: at(3) }, 3);
+        apply(&mut rack, "a", SessionEvent::CompactStarted, 4);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::CompactFinished { manual: false },
+            5,
+        );
+        assert!(rack.tile(a).is_none());
+
+        // A turn that asks you something brings it back, needing you.
+        apply(&mut rack, "a", SessionEvent::WrappedUp { asks: true }, 6);
+        apply(&mut rack, "a", stop("Commit it?"), 7);
+        let t = rack.tile(a).unwrap();
+        assert_eq!(t.session().unwrap().state, SessionState::YourTurn);
+        assert_eq!(t.need, Some((Need::YourTurn, at(7))));
+    }
+
+    #[test]
+    fn a_new_prompt_brings_a_dismissed_session_back_and_an_end_drops_it() {
+        let mut rack = Rack::new();
+        let a = apply(&mut rack, "a", stop("Done."), 0);
+        let b = apply(&mut rack, "b", stop("Done."), 0);
+        rack.remove(a);
+        rack.remove(b);
+        apply(&mut rack, "a", prompt("More"), 1);
+        assert_eq!(session(&rack, a).state, SessionState::Working);
+        apply(&mut rack, "b", SessionEvent::Ended, 2);
+        assert!(!rack.knows("b"), "a dismissed session that ends is gone");
+    }
+
+    #[test]
+    fn an_undo_brings_a_dismissed_session_back_as_it_stands_now() {
+        let mut rack = Rack::new();
+        let a = apply(&mut rack, "a", prompt("Go"), 0);
+        let removed = rack.remove(a).unwrap();
+        rack.set_status("a", "Reading the receiver.", at(1));
+        rack.restore(removed);
+        assert_eq!(
+            session(&rack, a).status.as_deref(),
+            Some("Reading the receiver.")
+        );
+        let ended = apply(&mut rack, "b", SessionEvent::Ended, 2);
+        let removed = rack.remove(ended).unwrap();
+        assert!(!rack.knows("b"), "an ended session's tile goes for good");
+        rack.restore(removed);
+        assert!(rack.tile(ended).is_some());
     }
 
     #[test]

@@ -28,6 +28,7 @@ None of it is GPUI code, as [decision 001](../../decisions/001-rust-and-gpui.md)
 - Session tiles come first, in the order their sessions first reached Plates, and your own tiles follow, in the order you added them.
   A new session's tile goes after the last session tile, so no session tile above it moves.
   An Undo puts a tile back in its own group, at the place it had there.
+- A dismissed session's tile leaves `Rack::tiles` for a list the model keeps apart, where its events still apply, so the tile is current when it comes back, as [02-tiles](../rack/02-tiles.md#session-tiles) says it does.
 - A session tile's title comes from the sources [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries) lists, in its order.
   For a session Plates first sees after you typed its first prompt, the app reads that prompt from the transcript and sets it over any prompt the first event carried.
 - A session tile's state and timer follow [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events), event by event.
