@@ -22,7 +22,7 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 | `PermissionRequest` | moves the tile to needs approval as Claude Code is about to ask you, and starts its timer |
 | `Notification` with `notification_type` `permission_prompt` | moves the tile to needs approval if it isn't already, which covers an approval that fired no `PermissionRequest` |
 | `PostToolUse`, or `PostToolUseFailure` for a tool that failed | moves a tile that needed approval back to working, and stops its timer, since the tool ran |
-| `Stop` | moves the tile to done when the turn's last wrap-up asked nothing, and otherwise to your turn, starting its timer, so a turn with no wrap-up, such as in a terminal, is your turn (user, 2026-11-15) |
+| `Stop` | moves the tile to unread when the turn's last wrap-up asked nothing, and otherwise to your turn, starting its timer, so a turn with no wrap-up, such as in a terminal, is your turn (user, 2026-11-15) |
 | `StopFailure`, which fires in place of `Stop` when an API error ends the turn | moves the tile to your turn, with the error's text as its summary line, or its `error` when the text is missing, and starts its timer |
 | `SessionEnd` | moves the tile to ended |
 | `PreCompact` | moves the tile to working, with "Compacting session…", the Claude desktop app's words, as its summary line until `PostCompact` |
@@ -49,6 +49,9 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
   It also counts background tasks, and only `Stop` and `SubagentStop` carry them, as the `background_tasks` still in flight when the turn or the subagent ends (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input), as of 2026-11-15).
   Plates shows none of them except thinking, as [Titles and summaries](#titles-and-summaries) says.
 - An event from a `session_id` Plates doesn't show adds that session's tile, in the state the event moves a tile to, and in working for an event that moves none, such as `PreToolUse`.
+- Opening a session in the Claude desktop app fires no event, but the app then saves the time in its file for the session as `lastFocusedAt` (read in the Claude desktop app 5.11492.5.0, app.asar, the handler that logs `desktop_ccd_session_visibility_changed`; [hooks log](log.md#2026-11-15-the-app-records-when-you-open-a-session-but-not-whether-a-turn-asked-you-anything)).
+  So once a second, Plates reads each session's file, and a `lastFocusedAt` later than the end of an unread turn moves the tile to done.
+  The app sets it only as a session becomes visible, so a turn that ends while you watch its session stays unread until you click its tile or open the session again.
 - In the Claude desktop app, `/clear` ends the session, with a `SessionEnd` `reason` of `other`, and goes on under a new `session_id`, so its tile ends and a new tile starts ([hooks log](log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)).
 - Plates ignores `Notification` with `notification_type` `idle_prompt`, which arrives about 60s after Claude finishes ([hooks log](log.md#2026-11-15-claude-code-documents-hooks-in-desktop-sessions-and-an-http-hook-type-but-no-link-that-opens-one-desktop-session)), because `Stop` has already moved the tile to your turn.
 - After you interrupt Claude, or deny a tool, no event arrives until the session's next one ([hooks log](log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)).

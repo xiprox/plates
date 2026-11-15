@@ -2,6 +2,24 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: The app records when you open a session, but not whether a turn asked you anything
+
+**Asked:** after a finished turn showed as done before the user had read it, can Plates tell a turn you've read from one you haven't, and one that asks you something from one that doesn't?
+
+**Expected:** an unread flag in the app's file for each session.
+
+**Found:** we read the fields of the app's session files and the app code that writes them (read in the Claude desktop app 5.11492.5.0, app.asar and ion-dist.asar; measured on Windows 11 25H2, 2026-11-15).
+
+- The app's file holds `lastFocusedAt` and `lastTurnEdgeAt`, both in milliseconds since 1970, and no unread flag.
+- The app sets `lastFocusedAt` to the current time and saves the file when a session becomes visible, in the handler that logs `desktop_ccd_session_visibility_changed`, and not while the session stays visible.
+- In the file of the session titled "Plates", `lastFocusedAt` came 22.7s after `lastTurnEdgeAt`, when the user came back to read the turn.
+- 29 of the 40 newest files hold `turnWrapUp`, whose only field, `description`, is one sentence about the turn, so the file doesn't say whether the turn asked anything.
+- The app's session list picks its own marks, such as "unread", "idle", and `needs_attention`, from state it keeps in memory, in a function in ion-dist.asar that returns "unread" for a session with `hasUnread`.
+
+**Changed:** a turn whose wrap-up asked nothing is unread until the session's `lastFocusedAt` passes the turn's end, or you click its tile, and then it's done.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#events) and [02-tiles](../rack/02-tiles.md#session-tiles).
+
 ## 2026-11-15: Claude Code documents 33 hook events, and the app's status line shows 8 states
 
 **Asked:** after a working tile kept showing Claude's last tool while Claude thought, and showed nothing of a `/compact`, which other states does Plates miss?

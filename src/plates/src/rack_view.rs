@@ -678,6 +678,13 @@ impl RackView {
             self.start_field(FieldFor::Rename(id), window, cx);
             return;
         }
+        // Clicking a finished session's tile reads it, as opening the session in the app does.
+        if self.rack.mark_read(id, SystemTime::now()) {
+            self.after_change(cx);
+        }
+        let Some(tile) = self.rack.tile(id) else {
+            return;
+        };
         // A session the Claude desktop app keeps opens there by the app's own ID, and a session
         // it doesn't, such as one in a terminal, has nowhere to open.
         if let Some(link) = tile

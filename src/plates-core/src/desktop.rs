@@ -10,7 +10,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde_json::Value;
@@ -43,6 +43,11 @@ pub struct AppSession {
     pub title: Option<String>,
     /// The app's own ID for the session, such as `local_e4c2b1b0-16ce-4c53-be73-25a5e5fc8bd2`.
     pub id: Option<String>,
+    /// When you last opened the session in the app, its `lastFocusedAt`. The app sets it each
+    /// time the session becomes visible, and not while you keep watching it (read in the Claude
+    /// desktop app 5.11492.5.0, app.asar, the handler that logs
+    /// `desktop_ccd_session_visibility_changed`).
+    pub focused_at: Option<SystemTime>,
 }
 
 /// The link that opens a session in the app by its own ID:
@@ -193,6 +198,10 @@ fn read_session(file: &Path, session_id: &str) -> Option<AppSession> {
     Some(AppSession {
         title: text("title"),
         id: text("sessionId"),
+        focused_at: v
+            .get("lastFocusedAt")
+            .and_then(Value::as_u64)
+            .map(|ms| UNIX_EPOCH + Duration::from_millis(ms)),
     })
 }
 
@@ -225,10 +234,15 @@ mod tests {
         write(
             &dir,
             "local_7.json",
-            json!({ "cliSessionId": "abc", "sessionId": "local_e4c2b1b0-16ce", "title": "Plates" }),
+            json!({ "cliSessionId": "abc", "sessionId": "local_e4c2b1b0-16ce", "title": "Plates",
+                    "lastFocusedAt": 1794772321608u64 }),
         );
         let session = AppSessions::new(Some(dir)).get("abc").unwrap();
         assert_eq!(session.id.as_deref(), Some("local_e4c2b1b0-16ce"));
+        assert_eq!(
+            session.focused_at,
+            Some(UNIX_EPOCH + Duration::from_millis(1794772321608))
+        );
         assert_eq!(
             session_link("local_e4c2b1b0-16ce").as_deref(),
             Some("claude://code/continue?session=local_e4c2b1b0-16ce")

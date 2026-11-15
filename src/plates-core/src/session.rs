@@ -32,7 +32,10 @@ pub enum SessionState {
     New,
     Working,
     YourTurn,
-    /// Claude finished its turn and asked you nothing, so the session waits without needing you.
+    /// Claude finished a turn that asks you nothing, and you haven't looked at the session since.
+    Unread,
+    /// Claude finished a turn that asks you nothing, and you've looked at the session since, so
+    /// it waits without needing you.
     Done,
     NeedsApproval,
     Ended,
@@ -76,6 +79,9 @@ pub enum SessionEvent {
     /// `PreToolUse` for the Claude desktop app's `mcp__ccd_turn__wrap_up`, which Claude calls at
     /// the end of a turn, with whether it asks you to decide something.
     WrappedUp { asks: bool },
+    /// You opened the session in the Claude desktop app at `at`, which the app records in its
+    /// file for the session as `lastFocusedAt`.
+    Seen { at: SystemTime },
 }
 
 impl SessionEvent {
@@ -90,7 +96,8 @@ impl SessionEvent {
             | SessionEvent::ToolFinished
             | SessionEvent::CompactFinished { .. }
             | SessionEvent::InputGiven
-            | SessionEvent::WrappedUp { .. } => None,
+            | SessionEvent::WrappedUp { .. }
+            | SessionEvent::Seen { .. } => None,
             SessionEvent::ApprovalAsked { .. }
             | SessionEvent::ApprovalNotified { .. }
             | SessionEvent::InputAsked { .. } => Some(SessionState::NeedsApproval),

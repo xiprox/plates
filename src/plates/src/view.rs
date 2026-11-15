@@ -24,6 +24,7 @@ const BLUE: u32 = 0x74AEFF;
 const AMBER: u32 = 0xF2B441;
 const HOT: u32 = 0xFF7A45;
 const YELLOW: u32 = 0xF4D35E;
+const GREEN: u32 = 0x5BCB8A;
 const GRAY: u32 = 0x5E626B;
 
 /// How long a tile's background brightens when it starts needing you.
@@ -157,6 +158,7 @@ fn brighten_to(t: &Tile, need: Need) -> u32 {
     match (need, state(t)) {
         (Need::Approval, _) => 0x3D2519,
         (Need::YourTurn, _) => 0x3A311C,
+        (Need::Unread, _) => 0x1D3A2B,
         (Need::TimeUp, None) => 0x4A4119,
         (Need::TimeUp, Some(SessionState::NeedsApproval)) => 0x52301F,
         (Need::TimeUp, Some(_)) => 0x4C3B1D,
@@ -187,6 +189,7 @@ fn marker(t: &Tile, pip: bool) -> AnyElement {
         Some(SessionState::Working) => (base.rounded_full(), Some(BLUE), true),
         Some(SessionState::New) => (base.rounded_full(), Some(BLUE), false),
         Some(SessionState::YourTurn) => (base.rounded_full(), Some(AMBER), false),
+        Some(SessionState::Unread) => (base.rounded_full(), Some(GREEN), false),
         Some(SessionState::Done) => (base.rounded_full(), Some(GRAY), false),
         Some(SessionState::NeedsApproval) => (base.rounded_full(), Some(HOT), false),
         Some(SessionState::Ended) => (base.rounded_full(), None, false),
@@ -236,7 +239,8 @@ fn state_words(t: &Tile, now: SystemTime) -> Option<String> {
                 format!("Needs your approval · {}", minutes(in_state))
             }
             SessionState::YourTurn => format!("Your turn · waiting {}", minutes(in_state)),
-            SessionState::Done => format!("Done · finished {} ago", minutes(in_state)),
+            SessionState::Unread => format!("Finished {} ago · not read yet", minutes(in_state)),
+            SessionState::Done => format!("Done · read {} ago", minutes(in_state)),
             SessionState::Ended => {
                 let left = ENDED_CLEARS_AFTER.saturating_sub(in_state);
                 format!(
@@ -284,12 +288,19 @@ impl RackView {
                 .session()
                 .and_then(|s| s.summary.clone())
                 .map(|s| (s, 0xF2C46A)),
-            // A done session's summary is in the secondary text color, so it reads as finished
-            // rather than waiting on you (user, 2026-11-15).
+            // A finished turn you haven't read shows Claude's last line in full white, like a new
+            // message, and once you've read it, in the secondary text color (user, 2026-11-15).
+            Some(SessionState::Unread) => t
+                .session()
+                .and_then(|s| s.summary.clone())
+                .map(|s| (s, TEXT)),
             Some(SessionState::Done) => t
                 .session()
                 .and_then(|s| s.summary.clone())
                 .map(|s| (s, TEXT2)),
+            // An ended tile says when it clears itself, which a tooltip alone hid (user,
+            // 2026-11-15).
+            Some(SessionState::Ended) => state_words(t, now).map(|w| (w, MUTED)),
             // A working tile shows Claude's newest text and the tool it used after it, as the
             // core's Session::line picks them (user, 2026-11-15).
             Some(SessionState::Working) => t
@@ -300,8 +311,13 @@ impl RackView {
         };
         // The tile cuts its subtitle to one line, so the tooltip shows it whole, above the
         // tile's state in words (user, 2026-11-15).
-        let tip =
-            state_words(t, now).map(|words| (summary.as_ref().map(|(s, _)| s.clone()), words));
+        let tip = state_words(t, now).map(|words| {
+            let full = summary
+                .as_ref()
+                .map(|(s, _)| s.clone())
+                .filter(|s| *s != words);
+            (full, words)
+        });
         let ended = state(t) == Some(SessionState::Ended);
         let title = div()
             .text_size(px(13.5))

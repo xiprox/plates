@@ -31,8 +31,8 @@ None of it is GPUI code, as [decision 001](../../decisions/001-rust-and-gpui.md)
 - A session tile's title comes from the sources [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries) lists, in its order.
   For a session Plates first sees after you typed its first prompt, the app reads that prompt from the transcript and sets it over any prompt the first event carried.
 - A session tile's state and timer follow [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events), event by event.
-- A tile needs you while it's an approval, your turn, or time-up, and the model keeps why it needs you and since when.
-  A session that's done doesn't need you.
+- A tile needs you while it's an approval, your turn, unread, or time-up, and the model keeps why it needs you and since when.
+  A session that's done, one whose finished turn you've read, doesn't need you.
   The rack brightens the tile each time that reason changes, so a your-turn tile brightens at `Stop` and again, in its time-up tint, when its timer runs out.
   A time-up need starts at the tick that finds the timer run out, so a timer that ran out while Plates was closed brightens its tile at the first tick.
 

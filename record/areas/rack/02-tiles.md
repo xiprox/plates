@@ -29,9 +29,10 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 | New | the session starts | the tile grows in, and its background then brightens blue once |
 | Working | Claude starts a turn, such as when you send a prompt | a blue dot that breathes on a 2.4s cycle, and a blue summary line of what Claude last wrote or is doing, such as "Reading plan.md" ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries)) |
 | Your turn | Claude finishes a turn that asks you something, or you interrupt Claude or deny a tool | an amber dot, an amber summary line, and a timer that starts on its own; the summary line is the first line of Claude's last message, or "Interrupted", or "Denied: " and what you denied, such as "Denied: rm -rf target" |
-| Done | Claude finishes a turn that asks you nothing, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) tells | a gray dot, and the first line of Claude's last message in the secondary text color, with no timer and no tint, since the session doesn't need you (user, 2026-11-15) |
+| Unread | Claude finishes a turn that asks you nothing, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) tells | a green dot, the first line of Claude's last message in the text color, as a new message would be, and a background that brightens green once, with no timer, since the turn wants reading but no response (user, 2026-11-15) |
+| Done | you open an unread session in the Claude desktop app, or click its tile | a gray dot, and the first line of Claude's last message in the secondary text color, with no timer and no tint, since the session doesn't need you (user, 2026-11-15) |
 | Needs approval | Claude asks you to approve a tool | an orange dot, what Claude wants to do as an orange summary line, such as "Wants to run: cargo test -p collector", and a timer that starts on its own |
-| Ended | the session ends | a dimmed ring for its marker, and an × on hover that clears the tile |
+| Ended | the session ends | a dimmed ring for its marker, "Ended · clears in 27m" as its summary line in the muted color, and an × on hover that clears the tile (user, 2026-11-15) |
 
 [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) says which hook event starts each state.
 
@@ -70,7 +71,8 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 
 - Nothing flashes or pulses, and the only motion that repeats is a working session's breathing dot (user, 2026-11-15).
 - When a tile starts needing you, or needs you for a new reason, such as its timer running out on your turn, its background brightens once in its status color over 1.4s, then settles back.
-- A tile needs you when it's an approval, your turn, or time-up.
+- A tile needs you when it's an approval, your turn, unread, or time-up.
+  An unread tile needs your attention but no response, so it starts no timer.
 - Plates plays no sounds and has no quiet mode ([01-aims](../product/01-aims.md#non-goals)).
 
 ## Saving
@@ -86,6 +88,8 @@ In the same folder, it saves where the rack last came to rest, as [01-window](01
 | Text, and secondary text | `#ECEDEF`, `#A3A6AE` |
 | Working and new: dot, and working text | `#74AEFF`, `#9CC4FF` |
 | Your turn: dot, and text | `#F2B441`, `#F2C46A` |
+| Unread: dot, and the color it brightens to | `#5BCB8A`, `#1D3A2B` |
+| Done: dot | `#5E626B` |
 | Approval: dot, and text | `#FF7A45`, `#FF9B6E` |
 | Timer ring, and your own tile's time-up square | `#F4D35E` |
 | Your own tile's marker | `#5E626B` |

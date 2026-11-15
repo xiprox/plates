@@ -21,6 +21,11 @@ use crate::{
 pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<TileId> {
     let event = message.event?;
     let known = rack.knows(&message.session_id);
+    // A look at a session Plates doesn't show, such as one whose tile you cleared, brings no
+    // tile back.
+    if !known && matches!(event, SessionEvent::Seen { .. }) {
+        return None;
+    }
     let id = rack.apply(&message.session_id, &message.cwd, event, now);
     if let Some(status) = &message.status {
         rack.set_status(&message.session_id, status, now);

@@ -39,6 +39,8 @@ pub enum Body {
 pub enum Need {
     Approval,
     YourTurn,
+    /// A finished turn you haven't read, which asks for your attention but not a response.
+    Unread,
     TimeUp,
 }
 
@@ -77,7 +79,8 @@ impl Tile {
         match self.session().map(|s| s.state) {
             Some(SessionState::NeedsApproval) => Some(Need::Approval),
             Some(SessionState::YourTurn) => Some(Need::YourTurn),
-            // A session that's done waits for you without needing you.
+            Some(SessionState::Unread) => Some(Need::Unread),
+            // A session that's done, one you've read, waits for you without needing you.
             _ => None,
         }
     }
@@ -164,7 +167,10 @@ impl Rack {
                 SessionState::YourTurn | SessionState::NeedsApproval => {
                     Timer::start(now, DEFAULT_MINUTES)
                 }
-                SessionState::Working | SessionState::Done | SessionState::Ended => Timer::Idle,
+                SessionState::Working
+                | SessionState::Unread
+                | SessionState::Done
+                | SessionState::Ended => Timer::Idle,
                 SessionState::New => *timer,
             };
         };
@@ -230,19 +236,27 @@ impl Rack {
                     set_state(s, &mut tile.timer, SessionState::Working);
                 }
             }
-            // A turn whose wrap-up asked you nothing is done, and any other turn's end is your
-            // turn, so a session with no wrap-up still asks for you as it always has.
+            // A turn whose wrap-up asked you nothing is unread until you look at it, and any
+            // other turn's end is your turn, so a session with no wrap-up still asks for you as
+            // it always has (user, 2026-11-15).
             SessionEvent::TurnEnded { last_message } => {
                 s.pending_tool = None;
                 s.summary = last_message
                     .map(|m| first_line(&m))
                     .filter(|m| !m.is_empty());
                 let to = if s.asks == Some(false) {
-                    SessionState::Done
+                    SessionState::Unread
                 } else {
                     SessionState::YourTurn
                 };
                 set_state(s, &mut tile.timer, to);
+            }
+            // Only a look after the turn ended reads it: one from before is the look the app
+            // last recorded, while the turn ran.
+            SessionEvent::Seen { at } => {
+                if s.state == SessionState::Unread && at >= s.state_since {
+                    set_state(s, &mut tile.timer, SessionState::Done);
+                }
             }
             SessionEvent::TurnFailed { error, text } => {
                 s.pending_tool = None;
@@ -431,6 +445,23 @@ impl Rack {
         self.tiles
             .iter()
             .any(|t| t.session().is_some_and(|s| s.id == session_id))
+    }
+
+    /// Reads an unread session's tile, as clicking it does. It returns whether the tile changed.
+    pub fn mark_read(&mut self, id: TileId, now: SystemTime) -> bool {
+        let Some(tile) = self.tile_mut(id) else {
+            return false;
+        };
+        let Body::Session(s) = &mut tile.body else {
+            return false;
+        };
+        if s.state != SessionState::Unread {
+            return false;
+        }
+        s.state = SessionState::Done;
+        s.state_since = now;
+        tile.refresh_need(now);
+        true
     }
 
     /// Puts back your own tiles, in order, as `store` loaded them.
@@ -986,14 +1017,25 @@ mod tests {
     }
 
     #[test]
-    fn a_turn_whose_wrap_up_asks_nothing_is_done_and_needs_no_one() {
+    fn a_turn_that_asks_nothing_is_unread_until_you_look_and_then_done() {
         let mut rack = Rack::new();
         let id = apply(&mut rack, "a", prompt("Go"), 0);
         apply(&mut rack, "a", SessionEvent::WrappedUp { asks: false }, 1);
         apply(&mut rack, "a", stop("All pushed."), 2);
         let t = rack.tile(id).unwrap();
-        assert_eq!(t.session().unwrap().state, SessionState::Done);
+        assert_eq!(t.session().unwrap().state, SessionState::Unread);
         assert_eq!(t.timer, Timer::Idle);
+        assert_eq!(t.need, Some((Need::Unread, at(2))));
+
+        apply(&mut rack, "a", SessionEvent::Seen { at: at(1) }, 3);
+        assert_eq!(
+            session(&rack, id).state,
+            SessionState::Unread,
+            "a look from before the turn ended doesn't read it"
+        );
+        apply(&mut rack, "a", SessionEvent::Seen { at: at(4) }, 4);
+        let t = rack.tile(id).unwrap();
+        assert_eq!(t.session().unwrap().state, SessionState::Done);
         assert_eq!(t.need, None);
 
         apply(&mut rack, "a", prompt("Next"), 3);
@@ -1008,6 +1050,12 @@ mod tests {
             SessionState::YourTurn,
             "a turn with no wrap-up is your turn"
         );
+
+        apply(&mut rack, "a", prompt("Once more"), 8);
+        apply(&mut rack, "a", SessionEvent::WrappedUp { asks: false }, 9);
+        apply(&mut rack, "a", stop("Done."), 10);
+        assert!(rack.mark_read(id, at(11)), "clicking the tile reads it");
+        assert_eq!(session(&rack, id).state, SessionState::Done);
     }
 
     #[test]

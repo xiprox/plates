@@ -2,19 +2,20 @@
 //! opens the rack's window.
 
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::mpsc::{self, RecvTimeoutError},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use plates_core::{
-    Rack,
+    Rack, SessionEvent,
     cuts::Cuts,
     desktop::{self, AppSessions},
-    hooks,
+    hooks::{self, HookMessage},
     receiver::{PORT, Received, Receiver},
     store, transcript,
 };
@@ -34,6 +35,34 @@ pub fn data_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("Plates")
+}
+
+// Opening a session in the Claude desktop app fires no hook event, but the app saves the time in
+// its file for the session, so the events thread reads each session's file once a second and
+// reports a look that's newer than the last it reported.
+fn new_looks(
+    looks: &mut HashMap<String, (PathBuf, Option<SystemTime>)>,
+    app_sessions: &mut AppSessions,
+) -> Vec<HookMessage> {
+    let mut found = Vec::new();
+    for (session_id, (cwd, last)) in looks.iter_mut() {
+        let Some(at) = app_sessions.get(session_id).and_then(|a| a.focused_at) else {
+            continue;
+        };
+        if *last != Some(at) {
+            *last = Some(at);
+            found.push(HookMessage {
+                hook: "AppFile".to_string(),
+                session_id: session_id.clone(),
+                cwd: cwd.clone(),
+                transcript_path: None,
+                event: Some(SessionEvent::Seen { at }),
+                status: None,
+                app: None,
+            });
+        }
+    }
+    found
 }
 
 pub fn run() {
@@ -71,12 +100,18 @@ pub fn run() {
         .spawn(move || {
             let mut app_sessions = AppSessions::new(desktop::sessions_folder());
             let mut cuts = Cuts::new();
+            // Each session Plates has heard from, with its folder and the last time the app
+            // says you opened it.
+            let mut looks: HashMap<String, (PathBuf, Option<SystemTime>)> = HashMap::new();
             let mut polled = Instant::now();
             loop {
                 let mut messages = Vec::new();
                 match rx.recv_timeout(POLL) {
                     Ok(Received::Event(message, _)) => {
                         cuts.saw(&message);
+                        looks
+                            .entry(message.session_id.clone())
+                            .or_insert_with(|| (message.cwd.clone(), None));
                         messages.push(*message);
                     }
                     Ok(Received::Unreadable(..)) | Err(RecvTimeoutError::Timeout) => {}
@@ -85,6 +120,7 @@ pub fn run() {
                 if polled.elapsed() >= POLL {
                     polled = Instant::now();
                     messages.extend(cuts.poll());
+                    messages.extend(new_looks(&mut looks, &mut app_sessions));
                 }
                 for mut message in messages {
                     message.app = app_sessions.get(&message.session_id);
