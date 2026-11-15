@@ -163,14 +163,16 @@ impl Rack {
             main = main.cursor_pointer();
         }
 
+        // Your own tile's check sits 2px from the timer slot beside it, and an ended session's ×,
+        // with no timer slot, sits 8px from the tile's edge.
         let side_icon = match t.kind {
-            Kind::Own => Some(("plates/check.svg", 17.)),
-            Kind::Session(State::Ended) => Some(("plates/x.svg", 16.)),
+            Kind::Own => Some(("plates/check.svg", 17., 2.)),
+            Kind::Session(State::Ended) => Some(("plates/x.svg", 16., 8.)),
             _ => None,
         };
-        let side = side_icon.map(|(path, size)| {
+        let side = side_icon.map(|(path, size, margin)| {
             let btn_group: SharedString = format!("done-{i}").into();
-            div().flex().items_center().mr(px(2.)).child(
+            div().flex().items_center().mr(px(margin)).child(
                 div()
                     .id(("done", i))
                     .group(btn_group.clone())
@@ -383,6 +385,10 @@ impl Rack {
             .size_full()
             .relative()
             .font_family("Inter")
+            // GPUI's default line height is 1.618, where a browser lays Inter out at about 1.21,
+            // the mockups' line height, so the default spreads a title and its summary apart.
+            // (read in gpui-pre 0.3.12, src/style.rs, `TextStyle::default`)
+            .line_height(relative(1.21))
             .bg(rgb(BG))
             .rounded(px(14.))
             .border_1()
