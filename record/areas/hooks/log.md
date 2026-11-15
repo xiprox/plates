@@ -4,7 +4,7 @@ What we found about Claude Code's hooks and the Claude desktop app, newest entry
 
 ## 2026-11-15: Claude Code documents 33 hook events, and the app's status line shows 8 states
 
-**Asked:** after a working tile missed Claude thinking, and then a `/compact`, which other states will Plates miss?
+**Asked:** after a working tile kept showing Claude's last tool while Claude thought, and showed nothing of a `/compact`, which other states does Plates miss?
 
 **Expected:** a few more events beside the 10 Plates installed.
 
@@ -12,11 +12,12 @@ What we found about Claude Code's hooks and the Claude desktop app, newest entry
 
 - Claude Code documents 33 hook events, and 14 `notification_type` values for `Notification`.
 - Of the 23 events Plates didn't install, two pairs change what a tile shows: `PreCompact` and `PostCompact` bracket a compaction, and `Elicitation` and `ElicitationResult` bracket an MCP server waiting for your answer.
-- The app's status line has 8 states: stopping, compacting, retrying an API request, thinking, sending, a tool's label, "Working…", and a count of background tasks.
-  Thinking, retrying, sending, stopping, and background tasks have no hook event.
+- The app's status line has 8 states: "Stopping…", "Compacting session…", a retry label, "Thinking…", a waiting label, a tool's label, "Working…", and a count of background tasks.
+  One waiting label is for a message being sent.
+- Thinking, retrying, waiting, and stopping have no hook event, and background tasks reach a hook only as `Stop`'s and `SubagentStop`'s `background_tasks`, at a turn's end.
 - After a `/compact` the user typed, the app showed "Compacted session · saved 920.4k tokens" and no turn followed (user's screenshot, 2026-11-15).
 
-The gaps came from how the hooks design started: it took the events that drive the four tile states and never listed the rest.
+The gaps came from how the hooks design started: it took the events that move a tile between its states and never listed the rest.
 
 **Changed:** Plates installs hooks for `PreCompact`, `PostCompact`, `Elicitation`, and `ElicitationResult`, and the hooks design lists every documented event with what Plates does with it or why it doesn't need it.
 
@@ -28,13 +29,13 @@ The gaps came from how the hooks design started: it took the events that drive t
 
 **Expected:** no, since the app documents only `claude://code/new`.
 
-**Found:** we read the app's link handler in its code and then tried the link (read in the Claude desktop app 5.11492.5.0, `app.asar`, the `claude://` handler; measured on Windows 11 25H2, 2026-11-15).
+**Found:** we read the app's link handler in its code and then tried the link (read in the Claude desktop app 5.11492.5.0, `app.asar`, the code that logs `claudeURLHandler: code entry link invalid ?session`; measured on Windows 11 25H2, 2026-11-15).
 
 - The app registers the `claude` scheme in its package manifest, and passes each link to its own handler.
 - For `claude://code/continue`, the handler takes `session=last`, or a `session` that matches `^local_[A-Za-z0-9-]{1,64}$`, the app's own ID for a session, which its file for the session holds as `sessionId`.
   It looks the ID up among the sessions that aren't archived and shows that session, or the Code page when none matches.
-- Opening `claude://code/continue?session=local_<id>` from a shell switched the app from one session to the other, and a second link switched it back.
-- The app's menu offers `claude://code/continue?session=last` as "Continue Last Claude Code Session", and `claude://code/needs-input` as "Sessions Waiting for You".
+- With the Stage 18 session showing, running `Start-Process 'claude://code/continue?session=local_<id>'` in Windows PowerShell 5.1 with the Plates session's ID switched the app to the Plates session, and the same command with Stage 18's ID switched it back.
+- The app's code also names `claude://code/continue?session=last` "Continue Last Claude Code Session", and `claude://code/needs-input` "Sessions Waiting for You", as actions for its desktop entry.
 - None of this is documented, so an update to the app can change it without notice.
 
 **Changed:** clicking a session tile opens that link, with the ID from the app's file for the session.

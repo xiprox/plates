@@ -26,26 +26,28 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 | `StopFailure`, which fires in place of `Stop` when an API error ends the turn | moves the tile to your turn, with the error's text as its summary line, or its `error` when the text is missing, and starts its timer |
 | `SessionEnd` | moves the tile to ended |
 | `PreCompact` | moves the tile to working, with "Compacting session…", the Claude desktop app's words, as its summary line until `PostCompact` |
-| `PostCompact` | ends that line, and for a `trigger` of `manual`, a `/compact` you typed, moves the tile to your turn with "Compacted session" as its summary line, since no turn follows one ([hooks log](log.md#2026-11-15-claude-code-documents-33-hook-events-and-the-apps-status-line-shows-8-states)) |
+| `PostCompact` | ends "Compacting session…"; for a `trigger` of `manual`, a `/compact` you typed, it moves the tile to your turn with "Compacted session" as its summary line and starts its timer, since no turn follows one ([hooks log](log.md#2026-11-15-claude-code-documents-33-hook-events-and-the-apps-status-line-shows-8-states)), and for `auto` the turn goes on |
 | `Elicitation`, when an MCP server asks you to fill in a form or open a page | moves the tile to needs approval, with its `mcp_server_name`, " asks: ", and the first line of its `message` as its summary line, such as "github asks: Pick a repository", and starts its timer |
 | `ElicitationResult`, once you've answered | moves a tile that needed approval back to working |
 
-Claude Code documents 23 more events, and Plates installs no hook for them, because none changes what a tile shows (documented, [hooks](https://code.claude.com/docs/en/hooks.md), as of 2026-11-15):
+Claude Code documents 19 more events, and Plates installs no hook for them, because none changes what a tile shows (documented, [hooks](https://code.claude.com/docs/en/hooks.md), as of 2026-11-15):
 
 | Event | Why a tile doesn't need it |
 | --- | --- |
 | `UserPromptExpansion` | a slash command that expands into a prompt also fires `UserPromptSubmit` (unverified) |
-| `PermissionDenied` | auto mode denied a tool, and Claude goes on with its turn |
+| `PermissionDenied` | auto mode denied a tool, and Claude receives the rejection message (documented); whether Claude then goes on with its turn is unverified ([hooks log](log.md#2026-11-15-an-interrupt-and-a-denial-each-write-a-marker-record-to-the-transcript)) |
 | `PostToolBatch` | `PostToolUse` already marks each tool of a batch done |
-| `MessageDisplay` | carries Claude's text as it streams, which could replace reading the transcript for the summary line, and we haven't tried it |
-| `SubagentStart`, `SubagentStop` | the `Agent` tool's `PreToolUse` and `PostToolUse` already bracket a subagent |
+| `MessageDisplay` | the summary line already takes Claude's text from the transcript; `MessageDisplay` carries that text as it streams, and we haven't tried reading it from there |
+| `SubagentStart`, `SubagentStop` | the `Agent` tool's `PreToolUse` and `PostToolUse` bracket a foreground subagent; that they also cover a background subagent, a resumed one, and a teammate's message is unverified |
 | `TaskCreated`, `TaskCompleted`, `TeammateIdle` | they follow Claude's own task list and agent teams, not the turn |
 | `Setup`, `InstructionsLoaded`, `ConfigChange`, `CwdChanged`, `DirectoryAdded`, `FileChanged`, `WorktreeCreate`, `WorktreeRemove`, `PreModelSwitch`, `PostModelSwitch` | they change a session's setup, not whether it needs you |
 
 - When Claude Code documents an event that isn't in either table, add it to one of them, so no event goes unconsidered.
-- Of `Notification`'s 14 documented `notification_type` values, Plates takes only `permission_prompt`. The others report things a tile already shows, such as `idle_prompt`, or things outside a session's turn, such as `auth_success`.
-- The Claude desktop app's status line also shows states that no event carries: a thinking step, an API request it's retrying, a message it's sending, Claude stopping after you press stop, and how many background tasks run ([hooks log](log.md#2026-11-15-claude-code-documents-33-hook-events-and-the-apps-status-line-shows-8-states)).
-  Plates shows "Thinking…" for all of Claude's work between tools, as [Titles and summaries](#titles-and-summaries) says, and shows none of the others.
+- Of `Notification`'s 14 documented `notification_type` values, Plates takes only `permission_prompt`.
+  The others report things outside a session's turn, such as `auth_success`, or things another event already shows (unverified: the docs list the values without saying what each reports, and an `agent_needs_input` arriving in a session would show what it means).
+- The Claude desktop app's status line also shows states that no event carries as they happen: a thinking step, an API request being retried, a wait, such as for a message being sent, and Claude stopping after you press stop ([hooks log](log.md#2026-11-15-claude-code-documents-33-hook-events-and-the-apps-status-line-shows-8-states)).
+  It also counts background tasks, and only `Stop` and `SubagentStop` carry them, as the `background_tasks` still in flight when the turn ends (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input), as of 2026-11-15).
+  Plates shows none of them except thinking, as [Titles and summaries](#titles-and-summaries) says.
 - An event from a `session_id` Plates doesn't show adds that session's tile, in the state the event moves a tile to, and in working for an event that moves none, such as `PreToolUse`.
 - In the Claude desktop app, `/clear` ends the session, with a `SessionEnd` `reason` of `other`, and goes on under a new `session_id`, so its tile ends and a new tile starts ([hooks log](log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)).
 - Plates ignores `Notification` with `notification_type` `idle_prompt`, which arrives about 60s after Claude finishes ([hooks log](log.md#2026-11-15-claude-code-documents-hooks-in-desktop-sessions-and-an-http-hook-type-but-no-link-that-opens-one-desktop-session)), because `Stop` has already moved the tile to your turn.
@@ -77,8 +79,8 @@ Claude Code documents 23 more events, and Plates installs no hook for them, beca
 - Your turn's summary line is the first line of `Stop`'s `last_assistant_message`, because the transcript isn't guaranteed to hold Claude's final message when `Stop` fires.
 - A working tile's summary line is the first line of the newest text Claude wrote since your last prompt, for 4s after that text changes, so the text can be read even when a tool follows it at once (user, 2026-11-15).
   No hook event carries the text mid-turn, so Plates reads it from the end of the transcript after each tool event, and it can trail Claude by a record or two.
-- After those 4s, the line shows what Claude is doing with a tool from its `PreToolUse` until its `PostToolUse`, and for at least 1s, so a tool that runs for a few milliseconds can still be read.
-- Otherwise the line is "Thinking…", the Claude desktop app's own word for a thinking step (read in the Claude desktop app 5.11492.5.0, ion-dist.asar, the function that labels a thinking step).
+- After those 4s, the line shows what Claude is doing with a tool from its `PreToolUse` until its `PostToolUse`, and for at least 1s after its `PreToolUse`, so a tool that runs for a few milliseconds can still be read.
+- Otherwise the line is "Thinking…", the Claude desktop app's own word for a thinking step (read in the Claude desktop app 5.11492.5.0, ion-dist.asar, the status-line component whose props include `isCompacting`, `apiRetry`, and `toolLabel`, [results](results/2026-11-15-events-and-app-states.txt)).
   No hook event says when Claude thinks, so the line says it for all of Claude's work between tools, such as before the first tool after your prompt (user, 2026-11-15).
 
 What Claude is doing comes from the tool's `PreToolUse`:
@@ -113,14 +115,17 @@ The receiver answers each request with an empty 200 before it acts on the event,
 
 ## Opening a session
 
-Clicking a session tile opens `claude://code/continue?session=local_<id>`, with the app's own ID for the session from the app's file for it, and the Claude desktop app shows that session ([hooks log](log.md#2026-11-15-the-claude-desktop-app-opens-one-session-from-a-continue-link-with-its-own-id)).
+On Windows, clicking a session tile opens `claude://code/continue?session=local_<id>`, where `local_<id>` is the `sessionId` in the app's file for the session, and the Claude desktop app shows that session (measured on Windows 11 25H2, 2026-11-15, [hooks log](log.md#2026-11-15-the-claude-desktop-app-opens-one-session-from-a-continue-link-with-its-own-id)).
 The link is undocumented: we read it in the app's code and measured it from a shell, so an update to the app can change it.
-Before it opens the link, Plates lets any program take the foreground, since the rack never takes it and the app must come to the front.
-A session the app doesn't keep, such as one in a terminal, has no such ID, and clicking its tile opens nothing.
-We haven't looked at how the app opens one session on macOS.
+Windows lets a program bring its window to the front only with leave from the foreground, and the rack never takes the foreground, so before it opens the link Plates calls `AllowSetForegroundWindow` with `ASFW_ANY`, which Windows allows the process that got the last input, the click on the tile, to do (documented, [AllowSetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-allowsetforegroundwindow), as of 2026-11-15).
+Whether the app then comes to the front over another window is unverified, and clicking a tile while another window covers the app would settle it.
+A session the app doesn't keep, such as one in a terminal, has no such ID, and clicking its tile does nothing.
+On macOS, Plates doesn't know where the app keeps its session files, so it reads none, and clicking a session tile does nothing; we haven't looked at how the app opens one session there.
 
 ## Left open
 
 - What Plates does when another program holds port 47231, which `receiver::PORT` sets.
 - Sessions from before Plates started, which sent their events while no receiver was listening, and whose tiles appear only at their next event.
+- Whether the Claude desktop app comes to the front when you click a session tile while another window covers it.
+- Whether a tile at your turn shows the background tasks `Stop`'s `background_tasks` says are still running.
 - Whether Plates keeps one tile across a `/clear`, through the app file's `priorCliSessionIds`, which may hold a session's earlier IDs (unverified).

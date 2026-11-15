@@ -8,10 +8,12 @@ What we found about the rack's window and tiles, newest entry first.
 
 **Expected:** a stutter, since GPUI rebuilds its drawing surface when the window's size changes (unverified).
 
-**Found:** a probe sent a session's first event and read the window's height every 2ms (measured on Windows 11 25H2, 2026-11-15, [results/2026-11-15-row-growth.txt](results/2026-11-15-row-growth.txt)).
+**Found:** a probe sent a session's first event and then polled the window's height with `GetWindowRect`, which it could do only about every 15.6ms, the resolution of Windows' default timer (measured on Windows 11 25H2, 2026-11-15, [results/2026-11-15-row-growth.txt](results/2026-11-15-row-growth.txt)).
 
-- The height went from 234px to 300px in 12 steps over 186ms, easing out as the rows ask, at the probe's 15.6ms resolution.
-- The tile's first event reached the rack 293ms after it was sent, because a session the desktop app doesn't keep makes Plates search all of the app's session files once.
+- The height went from 234px to 300px, one 66px row, in 12 steps over 186ms, easing out as the rows ask.
+  The 186ms is shorter than the rows' 220ms because the ease-out's last 40ms or so move the row by less than half a pixel (unverified).
+- The height first changed 293ms after the probe sent the event.
+  We take the delay to be Plates searching all 332 of the app's session files for an ID none of them holds, since the probe's session is one the app doesn't keep (unverified; reading all 332 took about 205ms in [the hooks log](../hooks/log.md#2026-11-15-the-claude-desktop-app-keeps-a-file-per-session-with-its-title-and-its-claude-code-session-ids)).
 - We judged smoothness only from the steps, and haven't watched for a stutter by eye or on a monitor above 60Hz.
 
 **Changed:** a tile grows in and shrinks out, and the window's height follows it each frame.

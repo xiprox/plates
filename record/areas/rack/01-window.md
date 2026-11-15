@@ -56,9 +56,10 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   The policy needs Windows 11 24H2 (build 26100) or later (documented, [console allocation policy](https://learn.microsoft.com/en-us/windows/console/console-allocation-policy), as of 2026-11-15).
   That an earlier Windows ignores it and opens the console window is unverified, and starting the release build on Windows 11 23H2 would settle it.
 - Right-clicking the grip band at the rack's top opens a menu with "Quit Plates", in a popup at the pointer like the timer's menu (user, 2026-11-15).
-  Each menu fades in over 120ms, and DWM's shadow appears once it has, since DWM can't fade a shadow.
-  A menu opens below and to the right of the pointer, to its left only where the screen's right edge leaves no room, and above it near the screen's bottom (user, 2026-11-15).
   While the rack is docked, you click the strip to slide the rack out, and then right-click the grip band.
+- A menu opens below and to the right of the pointer, to its left where the monitor's work area leaves no room on the right, and above the pointer where it leaves no room below (user, 2026-11-15).
+- Each menu fades in over 120ms.
+  On Windows, the menu turns on DWM's shadow only once the fade ends, since DWM draws the shadow at full strength from the moment it's on (unverified; watching a menu open with its shadow on from the start would settle it).
 
 ## OS snapping
 
