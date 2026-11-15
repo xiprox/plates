@@ -2,7 +2,7 @@
 
 ```text
 Purpose:     What the rack's window is, how it moves and docks, and when it takes keyboard focus.
-Depends on:  01-aims (../product/01-aims.md).
+Depends on:  01-aims (../product/01-aims.md), and 02-tiles (02-tiles.md) for the markers the docked strip copies.
 Decides:     The window's shape, the drag, throw, and dock gestures, the docked strip, and the focus rules.
 ```
 
@@ -15,7 +15,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 - The window is borderless, with 14px rounded corners, and has no taskbar or Dock entry.
 - On macOS, it shows on every Space and over full-screen apps.
 - It has no title.
-  A 28px strip at its top holds a centered, horizontal grip of six dots.
+  A 28px band at its top holds a centered, horizontal grip of six dots.
 - It has 12px of padding on the left, right, and bottom, and its tiles sit 6px apart.
 - Its background is `#131417`, with a 1px `#2A2C31` border.
 
@@ -33,7 +33,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   A blue bar fills along that edge, and after 1.5s the rack shrinks to the strip.
   Letting go before the bar fills leaves the rack where it is.
 - The strip is 22px wide, with one 8px dot per tile, a pip, in the tiles' order.
-  A session's pip is a circle and your own tile's is a square, colored as the tile's marker is, except that a running or finished timer shows yellow, since the strip has no room for the timer.
+  A session's pip is a circle and your own tile's is a square, colored as the tile's marker is, except that a running timer, or a tile that's time-up, shows yellow, since the strip has no room for the timer.
 - When a tile starts needing you, the strip nudges 12px out of the edge once, then sits still.
 - Hovering the strip lists the tiles that need you, with their pips.
 - Clicking the strip slides the rack back out, at 950px/s away from the edge.
@@ -49,6 +49,6 @@ Plates moves the rack's window from its own drag, so the OS never starts a windo
 
 ## Left open
 
-- Docking uses the left and right edges only.
+- Whether the rack also docks to the top and bottom edges.
 - With several monitors, which one the rack starts on, and whether it remembers its place per monitor.
 - Whether the rack hides from screen capture, and whether it hides while a full-screen app is in front.

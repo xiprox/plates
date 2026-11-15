@@ -17,7 +17,7 @@ Plates is an always-on-top overview of the Claude Code sessions and other work i
 - `tools/prose-lint.mjs` makes the mechanical checks from writing.md, on Markdown and on the comments in code.
   A hook runs it after every edit, and its findings come back to you as context.
 - `.claude/agents/doc-reviewer.md` makes the judgment checks the lint can't, and `.claude/agents/code-reviewer.md` checks product code against its design and the rules below.
-  If an agent in `.claude/agents/` isn't available as an agent type, which happens when its definition was added after the session started, run a general-purpose agent told to read that definition and act as that agent, in the background if its front matter says `background: true`.
+  If an agent in `.claude/agents/` isn't available as an agent type, which happens when that folder didn't exist when the session started ([sub-agents](https://code.claude.com/docs/en/sub-agents.md), as of 2026-11-15), run a general-purpose agent told to read that definition and act as that agent, in the background if its front matter says `background: true`.
 
 ## Working rules
 

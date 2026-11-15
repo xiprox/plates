@@ -13,9 +13,9 @@ When two choices are otherwise even, Plates takes the calmer one, because it's m
 ## Aims
 
 - **Everything in view at a glance.**
-  One small rack, on top of every other window, shows each session's state and each of your own tiles, and you read it without opening anything.
+  One small rack, Plates' floating window, stays on top of every other window and shows a tile for each session and one for each thing you add yourself, called your own tiles, and you read it without opening anything.
 - **A tile asks for attention once, then waits.**
-  A tile that starts needing you brightens once and holds its color, and nothing flashes, pulses, or plays a sound ([02-tiles](../rack/02-tiles.md#attention)).
+  A tile that starts needing you brightens once, and nothing flashes, pulses, or plays a sound ([02-tiles](../rack/02-tiles.md#attention)).
 - **The rack never gets in the way.**
   You throw it aside or dock it to a screen edge, and clicking it never takes your keyboard focus ([01-window](../rack/01-window.md)).
 - **Adding a tile takes a hotkey, a name, and Enter.**

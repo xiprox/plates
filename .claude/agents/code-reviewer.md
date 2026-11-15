@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Reviews new or changed product code in the Plates repository against its design docs and decisions in record/, the rules in CLAUDE.md, and writing.md's Code comments, and returns findings. Pass the files to review, or no files to review the uncommitted changes, and the design doc if there is one.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, PowerShell
 background: true
 ---
 
@@ -21,14 +21,14 @@ Read `.claude/rules/writing.md` before you write the report, because the report 
    - the working rules in `CLAUDE.md` at the root
    - "Code comments" in `.claude/rules/writing.md`
 4. Run the checks the workspace has: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test`.
-   Run `node tools/prose-lint.mjs` on the changed Rust, TOML, and JSON files, because it reads only their comments.
+   Run `node tools/prose-lint.mjs` on the changed Rust, TOML, and JSON files, which checks their comments against writing.md.
    Report failures, but spend your attention on what these can't see.
 5. Look hardest at these:
    - **Structure against the design:** a file that mixes two of the design's layers, such as GPUI code in the core crate, or a concern the design puts in one place spread over several.
    - **Behavior against the design:** a rule in a design doc or the plan step that the code leaves out or implements differently.
    - **Imports from `experiments/`:** any use of a file under `experiments/`.
    - **Focus:** anything that makes the rack take keyboard focus outside adding or renaming a tile, which [01-window](../../record/areas/rack/01-window.md#focus) rules out.
-   - **Claude Code's wait:** anything in the hook receiver that can make Claude Code wait on Plates, or fail when Plates isn't running.
+   - **Claude Code's wait:** anything in the hook receiver, or in the hooks `plates hooks install` writes, that can make Claude Code wait on Plates, or fail while Plates is closed.
    - **OS and GPUI workarounds:** a workaround without a comment citing how we know: a log entry, a document in `record/`, or a documentation page.
    - **Duplication:** code that repeats something elsewhere in the product.
      Search before flagging, and say where.
