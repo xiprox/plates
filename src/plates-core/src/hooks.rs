@@ -1,11 +1,36 @@
 //! Reading a Claude Code hook event's JSON into a `SessionEvent`, as
 //! record/areas/hooks/01-claude-code-hooks.md maps them.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 
 use serde_json::Value;
 
-use crate::session::{SessionEvent, Tool};
+use crate::{
+    rack::{Rack, TileId},
+    session::{SessionEvent, Tool},
+    transcript,
+};
+
+/// Applies a hook message to the rack, and names a session Plates first sees after its first
+/// prompt from that prompt, read from the session's transcript. It returns the tile the message
+/// changed, or `None` for a message Plates ignores.
+pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<TileId> {
+    let event = message.event?;
+    let known = rack.knows(&message.session_id);
+    let id = rack.apply(&message.session_id, &message.cwd, event, now);
+    if !known
+        && let Some(Ok(Some(prompt))) = message
+            .transcript_path
+            .as_deref()
+            .map(transcript::first_prompt)
+    {
+        rack.set_first_prompt(&message.session_id, &prompt);
+    }
+    Some(id)
+}
 
 /// One hook event as the receiver got it.
 #[derive(Clone, Debug, PartialEq, Eq)]
