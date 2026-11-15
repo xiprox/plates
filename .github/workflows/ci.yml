@@ -1,0 +1,38 @@
+name: CI
+
+# The record, experiments, and docs don't change what builds, so a push of only those skips CI.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "record/**"
+      - "experiments/**"
+      - ".claude/**"
+      - "**/*.md"
+  pull_request:
+    paths-ignore:
+      - "record/**"
+      - "experiments/**"
+      - ".claude/**"
+      - "**/*.md"
+
+# A newer push to the same branch or pull request makes an unfinished run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # One build in the dev profile compiles every crate and the app, and runs every crate's
+      # tests. The release build is release.yml's, which runs when a version ships. Cargo.lock
+      # isn't locked, since a release PR moves the workspace's version ahead of it.
+      - run: cargo test --workspace

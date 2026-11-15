@@ -1,8 +1,8 @@
 //! Plates: `plates` opens the rack, and `plates hooks` and `plates listen` are the commands in
 //! cli.rs.
 
-#[cfg(not(windows))]
-compile_error!("Plates runs on Windows so far, and its macOS half comes in the plan's step 7.");
+#[cfg(not(any(windows, target_os = "macos")))]
+compile_error!("Plates runs on Windows and macOS.");
 
 mod app;
 mod assets;
@@ -13,6 +13,9 @@ mod menu;
 mod motion;
 mod native;
 mod place;
+// Pressing a wrap-up's choice goes through Windows' UI Automation, and on macOS Plates reads none
+// of the Claude desktop app's files, so a card there has no choice to press.
+#[cfg(windows)]
 mod press;
 mod rack_view;
 mod rows;
@@ -26,6 +29,10 @@ use std::{
 };
 
 fn main() -> ExitCode {
+    // Velopack's install, update, and uninstall hooks run here and may exit the process, so this
+    // comes before anything else.
+    velopack::VelopackApp::build().run();
+
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
         log_panics();

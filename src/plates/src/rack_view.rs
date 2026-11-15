@@ -799,9 +799,12 @@ impl RackView {
             .and_then(|t| t.session())
             .and_then(|s| s.app_title.clone());
         self.open_tile(id, cx);
+        #[cfg(windows)]
         if let Some(title) = title {
             crate::press::press_choice(title, choice.to_string());
         }
+        #[cfg(not(windows))]
+        let _ = (title, choice);
     }
 
     /// Right-clicking a finished session's text opens a menu that marks its turn read, without

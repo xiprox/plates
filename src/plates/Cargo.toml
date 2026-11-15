@@ -13,6 +13,15 @@ async-channel = "2"
 # (record/decisions/001-rust-and-gpui.md).
 gpui-kit = "=0.9.1"
 raw-window-handle = "0.6"
+# Installs, updates (with delta packages), and uninstalls. Keep in step with VPK_VERSION in
+# .github/workflows/release.yml, as the packages vpk makes are read by this crate.
+velopack = "=1.2.161"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The versions gpui-pre-macos 0.3.12 uses, so both share one build.
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
 
 [target.'cfg(windows)'.dependencies]
 # 0.62 is the version gpui-pre-windows 0.3.12 uses, so both share one build.

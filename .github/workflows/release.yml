@@ -1,0 +1,163 @@
+name: Release
+
+# Every push to main updates release-please's release PR (version bump and changelog, from
+# conventional commits). Merging that PR creates the GitHub release, and the package job then
+# builds Windows and macOS with Velopack and attaches the installers and update packages to it.
+#
+# A pushed tag such as v0.1.0 does the same without release-please: it creates the release for the
+# tag, and the package job attaches to it.
+#
+# Run it by hand (Actions → Release → Run workflow) for a dry run: it builds and packs both
+# platforms and keeps the packages as a workflow artifact, without touching any release.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # Keep in step with the velopack crate's version in src/plates/Cargo.toml.
+  VPK_VERSION: 1.2.161
+  # Velopack's id for the app. Installs update only from packages with the same id.
+  PACK_ID: plates
+
+jobs:
+  release-please:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+      version: ${{ steps.rp.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  tagged:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Create the release for the tag
+        id: release
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$tag" --generate-notes
+
+  package:
+    needs: [release-please, tagged]
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       needs.release-please.outputs.created == 'true' ||
+       needs.tagged.result == 'success')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each platform gets its own channel, so the two never overwrite each other's files
+          # on the shared release (a non-default channel is part of every file name).
+          - os: windows-latest
+            channel: win-x64
+            exe: plates.exe
+            hook: plates-hook.exe
+          - os: macos-latest
+            channel: osx-arm64
+            exe: plates
+            hook: plates-hook
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CHANNEL: ${{ matrix.channel }}
+      TAG: ${{ needs.release-please.outputs.tag || needs.tagged.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            base=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "plates") | .version')
+            echo "VERSION=$base-dryrun.${{ github.run_number }}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=${{ needs.release-please.outputs.version || needs.tagged.outputs.version }}" >> "$GITHUB_ENV"
+          fi
+
+      # tools/build-release.ps1 builds the workspace and merges the console allocation policy
+      # into plates.exe, so Explorer starts it without a console window.
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/build-release.ps1
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: cargo build --release --workspace
+
+      # plates-hook ships beside plates, since `plates hooks install` points Claude Code's hooks
+      # at the plates-hook next to the running plates.
+      - name: Gather the program
+        run: |
+          mkdir -p publish
+          cp "target/release/${{ matrix.exe }}" "target/release/${{ matrix.hook }}" publish/
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk --version "$VPK_VERSION"
+
+      # Delta packages are made against the previous release's full package, so fetch it
+      # first. The newest release is the one just created, still empty, so this looks for
+      # the newest published release other than it.
+      - name: Fetch the previous release
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p Releases
+          prev=$(gh release list --exclude-drafts --json tagName --jq '.[].tagName' | grep -vxF "$TAG" | head -n 1 || true)
+          if [ -z "$prev" ]; then
+            echo "First release: no delta packages."
+          elif gh release view "$prev" --json assets --jq '.assets[].name' | grep -qE "^${PACK_ID}-.+-${CHANNEL}-full\.nupkg$"; then
+            echo "Previous release: $prev"
+            gh release download "$prev" -D Releases -p "releases.$CHANNEL.json" -p "${PACK_ID}-*-$CHANNEL-full.nupkg"
+          else
+            echo "$prev has no $PACK_ID $CHANNEL package: no delta packages."
+          fi
+
+      - name: Pack
+        run: |
+          vpk pack -u "$PACK_ID" --packTitle "Plates" -v "$VERSION" \
+            -p publish -e "${{ matrix.exe }}" -c "$CHANNEL" -o Releases
+
+      - name: Attach to the release
+        if: github.event_name == 'push'
+        run: |
+          vpk upload github --repoUrl "${{ github.server_url }}/${{ github.repository }}" \
+            --token "$GH_TOKEN" -c "$CHANNEL" -o Releases --merge --tag "$TAG"
+
+      - name: Keep the dry run's packages
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.channel }}
+          path: Releases/
