@@ -1,0 +1,29 @@
+Plates window test, self-test run
+Date (UTC): 2026-11-15
+OS: Windows 11 25H2, build 26200.9711
+Displays: 1; the rack's is 5120x1440 physical pixels at 100% scale and 240 Hz
+
+Window
+- extended styles: WS_EX_TOOLWINDOW yes, WS_EX_TOPMOST yes, WS_EX_NOACTIVATE yes, WS_EX_APPWINDOW no
+- window subclass installed: yes
+- the subclass answers WM_MOUSEACTIVATE with MA_NOACTIVATE: yes
+- window rectangle 304x376, client area 304x376, in physical pixels
+- DWM corner rounding turned off: yes; DWM border turned off: yes
+- keyboard focus stayed in the app that had it when the rack opened: yes
+- screen capture: as-gpui-draws-it, saved beside the build in target/captures/as-gpui-draws-it.png
+- screen capture: dwm-corners-and-border-off, saved beside the build in target/captures/dwm-corners-and-border-off.png
+- screen capture: docked-strip, saved beside the build in target/captures/docked-strip.png
+
+Motion
+- throw up and to the left: 449 moves over 1.86s, 240 per second; between moves, median 4.2ms, 95th percentile 4.6ms, longest 6.5ms; 1 gap longer than 6.2ms; SetWindowPos took a median 0.31ms and at most 1.32ms; frames drawn 240 per second
+- throw into the right edge, with a bounce: 411 moves over 1.71s, 240 per second; between moves, median 4.2ms, 95th percentile 4.6ms, longest 6.5ms; 1 gap longer than 6.2ms; SetWindowPos took a median 0.34ms and at most 1.02ms; frames drawn 240 per second
+- slide out of the dock: 379 moves over 1.57s, 241 per second; between moves, median 4.2ms, 95th percentile 4.7ms, longest 5.9ms; 0 gaps longer than 6.2ms; SetWindowPos took a median 0.03ms and at most 0.97ms; frames drawn 241 per second
+- docked 1 time and undocked 1 time
+
+The OS
+- entered its own move or size loop on the rack: 0 times
+- sent WM_MOUSEACTIVATE: 0 times
+- put the rack somewhere other than where it was moved: 0 of 1240 moves
+
+Focus
+- clicks on tiles and the strip: 0, after which keyboard focus stayed in the app that had it: 0
