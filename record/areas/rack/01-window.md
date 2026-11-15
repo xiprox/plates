@@ -18,13 +18,13 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   A 28px band at its top holds a centered, horizontal grip of six dots.
 - It has 12px of padding on the left, right, and bottom, and its tiles sit 6px apart.
 - Its background is `#131417`, with a 1px `#2A2C31` border.
-- It casts a drop shadow, which on Windows DWM draws outside the window ([rack log](log.md#2026-11-15-dwm-draws-the-racks-drop-shadow-once-the-windows-frame-reaches-1px-into-its-client-area)).
+- It casts a drop shadow, which on Windows the Desktop Window Manager (DWM) draws outside the window ([rack log](log.md#2026-11-15-dwm-draws-the-racks-drop-shadow-once-the-windows-frame-reaches-1px-into-its-client-area)), and what draws it on macOS is unverified until the plan's step 7.
 
 ## Drag and throw
 
 - A press anywhere on the rack becomes a drag once the pointer moves 5px.
   A click on a tile, its timer, or its × still lands, and a drag that starts on a tile doesn't also click it.
-- Letting go mid-drag keeps the rack's speed, measured over the drag's last 60ms, with no cap a hand reaches (user, 2026-11-15, [rack log](log.md#2026-11-15-by-hand-the-prototypes-throw-bounce-and-dock-numbers-got-in-the-way)).
+- Letting go mid-drag keeps the rack's speed, measured over the drag's last 60ms, and capped only at 20,000px/s, a guard against a bad sample (user, 2026-11-15, [rack log](log.md#2026-11-15-by-hand-the-prototypes-throw-bounce-and-dock-numbers-got-in-the-way)).
 - The rack then slides on, keeping about 4% of its speed after each second (a factor of e^−3.2).
   A screen edge stops it on that axis, and it slides on along the edge, because a rack that bounced would come back into the way (user, 2026-11-15).
 - A throw only moves the rack and never docks it, because a throw means "out of my way for now" (user, 2026-11-15).

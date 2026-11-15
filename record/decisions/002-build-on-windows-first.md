@@ -6,7 +6,7 @@ Decided by the user on 2026-11-15, after the window test passed on Windows.
 ## Context
 
 [Decision 001](001-rust-and-gpui.md) commits the plan's step 1 to trying GPUI's window on both OSes before the rack is built, since the window is what decides whether GPUI holds.
-The window test passed on Windows ([rack log](../areas/rack/log.md#2026-11-15-by-hand-the-prototypes-throw-bounce-and-dock-numbers-got-in-the-way)).
+The window test's Windows half is done ([the plan's step 1](../areas/product/plan.md#1-window-test)), and the [rack log](../areas/rack/log.md)'s entries from 2026-11-15 hold its findings.
 Only the user can run Plates on macOS, and bringing out the Mac costs a session of its own each time (user, 2026-11-15).
 
 ## Options

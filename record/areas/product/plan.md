@@ -21,7 +21,7 @@ Done on 2026-11-15.
 
 ## 2. Core
 
-The `plates-core` crate: the tile model, the session states, the timer rules, and saving, from [02-tiles](../rack/02-tiles.md).
+The `plates-core` crate, as [01-core](../core/01-core.md) designs it: the tile model, the session states from [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events), the timer rules, and saving.
 Done when `cargo test` covers each session state change and each timer rule, and a saved rack loads back the same.
 
 Done on 2026-11-15.
@@ -50,7 +50,7 @@ Done when clicking a session tile opens that session, or else brings the Claude 
 ## 7. macOS
 
 Every step's behavior on the Mac, the window test's macOS half included, run in one session there, as [CLAUDE.md](../../../CLAUDE.md) and [decision 002](../../decisions/002-build-on-windows-first.md) ask.
-Done when every step's "done when" holds on macOS too, with the rack on every Space and over a full-screen app, and macOS window tiling leaving it alone.
+Done when every step's "done when" holds on macOS too, with no Dock entry for the rack, the rack on every Space and over a full-screen app, and macOS window tiling leaving it alone.
 If GPUI can't give the rack its window on macOS, we weigh the options then.
 
 ## Later

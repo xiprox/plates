@@ -52,7 +52,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   Right-clicking it opens a menu of 5, 10, 15, 20, and 30 minutes, and 1 hour, and picking one while a timer runs starts it over.
 - While a timer runs, the timer slot shows a yellow ring that drains.
   Hovering the ring shows a faint ×, at 55% opacity, and clicking the ring cancels the timer.
-- A session tile starts a 5-minute timer on its own when it moves to your turn or needs approval, and the timer stops when the session moves to working.
+- A session tile starts a 5-minute timer on its own when it moves to your turn or needs approval, and the timer stops when the session moves to working or ends.
 - When the timer runs out, the tile is time-up, and that becomes its status:
   - your own tile's square turns yellow, and the tile takes a yellow tint
   - a session tile takes a tint of its own status color, amber for your turn and orange for an approval, and its dot keeps showing Claude's state
@@ -63,13 +63,13 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 ## Attention
 
 - Nothing flashes or pulses, and the only motion that repeats is a working session's breathing dot (user, 2026-11-15).
-- When a tile starts needing you, its background brightens once in its status color over 1.4s, then settles back.
+- When a tile starts needing you, or needs you for a new reason, such as its timer running out on your turn, its background brightens once in its status color over 1.4s, then settles back.
 - A tile needs you when it's an approval, your turn, or time-up.
 - Plates plays no sounds and has no quiet mode ([01-aims](../product/01-aims.md#non-goals)).
 
 ## Saving
 
-Plates saves your own tiles and their running timers as JSON in its data folder, `%APPDATA%\Plates\` on Windows and `~/Library/Application Support/Plates/` on macOS, and loads them when it starts.
+Plates saves your own tiles, each with its timer, as JSON in its data folder, `%APPDATA%\Plates\` on Windows and `~/Library/Application Support/Plates/` on macOS, and loads them when it starts.
 
 ## Colors and type
 
