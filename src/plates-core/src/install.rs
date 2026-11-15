@@ -15,7 +15,7 @@ use crate::receiver::PATH;
 /// The hook events Plates listens to, with the matcher each takes, from
 /// record/areas/hooks/01-claude-code-hooks.md. A `Notification` hook matches only
 /// `permission_prompt`, since Plates ignores every other notification.
-pub const EVENTS: [(&str, Option<&str>); 10] = [
+pub const EVENTS: [(&str, Option<&str>); 14] = [
     ("SessionStart", None),
     ("UserPromptSubmit", None),
     ("PreToolUse", None),
@@ -26,6 +26,10 @@ pub const EVENTS: [(&str, Option<&str>); 10] = [
     ("Stop", None),
     ("StopFailure", None),
     ("SessionEnd", None),
+    ("PreCompact", None),
+    ("PostCompact", None),
+    ("Elicitation", None),
+    ("ElicitationResult", None),
 ];
 
 fn is_ours(hook: &Value) -> bool {

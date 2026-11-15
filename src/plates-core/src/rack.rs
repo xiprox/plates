@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     desktop::AppSession,
-    session::{Session, SessionEvent, SessionState, first_line, prompt_title},
+    session::{COMPACTED, Session, SessionEvent, SessionState, first_line, prompt_title},
     timer::{DEFAULT_MINUTES, Timer},
 };
 
@@ -247,6 +247,33 @@ impl Rack {
                 s.ended_at = Some(now);
                 set_state(s, &mut tile.timer, SessionState::Ended);
             }
+            SessionEvent::CompactStarted => {
+                s.compacting = true;
+                if s.state != SessionState::Working {
+                    s.summary = None;
+                    set_state(s, &mut tile.timer, SessionState::Working);
+                }
+            }
+            // A /compact you typed hands the turn back once it's done, and the Claude desktop
+            // app then shows "Compacted session" (user, 2026-11-15). One Claude Code started on
+            // its own runs mid-turn, and the turn goes on.
+            SessionEvent::CompactFinished { manual } => {
+                s.compacting = false;
+                if manual {
+                    s.summary = Some(COMPACTED.to_string());
+                    set_state(s, &mut tile.timer, SessionState::YourTurn);
+                }
+            }
+            SessionEvent::InputAsked { summary } => {
+                s.summary = Some(summary);
+                set_state(s, &mut tile.timer, SessionState::NeedsApproval);
+            }
+            SessionEvent::InputGiven => {
+                if s.state == SessionState::NeedsApproval {
+                    s.summary = None;
+                    set_state(s, &mut tile.timer, SessionState::Working);
+                }
+            }
             SessionEvent::Interrupted { denied } => {
                 s.summary = Some(match (denied, s.pending_tool.take()) {
                     (true, Some(tool)) => format!("Denied: {}", tool.subject()),
@@ -255,6 +282,11 @@ impl Rack {
                 });
                 set_state(s, &mut tile.timer, SessionState::YourTurn);
             }
+        }
+        // A turn that ends, or a session that ends, ends a compaction whose PostCompact never
+        // came, so its tile doesn't say "Compacting session…" the next time it works.
+        if s.state != SessionState::Working {
+            s.compacting = false;
         }
         s.refresh_line(now);
         tile.refresh_need(now);
@@ -889,6 +921,56 @@ mod tests {
             session(&rack, id).line.as_deref(),
             Some(crate::session::THINKING)
         );
+    }
+
+    #[test]
+    fn a_compact_you_type_works_then_hands_you_the_turn_and_an_auto_one_keeps_working() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", stop("Done."), 0);
+        apply(&mut rack, "a", SessionEvent::CompactStarted, 1);
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::Working);
+        assert_eq!(s.line.as_deref(), Some(crate::session::COMPACTING));
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::CompactFinished { manual: true },
+            2,
+        );
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::YourTurn);
+        assert_eq!(s.summary.as_deref(), Some(COMPACTED));
+
+        apply(&mut rack, "a", prompt("Go on"), 3);
+        apply(&mut rack, "a", SessionEvent::CompactStarted, 4);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::CompactFinished { manual: false },
+            5,
+        );
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::Working);
+        assert!(!s.compacting);
+    }
+
+    #[test]
+    fn an_mcp_servers_request_needs_you_until_you_answer() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::InputAsked {
+                summary: "github asks: Pick a repository".into(),
+            },
+            1,
+        );
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::NeedsApproval);
+        assert_eq!(s.summary.as_deref(), Some("github asks: Pick a repository"));
+        apply(&mut rack, "a", SessionEvent::InputGiven, 2);
+        assert_eq!(session(&rack, id).state, SessionState::Working);
     }
 
     #[test]

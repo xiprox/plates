@@ -690,7 +690,8 @@ impl RackView {
 
     // The menu opens in a window of its own at the pointer, so it can reach past the rack's edges
     // without growing the rack's window, whose shadow DWM would draw around the grown rectangle.
-    // It opens below and to the left of the pointer, and above it near the screen's bottom.
+    // It opens below and to the right of the pointer, to the left near the screen's right edge,
+    // and above it near the screen's bottom (user, 2026-11-15).
     pub(crate) fn open_menu(&mut self, kind: MenuKind, at: Point<Pixels>, cx: &mut Context<Self>) {
         self.close_menu(cx);
         let s = self.scale;
@@ -702,7 +703,12 @@ impl RackView {
         let area = native::edges_at(pointer).area;
         let menu_h = kind.height();
         let (w, h) = (MENU_W as f64 * s, menu_h as f64 * s);
-        let x = (pointer.0 - w + 12. * s).clamp(area.left, (area.right - w).max(area.left));
+        let right = pointer.0 - 12. * s;
+        let x = if right + w <= area.right {
+            right
+        } else {
+            (pointer.0 - w + 12. * s).clamp(area.left, (area.right - w).max(area.left))
+        };
         let below = pointer.1 + 6. * s;
         let y = if below + h <= area.bottom {
             below

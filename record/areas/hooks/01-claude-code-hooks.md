@@ -25,7 +25,27 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 | `Stop` | moves the tile to your turn, and starts its timer |
 | `StopFailure`, which fires in place of `Stop` when an API error ends the turn | moves the tile to your turn, with the error's text as its summary line, or its `error` when the text is missing, and starts its timer |
 | `SessionEnd` | moves the tile to ended |
+| `PreCompact` | moves the tile to working, with "Compacting session…", the Claude desktop app's words, as its summary line until `PostCompact` |
+| `PostCompact` | ends that line, and for a `trigger` of `manual`, a `/compact` you typed, moves the tile to your turn with "Compacted session" as its summary line, since no turn follows one ([hooks log](log.md#2026-11-15-claude-code-documents-33-hook-events-and-the-apps-status-line-shows-8-states)) |
+| `Elicitation`, when an MCP server asks you to fill in a form or open a page | moves the tile to needs approval, with its `mcp_server_name`, " asks: ", and the first line of its `message` as its summary line, such as "github asks: Pick a repository", and starts its timer |
+| `ElicitationResult`, once you've answered | moves a tile that needed approval back to working |
 
+Claude Code documents 23 more events, and Plates installs no hook for them, because none changes what a tile shows (documented, [hooks](https://code.claude.com/docs/en/hooks.md), as of 2026-11-15):
+
+| Event | Why a tile doesn't need it |
+| --- | --- |
+| `UserPromptExpansion` | a slash command that expands into a prompt also fires `UserPromptSubmit` (unverified) |
+| `PermissionDenied` | auto mode denied a tool, and Claude goes on with its turn |
+| `PostToolBatch` | `PostToolUse` already marks each tool of a batch done |
+| `MessageDisplay` | carries Claude's text as it streams, which could replace reading the transcript for the summary line, and we haven't tried it |
+| `SubagentStart`, `SubagentStop` | the `Agent` tool's `PreToolUse` and `PostToolUse` already bracket a subagent |
+| `TaskCreated`, `TaskCompleted`, `TeammateIdle` | they follow Claude's own task list and agent teams, not the turn |
+| `Setup`, `InstructionsLoaded`, `ConfigChange`, `CwdChanged`, `DirectoryAdded`, `FileChanged`, `WorktreeCreate`, `WorktreeRemove`, `PreModelSwitch`, `PostModelSwitch` | they change a session's setup, not whether it needs you |
+
+- When Claude Code documents an event that isn't in either table, add it to one of them, so no event goes unconsidered.
+- Of `Notification`'s 14 documented `notification_type` values, Plates takes only `permission_prompt`. The others report things a tile already shows, such as `idle_prompt`, or things outside a session's turn, such as `auth_success`.
+- The Claude desktop app's status line also shows states that no event carries: a thinking step, an API request it's retrying, a message it's sending, Claude stopping after you press stop, and how many background tasks run ([hooks log](log.md#2026-11-15-claude-code-documents-33-hook-events-and-the-apps-status-line-shows-8-states)).
+  Plates shows "Thinking…" for all of Claude's work between tools, as [Titles and summaries](#titles-and-summaries) says, and shows none of the others.
 - An event from a `session_id` Plates doesn't show adds that session's tile, in the state the event moves a tile to, and in working for an event that moves none, such as `PreToolUse`.
 - In the Claude desktop app, `/clear` ends the session, with a `SessionEnd` `reason` of `other`, and goes on under a new `session_id`, so its tile ends and a new tile starts ([hooks log](log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)).
 - Plates ignores `Notification` with `notification_type` `idle_prompt`, which arrives about 60s after Claude finishes ([hooks log](log.md#2026-11-15-claude-code-documents-hooks-in-desktop-sessions-and-an-http-hook-type-but-no-link-that-opens-one-desktop-session)), because `Stop` has already moved the tile to your turn.

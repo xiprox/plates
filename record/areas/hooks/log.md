@@ -2,6 +2,26 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: Claude Code documents 33 hook events, and the app's status line shows 8 states
+
+**Asked:** after a working tile missed Claude thinking, and then a `/compact`, which other states will Plates miss?
+
+**Expected:** a few more events beside the 10 Plates installed.
+
+**Found:** we listed every documented event and every state the Claude desktop app's status line draws (documented, [hooks](https://code.claude.com/docs/en/hooks.md), as of 2026-11-15; read in the Claude desktop app 5.11492.5.0, ion-dist.asar; [results/2026-11-15-events-and-app-states.txt](results/2026-11-15-events-and-app-states.txt)).
+
+- Claude Code documents 33 hook events, and 14 `notification_type` values for `Notification`.
+- Of the 23 events Plates didn't install, two pairs change what a tile shows: `PreCompact` and `PostCompact` bracket a compaction, and `Elicitation` and `ElicitationResult` bracket an MCP server waiting for your answer.
+- The app's status line has 8 states: stopping, compacting, retrying an API request, thinking, sending, a tool's label, "Working…", and a count of background tasks.
+  Thinking, retrying, sending, stopping, and background tasks have no hook event.
+- After a `/compact` the user typed, the app showed "Compacted session · saved 920.4k tokens" and no turn followed (user's screenshot, 2026-11-15).
+
+The gaps came from how the hooks design started: it took the events that drive the four tile states and never listed the rest.
+
+**Changed:** Plates installs hooks for `PreCompact`, `PostCompact`, `Elicitation`, and `ElicitationResult`, and the hooks design lists every documented event with what Plates does with it or why it doesn't need it.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#events).
+
 ## 2026-11-15: The Claude desktop app opens one session from a continue link with its own ID
 
 **Asked:** can a link open one session in the Claude desktop app, for [the plan's step 6](../product/plan.md#6-opening-a-session-from-its-tile)?

@@ -1,0 +1,42 @@
+Claude Code's documented hook events, and the Claude desktop app's status line states
+2026-11-15
+
+From https://code.claude.com/docs/en/hooks.md, as of 2026-11-15, 33 hook events:
+  SessionStart, Setup, UserPromptSubmit, UserPromptExpansion, PreToolUse, PermissionRequest,
+  PermissionDenied, PostToolUse, PostToolUseFailure, PostToolBatch, Notification,
+  MessageDisplay, SubagentStart, SubagentStop, TaskCreated, TaskCompleted, Stop, StopFailure,
+  TeammateIdle, InstructionsLoaded, ConfigChange, CwdChanged, DirectoryAdded, FileChanged,
+  WorktreeCreate, WorktreeRemove, PreCompact, PostCompact, PreModelSwitch, PostModelSwitch,
+  Elicitation, ElicitationResult, SessionEnd
+
+Notification's notification_type values (14):
+  permission_prompt, idle_prompt, auth_success, auth_storage_failure, elicitation_dialog,
+  elicitation_url_dialog, elicitation_complete, elicitation_response, agent_needs_input,
+  agent_completed, quota_auto_resume_fired, quota_auto_resume_stale,
+  quota_auto_resume_disabled, plugin_notification
+
+SessionStart source values: startup, resume, clear, compact, fork
+SessionEnd reason values: clear, resume, logout, prompt_input_exit, other
+
+Input fields the docs give for the events Plates added:
+  PreCompact: trigger ("manual" or "auto"), custom_instructions
+  PostCompact: trigger, compact_summary
+  Elicitation: mcp_server_name, message, and optional mode, url, elicitation_id,
+    requested_schema
+  ElicitationResult: mcp_server_name, action, and optional mode, elicitation_id, content
+
+The Claude desktop app's status line, read in the Claude desktop app 5.11492.5.0,
+ion-dist.asar, the component whose props include isCompacting, apiRetry, toolLabel,
+thinking, waiting, runningTaskCount, and workingWord. The labels near it:
+  "Stopping…", while Claude stops after you press stop
+  "Compacting session…", while the session compacts
+  a retry label built from apiRetry, while an API request is retried
+  "Thinking…", or a thinking step's last summary, while a thinking step runs, and
+    "Thought for {seconds}s" once it ends
+  a waiting label, such as for a message it's sending
+  the tool's label, from when the tool starts until 2s after it ends
+  "Working…", for anything else in a turn
+  and, beside these, a count of running and finished background tasks
+
+The app, after a /compact the user typed (screenshot from the user, 2026-11-15):
+  "Compacted session · saved 920.4k tokens", and an empty prompt box, with no turn following.

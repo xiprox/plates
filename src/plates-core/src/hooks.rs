@@ -116,6 +116,23 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
             text: text("last_assistant_message"),
         }),
         "SessionEnd" => Some(SessionEvent::Ended),
+        "PreCompact" => Some(SessionEvent::CompactStarted),
+        "PostCompact" => Some(SessionEvent::CompactFinished {
+            manual: text("trigger").as_deref() == Some("manual"),
+        }),
+        "Elicitation" => {
+            let server = text("mcp_server_name").unwrap_or_else(|| "An MCP server".to_string());
+            let message = text("message")
+                .map(|m| first_line(&m))
+                .filter(|m| !m.is_empty());
+            Some(SessionEvent::InputAsked {
+                summary: match message {
+                    Some(message) => format!("{server} asks: {message}"),
+                    None => format!("{server} asks for your input"),
+                },
+            })
+        }
+        "ElicitationResult" => Some(SessionEvent::InputGiven),
         _ => None,
     };
     Ok(HookMessage {
@@ -360,6 +377,30 @@ mod tests {
             Some(SessionEvent::TurnFailed {
                 error: "rate_limit".into(),
                 text: Some("API Error: Rate limit reached".into())
+            })
+        );
+    }
+
+    #[test]
+    fn compaction_and_an_mcp_servers_request_carry_what_the_tile_needs() {
+        assert_eq!(
+            event(with(
+                "PostCompact",
+                json!({ "trigger": "manual", "compact_summary": "..." })
+            )),
+            Some(SessionEvent::CompactFinished { manual: true })
+        );
+        assert_eq!(
+            event(with("PostCompact", json!({ "trigger": "auto" }))),
+            Some(SessionEvent::CompactFinished { manual: false })
+        );
+        assert_eq!(
+            event(with(
+                "Elicitation",
+                json!({ "mcp_server_name": "my-mcp-server", "message": "Please authenticate\nnow", "mode": "url" })
+            )),
+            Some(SessionEvent::InputAsked {
+                summary: "my-mcp-server asks: Please authenticate".into()
             })
         );
     }

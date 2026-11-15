@@ -20,6 +20,13 @@ pub const TOOL_HOLDS: Duration = Duration::from_secs(1);
 /// between tools.
 pub const THINKING: &str = "Thinking…";
 
+/// What a working tile shows from `PreCompact` until `PostCompact`, in the Claude desktop app's
+/// words for it (read in the Claude desktop app 5.11492.5.0, ion-dist.asar, its status line).
+pub const COMPACTING: &str = "Compacting session…";
+
+/// Your turn's summary line after a `/compact` you typed, in the app's words for it.
+pub const COMPACTED: &str = "Compacted session";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionState {
     New,
@@ -56,6 +63,14 @@ pub enum SessionEvent {
     /// You interrupted Claude, or denied the tool it asked about, which no hook event reports, so
     /// the app reads it from the transcript.
     Interrupted { denied: bool },
+    /// `PreCompact`, for a `/compact` you typed or one Claude Code started on its own.
+    CompactStarted,
+    /// `PostCompact`, with whether you typed the `/compact`.
+    CompactFinished { manual: bool },
+    /// `Elicitation`: an MCP server asks you to fill in a form or open a page.
+    InputAsked { summary: String },
+    /// `ElicitationResult`: you answered the MCP server.
+    InputGiven,
 }
 
 impl SessionEvent {
@@ -63,11 +78,16 @@ impl SessionEvent {
     pub fn moves_to(&self) -> Option<SessionState> {
         match self {
             SessionEvent::Started { .. } => Some(SessionState::New),
-            SessionEvent::PromptSubmitted { .. } => Some(SessionState::Working),
-            SessionEvent::ToolPending { .. } | SessionEvent::ToolFinished => None,
-            SessionEvent::ApprovalAsked { .. } | SessionEvent::ApprovalNotified { .. } => {
-                Some(SessionState::NeedsApproval)
+            SessionEvent::PromptSubmitted { .. } | SessionEvent::CompactStarted => {
+                Some(SessionState::Working)
             }
+            SessionEvent::ToolPending { .. }
+            | SessionEvent::ToolFinished
+            | SessionEvent::CompactFinished { .. }
+            | SessionEvent::InputGiven => None,
+            SessionEvent::ApprovalAsked { .. }
+            | SessionEvent::ApprovalNotified { .. }
+            | SessionEvent::InputAsked { .. } => Some(SessionState::NeedsApproval),
             SessionEvent::TurnEnded { .. }
             | SessionEvent::TurnFailed { .. }
             | SessionEvent::Interrupted { .. } => Some(SessionState::YourTurn),
@@ -159,6 +179,9 @@ pub struct Session {
     pub activity_at: SystemTime,
     /// Whether that tool is still running.
     pub tool_running: bool,
+    /// Whether Claude Code is compacting the session's context, between `PreCompact` and
+    /// `PostCompact`.
+    pub compacting: bool,
     /// What a working tile shows: `status` for `STATUS_HOLDS` after it changes, then `activity`
     /// while its tool runs and for at least `TOOL_HOLDS`, and `THINKING` otherwise.
     /// `refresh_line` keeps it current.
@@ -184,6 +207,7 @@ impl Session {
             activity: None,
             activity_at: now,
             tool_running: false,
+            compacting: false,
             line: None,
             pending_tool: None,
             ended_at: None,
@@ -195,6 +219,7 @@ impl Session {
         let within =
             |at: SystemTime, hold: Duration| now.duration_since(at).is_ok_and(|d| d < hold);
         let line = match (&self.status, &self.activity) {
+            _ if self.compacting => COMPACTING.to_string(),
             (Some(status), _) if within(self.status_at, STATUS_HOLDS) => status.clone(),
             (_, Some(activity)) if self.tool_running || within(self.activity_at, TOOL_HOLDS) => {
                 activity.clone()
