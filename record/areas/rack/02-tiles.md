@@ -13,8 +13,8 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 ## Layout
 
 - Tiles never change places, so a change of state never moves a tile under your cursor, and only adding or clearing a tile moves the tiles below it.
-- A tile that arrives grows from nothing to its full 66px row, the 60px tile and the 6px below it, over 220ms, and one that goes shrinks out over 180ms, fading in or out with its height (user, 2026-11-15).
-  The tiles below slide rather than jump, and the rack's window grows and shrinks with them ([rack log](log.md#2026-11-15-the-racks-window-can-change-height-on-every-frame)).
+- A tile that arrives grows from nothing to its full 60px over 220ms, and one that goes shrinks out over 180ms, fading in or out with its height (user, 2026-11-15).
+  The 6px gap below a tile grows and shrinks with it, so the tiles below slide rather than jump, and the rack's window grows and shrinks with them ([rack log](log.md#2026-11-15-the-racks-window-can-change-height-on-every-frame)).
   The Undo button grows in and shrinks out the same way.
   A change of state, such as a new summary line or a new color, shows at once, so a fast change can still be read (user, 2026-11-15).
 - Session tiles come first, then your own tiles, with no divider or gap between the groups (user, 2026-11-15).

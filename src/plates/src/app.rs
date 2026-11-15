@@ -30,7 +30,7 @@ const POLL: Duration = Duration::from_secs(1);
 
 /// Plates' data folder, `%APPDATA%\Plates\` on Windows and
 /// `~/Library/Application Support/Plates/` on macOS, as record/areas/rack/02-tiles.md gives it.
-fn data_dir() -> PathBuf {
+pub fn data_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("Plates")
