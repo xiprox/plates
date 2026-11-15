@@ -2,6 +2,31 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: UI Automation can press a session's wrap-up button and send a message from its message box
+
+**Asked:** with no supported channel into a desktop session, can another program answer one through Windows UI Automation, by pressing the app's own wrap-up button or typing into its message box?
+
+**Expected:** the buttons exposed, but a value set from outside left unsent, since the message box is a ProseMirror editor that listens for input events.
+
+**Found:** a probe in `experiments/areas/hooks/uia-answer/` read the app's UI Automation tree, then pressed a button and sent a message in a throwaway session the user named (measured on Windows 11 25H2, 2026-11-15, Claude desktop app 5.11492.5.0; [the probe's results](../../../experiments/areas/hooks/uia-answer/results/)).
+
+- The app's provider is Chromium's own UI Automation provider, and its tree holds only the session the app shows.
+  The session's web document is named "<session title> - Claude Code".
+- The session's wrap-up showed in the tree 765ms to 843ms after `claude://code/continue?session=local_<id>`, across three runs.
+- The probe's first walk found 24 elements, with the session's web document empty, and a walk 300ms later found 1,068; every later run found the tree built on its first walk.
+  `UiaClientsAreListening` was already true before that first walk, so whether the app builds the tree only once a client walks it is unverified.
+- The wrap-up's buttons are `Button` elements named with their labels, such as "Yes" and "No", with InvokePattern, in a group named "Suggested next actions", beside a `Dismiss` button.
+  Their AutomationIds, such as `_r_6b16_`, look generated, so the probe found them by name.
+- `Invoke` on "No" sent "No": 4s later the transcript held a `user` record with `origin.kind` `human` and the text "No", and Claude's reply.
+  The buttons then left the tree, and the answered question stayed as text.
+- The message box is an `Edit` named "Prompt", with ValuePattern and TextPattern, and it takes keyboard focus when the app switches sessions.
+  `SetValue` filled it, and a `Send` button appeared that isn't in the tree while the box is empty; `Invoke` on it sent the text as a `user` record with `origin.kind` `human`.
+- The app calls `focus()` on its main window when a link reaches it (read in the Claude desktop app 5.11492.5.0, `app.asar`, its `second-instance` handler), and the app was already in front in every run, so whether it comes in front of another app is unmeasured.
+
+**Changed:** clicking one of the wrap-up's choices on a hover card opens the session and presses the app's button for that choice.
+
+**Affects:** [02-tiles](../rack/02-tiles.md#the-hover-card) and [01-claude-code-hooks](01-claude-code-hooks.md#answering-a-wrap-up).
+
 ## 2026-11-15: The app's file for a sub-session names the session that started it
 
 **Asked:** can Plates draw a sub-session, a session that another session started, under the starting session's tile?

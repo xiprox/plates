@@ -187,7 +187,12 @@ impl CardView {
             );
         // The middle scrolls once it reaches BODY_MAX_H, so a long message can be read whole
         // while the title, the wrap-up, and the controls stay in place (user, 2026-11-15).
-        let (blocks, pinned) = body(s);
+        let (blocks, boxed) = body(s);
+        let pinned = s
+            .wrap_up
+            .as_ref()
+            .filter(|_| boxed)
+            .map(|w| self.wrap_up_box(w, link, cx));
         let middle = (!blocks.is_empty()).then(|| {
             div()
                 .id("card-body")
@@ -222,6 +227,74 @@ impl CardView {
             .pb(px(10.))
             .child(top)
             .child(self.footer(t, s, parent, link, cx))
+    }
+
+    // The wrap-up as the Claude desktop app draws it under Claude's message: the recap, then the
+    // question and its choices. It stays in view below the message, however far the message
+    // scrolls, so the question is never out of sight (user, 2026-11-15).
+    fn wrap_up_box(&self, w: &WrapUp, link: bool, cx: &mut Context<Self>) -> AnyElement {
+        let recap = w.recap.as_deref().map(|r| paragraph(r, TEXT2));
+        let ask = w
+            .ask
+            .as_deref()
+            .map(|a| paragraph(a, YOUR_TURN_TEXT).font_weight(FontWeight::SEMIBOLD));
+        // A choice answers the session as its button in the app does, by opening the session and
+        // pressing that button (user, 2026-11-15). A session the app doesn't keep has no button
+        // to press, so there the choices only say what they are.
+        let tile = self.tile;
+        let choices = (!w.choices.is_empty()).then(|| {
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(6.))
+                .children(w.choices.iter().enumerate().map(|(i, c)| {
+                    let label = div()
+                        .id(("choice", i))
+                        .h(px(24.))
+                        .px(px(9.))
+                        .flex()
+                        .items_center()
+                        .rounded(px(6.))
+                        .text_size(px(11.5))
+                        .child(c.clone());
+                    if !link {
+                        return label
+                            .border_1()
+                            .border_color(white(0.14))
+                            .text_color(rgb(TEXT2))
+                            .into_any_element();
+                    }
+                    let choice = c.clone();
+                    label
+                        .bg(white(0.08))
+                        .hover(|s| s.bg(white(0.14)))
+                        .text_color(rgb(TEXT))
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            // The box sits in the part of the card whose click opens the session,
+                            // which this click does already.
+                            cx.stop_propagation();
+                            this.rack
+                                .update(cx, |rack, cx| rack.answer(tile, &choice, cx))
+                                .ok();
+                            this.close(window, cx);
+                        }))
+                        .into_any_element()
+                }))
+        });
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .p(px(10.))
+            .rounded(px(8.))
+            .bg(white(0.04))
+            .border_1()
+            .border_color(white(0.06))
+            .children(recap)
+            .children(ask)
+            .children(choices)
+            .into_any_element()
     }
 
     fn footer(
@@ -457,10 +530,10 @@ fn paragraph(line: &str, color: u32) -> Div {
 
 // What the card shows below its title, by the session's state, in the order the session's
 // transcript runs in the Claude desktop app: what came first at the top (user, 2026-11-15).
-// The first part scrolls, and the second, the wrap-up's box, stays below it.
-fn body(s: &Session) -> (Vec<AnyElement>, Option<AnyElement>) {
+// The part it returns scrolls, and the wrap-up's box, when it says to show one, stays below it.
+fn body(s: &Session) -> (Vec<AnyElement>, bool) {
     let mut out: Vec<AnyElement> = Vec::new();
-    let mut pinned = None;
+    let mut boxed = false;
     match s.state {
         SessionState::New => {}
         // A turn that ended with background agents still running stays working, and its card
@@ -535,56 +608,10 @@ fn body(s: &Session) -> (Vec<AnyElement>, Option<AnyElement>) {
                 }
                 None => {}
             }
-            pinned = s.wrap_up.as_ref().map(wrap_up_box);
+            boxed = s.wrap_up.is_some();
         }
     }
-    (out, pinned)
-}
-
-// The wrap-up as the Claude desktop app draws it under Claude's message: the recap, then the
-// question and its choices. It stays in view below the message, however far the message
-// scrolls, so the question is never out of sight (user, 2026-11-15).
-fn wrap_up_box(w: &WrapUp) -> AnyElement {
-    let recap = w.recap.as_deref().map(|r| paragraph(r, TEXT2));
-    let ask = w
-        .ask
-        .as_deref()
-        .map(|a| paragraph(a, YOUR_TURN_TEXT).font_weight(FontWeight::SEMIBOLD));
-    // The choices are the Claude desktop app's buttons, so here they only say what the choices
-    // are, and a click on one opens the session, as a click anywhere above the card's controls
-    // does.
-    let choices = (!w.choices.is_empty()).then(|| {
-        div()
-            .flex()
-            .flex_wrap()
-            .gap(px(6.))
-            .children(w.choices.iter().map(|c| {
-                div()
-                    .h(px(22.))
-                    .px(px(8.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(6.))
-                    .border_1()
-                    .border_color(white(0.14))
-                    .text_size(px(11.5))
-                    .text_color(rgb(TEXT2))
-                    .child(c.clone())
-            }))
-    });
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .p(px(10.))
-        .rounded(px(8.))
-        .bg(white(0.04))
-        .border_1()
-        .border_color(white(0.06))
-        .children(recap)
-        .children(ask)
-        .children(choices)
-        .into_any_element()
+    (out, boxed)
 }
 
 // A background task's `type` in words, such as "Subagent" for `subagent`.

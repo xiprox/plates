@@ -13,6 +13,7 @@ mod menu;
 mod motion;
 mod native;
 mod place;
+mod press;
 mod rack_view;
 mod rows;
 mod view;

@@ -762,6 +762,21 @@ impl RackView {
         self.after_change(cx);
     }
 
+    /// Answers a session's wrap-up with one of its choices from the hover card: it opens the
+    /// session, as a click on the tile does, and presses the app's own button for the choice once
+    /// the app shows the session (user, 2026-11-15).
+    pub(crate) fn answer(&mut self, id: TileId, choice: &str, cx: &mut Context<Self>) {
+        let title = self
+            .rack
+            .tile(id)
+            .and_then(|t| t.session())
+            .and_then(|s| s.app_title.clone());
+        self.open_tile(id, cx);
+        if let Some(title) = title {
+            crate::press::press_choice(title, choice.to_string());
+        }
+    }
+
     pub(crate) fn cancel_timer(&mut self, id: TileId, cx: &mut Context<Self>) {
         self.rack.cancel_timer(id, SystemTime::now());
         self.save();

@@ -64,7 +64,7 @@ Resting the pointer on a session tile's text for 400ms opens its hover card: a p
 - The card grows from the tile's own rectangle to its full size over 180ms, easing out, and its text shows once it's full size, without a fade (user, 2026-11-15).
   It grows right and down from the tile's top-left corner, left from the tile's right edge where the monitor's work area leaves no room on the right, and up from the tile's bottom edge where it leaves no room below.
 - It can reach past the rack's edges, and it closes as soon as the pointer is off both the card and the tile.
-- Clicking the card's title, state, scrolling part, or wrap-up's box, or its Open button, does what clicking the tile does.
+- Clicking the card's title, state, scrolling part, or wrap-up's box outside its choices, or its Open button, does what clicking the tile does.
 
 From the top, the card shows:
 
@@ -87,8 +87,10 @@ From the top, the card shows:
 - The card runs in the order the Claude desktop app draws a session, with what came first at the top, so it reads like the session it opens (user, 2026-11-15).
 - The wrap-up's box holds what the app draws under Claude's last message, in its order: the recap in the secondary text color, then the question in the your-turn text color, then its choices, one for each of the wrap-up's `actions` (user, 2026-11-15; read in the wrap-up tool's own description, Claude desktop app 5.11492.5.0, which says the app draws its box under the message Claude writes after the call).
   It sits below the scrolling part, so the question stays in view however far the message scrolls (user, 2026-11-15).
-- The choices are the app's own buttons, so the card only names them, and clicking one opens the session.
-  The card can't answer for you, because no supported channel lets a program outside the app send a message into one of its sessions as you ([hooks log](../hooks/log.md#2026-11-15-no-supported-channel-puts-a-message-into-a-claude-desktop-app-session)).
+- On Windows, clicking one of the choices answers the session with it: Plates opens the session, as clicking the tile does, and presses the app's own button for that choice once the app shows it, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#answering-a-wrap-up) describes (user, 2026-11-15).
+  The app shows the session, and its message box takes keyboard focus ([hooks log](../hooks/log.md#2026-11-15-ui-automation-can-press-a-sessions-wrap-up-button-and-send-a-message-from-its-message-box)); whether the app comes in front of another app's window is unverified, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session) says.
+  If the button doesn't show, the session stays open for you to answer there.
+- On macOS, where Plates reads none of the app's files, and for a session the app doesn't keep, such as one in a terminal, there's no button to press, so the card only names the choices.
 
 ## Your own tiles
 

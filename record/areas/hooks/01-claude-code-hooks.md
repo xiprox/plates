@@ -1,9 +1,9 @@
 # Hooks: Claude Code's hooks
 
 ```text
-Purpose:     How Plates learns what each Claude Code session is doing.
+Purpose:     How Plates learns what each Claude Code session is doing, and how it opens and answers one.
 Depends on:  02-tiles (../rack/02-tiles.md), for the states a session tile shows.
-Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, where a tile's title and summary come from, which session started a session, how the hooks get installed and reach Plates, and what clicking a session tile opens.
+Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, where a tile's title and summary come from, which session started a session, how Plates answers a wrap-up's choice, how the hooks get installed and reach Plates, and what clicking a session tile opens.
 ```
 
 Claude Code runs a small program, `plates-hook`, for each session's hook events, and `plates-hook` forwards each event to a receiver Plates runs on `127.0.0.1`, which turns it into a change to a session tile.
@@ -150,6 +150,22 @@ The rack never takes the foreground, but its process got the last input, the cli
 Whether the app then comes to the front over another window is unverified, and clicking a tile while another window covers the app would settle it.
 A session the app doesn't keep, such as one in a terminal, has no such ID, and clicking its tile does nothing.
 On macOS, Plates doesn't know where the app keeps its session files, so it reads none, and clicking a session tile does nothing; we haven't looked at how the app opens one session there.
+
+## Answering a wrap-up
+
+No supported channel lets a program outside the Claude desktop app send a message into one of its sessions ([hooks log](log.md#2026-11-15-no-supported-channel-puts-a-message-into-a-claude-desktop-app-session)), so on Windows, Plates answers a wrap-up's choice by pressing the app's own button for it through UI Automation ([hooks log](log.md#2026-11-15-ui-automation-can-press-a-sessions-wrap-up-button-and-send-a-message-from-its-message-box)).
+
+1. Plates opens the session's link, as [Opening a session](#opening-a-session) says, and the app shows the session.
+2. On a thread of its own, in COM's multithreaded apartment, Plates looks through the visible `Chrome_WidgetWin_1` windows of `claude.exe` for a web document named "<session title> - Claude Code", with the title from the app's file for the session, so a button with the same label in another session is pressed only if that session has the same title.
+3. In that document, it looks for the group named "Suggested next actions", and in it, an enabled `Button` named with the choice's label.
+4. It presses the button through InvokePattern, which sends the label as your message, as a click on it would.
+
+Pressing a choice from a hover card this way answered a throwaway session (measured on Windows 11 25H2, 2026-11-16).
+Plates looks again every 100ms, and if the button doesn't show within 3s, it presses nothing and leaves the session open in the app.
+A choice from an `action` the app draws its own button for, such as `commit`, carries Plates' own words for the action, which may not match the button's name, and then nothing is pressed (unverified; a wrap-up offering `commit` would settle it).
+The element names are undocumented, so an update to the app can rename them, and then nothing is pressed either.
+The probe found the session's web document empty on its first walk, built 300ms later, and built in every run after ([hooks log](log.md#2026-11-15-ui-automation-can-press-a-sessions-wrap-up-button-and-send-a-message-from-its-message-box)).
+If a client's walk is what makes the app build the tree, the app keeps it built after Plates' first press for as long as it runs, at a cost we haven't measured (unverified; timing the app's CPU with and without a UI Automation client would settle it).
 
 ## Left open
 
