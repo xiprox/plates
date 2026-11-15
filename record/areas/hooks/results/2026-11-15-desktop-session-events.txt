@@ -1,0 +1,29 @@
+﻿Hook events from Claude desktop app sessions (Claude Code 2.1.325), Windows 11 25H2, 2026-11-15,
+in the order `plates listen` received them, as forwarded by plates-hook. Prompt text, messages, and paths left out.
+
+What the user did in session 3671599b: sent a prompt, allowed a command after about 10s, let the turn finish, renamed the session,
+sent a prompt, denied a command, sent a prompt, sent a prompt and interrupted it with Esc, ran /clear (the session continued as
+67b3b9d8), sent a prompt, and closed the session. 3049d6b3 and fde025de are older sessions opened meanwhile.
+
+3671599b SessionStart | source=startup | keys: cwd,hook_event_name,scratchpad_dir,session_id,source,transcript_path
+3671599b UserPromptSubmit |  | keys: cwd,hook_event_name,permission_mode,prompt,prompt_id,scratchpad_dir,session_id,transcript_path
+3671599b PreToolUse | tool_name=PowerShell | keys: cwd,effort,hook_event_name,permission_mode,prompt_id,scratchpad_dir,session_id,tool_input,tool_name,tool_use_id,transcript_path
+3671599b PermissionRequest | tool_name=PowerShell | keys: cwd,effort,hook_event_name,permission_mode,permission_suggestions,prompt_id,scratchpad_dir,session_id,tool_input,tool_name,transcript_path
+3671599b Notification | notification_type=permission_prompt | keys: cwd,hook_event_name,message,notification_type,prompt_id,scratchpad_dir,session_id,transcript_path
+3671599b PostToolUse | tool_name=PowerShell | keys: cwd,duration_ms,effort,hook_event_name,permission_mode,prompt_id,scratchpad_dir,session_id,tool_input,tool_name,tool_response,tool_use_id,transcript_path
+3049d6b3 SessionStart | source=resume session_title=(set) | keys: context_tokens,cwd,estimated_cache_write_usd,hook_event_name,prompt_cache_likely_expired,scratchpad_dir,seconds_since_last_response,session_id,session_title,source,transcript_path
+3671599b PreToolUse | tool_name=mcp__ccd_turn__wrap_up | keys: cwd,effort,hook_event_name,mcp_server,permission_mode,prompt_id,scratchpad_dir,session_id,tool_input,tool_name,tool_use_id,transcript_path
+3671599b PostToolUse | tool_name=mcp__ccd_turn__wrap_up | keys: cwd,duration_ms,effort,hook_event_name,mcp_server,permission_mode,prompt_id,scratchpad_dir,session_id,tool_input,tool_name,tool_response,tool_use_id,transcript_path
+fde025de SessionStart | source=resume session_title=(set) | keys: context_tokens,cwd,estimated_cache_write_usd,hook_event_name,prompt_cache_likely_expired,scratchpad_dir,seconds_since_last_response,session_id,session_title,source,transcript_path
+3671599b Stop | stop_hook_active=False | keys: background_tasks,cwd,effort,hook_event_name,last_assistant_message,permission_mode,prompt_id,scratchpad_dir,session_crons,session_id,stop_hook_active,transcript_path
+3671599b UserPromptSubmit | session_title=(set) | keys: cwd,hook_event_name,permission_mode,prompt,prompt_id,scratchpad_dir,session_id,session_title,transcript_path
+3671599b PreToolUse | tool_name=PowerShell | keys: cwd,effort,hook_event_name,permission_mode,prompt_id,scratchpad_dir,session_id,tool_input,tool_name,tool_use_id,transcript_path
+3671599b PermissionRequest | tool_name=PowerShell | keys: cwd,effort,hook_event_name,permission_mode,permission_suggestions,prompt_id,scratchpad_dir,session_id,tool_input,tool_name,transcript_path
+3671599b UserPromptSubmit | session_title=(set) | keys: cwd,hook_event_name,permission_mode,prompt,prompt_id,scratchpad_dir,session_id,session_title,transcript_path
+3671599b Stop | stop_hook_active=False | keys: background_tasks,cwd,effort,hook_event_name,last_assistant_message,permission_mode,prompt_id,scratchpad_dir,session_crons,session_id,stop_hook_active,transcript_path
+3671599b UserPromptSubmit | session_title=(set) | keys: cwd,hook_event_name,permission_mode,prompt,prompt_id,scratchpad_dir,session_id,session_title,transcript_path
+3671599b SessionEnd | reason=other | keys: cwd,hook_event_name,prompt_id,reason,scratchpad_dir,session_id,transcript_path
+67b3b9d8 SessionStart | source=startup | keys: cwd,hook_event_name,scratchpad_dir,session_id,source,transcript_path
+67b3b9d8 UserPromptSubmit |  | keys: cwd,hook_event_name,permission_mode,prompt,prompt_id,scratchpad_dir,session_id,transcript_path
+67b3b9d8 Stop | stop_hook_active=False | keys: background_tasks,cwd,effort,hook_event_name,last_assistant_message,permission_mode,prompt_id,scratchpad_dir,session_crons,session_id,stop_hook_active,transcript_path
+67b3b9d8 SessionEnd | reason=other | keys: cwd,hook_event_name,prompt_id,reason,scratchpad_dir,session_id,transcript_path

@@ -2,6 +2,34 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: In a desktop session, a denial and an interrupt fire nothing until the next prompt, and /clear starts a new session
+
+**Asked:** the questions the hooks design left to the plan's step 3: whether `PermissionRequest` fires in a desktop session, what arrives after you allow or deny a tool, what an interrupt fires, whether a session keeps its `session_id` across a resume and a `/clear`, and whether `UserPromptSubmit`'s `prompt` holds only what you typed.
+
+**Expected:** `PermissionRequest` and the `permission_prompt` notification, a `PostToolUse` after an allowed tool, some event after a denial, nothing for an interrupt, the same `session_id` after a `/clear`, with `SessionEnd`'s `reason` `clear`, and prompts from typing only.
+
+**Found:** the user took a session through allowing and denying a command, an interrupt, `/clear`, and closing it, while `plates listen` received its events (measured on Windows 11 25H2, Claude Code 2.1.325 in the Claude desktop app, 2026-11-15, [results/2026-11-15-desktop-session-events.txt](results/2026-11-15-desktop-session-events.txt)).
+
+- `PermissionRequest` fired as Claude asked, with `tool_name`, `tool_input`, and `permission_suggestions`, and the `permission_prompt` notification followed while the approval waited.
+- After the command the user allowed, the next event was its `PostToolUse`, once the 10s command had finished.
+- After the command the user denied, no event arrived until the user's next prompt, so the tile showed needs approval until then.
+- After the prompt the user interrupted, no event arrived until the session's next one, and no `PostToolUseFailure` with `is_interrupt` came.
+- `/clear` sent `SessionEnd` with a `reason` of `other`, not `clear`, and the session went on under a new `session_id`, whose `SessionStart` had a `source` of `startup`.
+  Closing the session sent `SessionEnd` with a `reason` of `other` too.
+- Opening two older sessions sent `SessionStart` with a `source` of `resume`, and each kept its `session_id`, since its transcript, named for that ID, was first written days earlier.
+- After the user renamed the session, its next `UserPromptSubmit` carried the name in `session_title`.
+- In this repository's own session, `UserPromptSubmit` also fired for a subagent's report and for a task notification, whose `prompt` started with a tag block, `<agent-message` and `<task-notification`.
+- Every event also carried `scratchpad_dir` and `prompt_id`, and tool events carried `effort`, which the design doesn't use.
+- With nothing listening on port 47231, this session's tool calls brought no hook error into its conversation.
+  Whether the app shows you anything is unverified until the user looks at a session with Plates closed.
+
+**Changed:**
+
+- A `/clear` ends the session's tile and starts a new one, since the `session_id` changes.
+- After you deny a tool or interrupt Claude, the tile keeps its state until the session's next event, and how to tell sooner is left open.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#events).
+
 ## 2026-11-15: Desktop sessions fire the hooks, and an http hook would stall 2s per event while Plates is closed
 
 **Asked:** do the hooks `plates hooks install` writes reach the receiver from sessions in the Claude desktop app, and what do they cost a session while Plates is closed?
