@@ -5,23 +5,26 @@ It's the one place Plates' status lives.
 
 ## 1. Window test
 
-An experiment in `experiments/areas/rack/`: a throwaway GPUI app, first on Windows, then on macOS, that tries the window [01-window](../rack/01-window.md) designs.
-Done when, on both OSes, you see:
+An experiment in `experiments/areas/rack/`: a throwaway GPUI app that tries the window [01-window](../rack/01-window.md) designs, on Windows.
+Its macOS half runs in step 7, with the rest of the app ([decision 002](../../decisions/002-build-on-windows-first.md)).
+Done when, on Windows, you see:
 
-- a rounded, borderless window that stays on top of every other window and has no taskbar or Dock entry
+- a rounded, borderless window that stays on top of every other window and has no taskbar entry
 - the window dragged from anywhere and thrown, with its position set on every frame, and no visible stutter
 - the window docking to a strip when held against a side edge, and coming back out when the strip is clicked
 - clicks on the window leaving keyboard focus in the app you were in, and a text field in it taking focus and handing it back
-- Windows Snap and macOS window tiling leaving the window alone
-- on macOS, the window on every Space and over a full-screen app
+- Windows Snap leaving the window alone
 
-The findings go in `record/areas/rack/log.md`.
-If GPUI can't give the rack this window, a decision for Slint reverses [decision 001](../../decisions/001-rust-and-gpui.md).
+The findings are in [the rack log](../rack/log.md).
+
+Done on 2026-11-15.
 
 ## 2. Core
 
 The `plates-core` crate: the tile model, the session states, the timer rules, and saving, from [02-tiles](../rack/02-tiles.md).
 Done when `cargo test` covers each session state change and each timer rule, and a saved rack loads back the same.
+
+Done on 2026-11-15.
 
 ## 3. Claude Code hookup
 
@@ -46,9 +49,9 @@ Done when clicking a session tile opens that session, or else brings the Claude 
 
 ## 7. macOS
 
-Each later step's behavior on the Mac, run in one session there, as [CLAUDE.md](../../../CLAUDE.md) asks.
-Step 1 runs on the Mac in a session of its own, because decision 001 turns on its result.
-Done when every later step's "done when" holds on macOS too.
+Every step's behavior on the Mac, the window test's macOS half included, run in one session there, as [CLAUDE.md](../../../CLAUDE.md) and [decision 002](../../decisions/002-build-on-windows-first.md) ask.
+Done when every step's "done when" holds on macOS too, with the rack on every Space and over a full-screen app, and macOS window tiling leaving it alone.
+If GPUI can't give the rack its window on macOS, we weigh the options then.
 
 ## Later
 

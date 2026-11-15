@@ -1,5 +1,8 @@
 # 001: Plates is written in Rust, with GPUI for its interface
 
+> **Note**
+> [Decision 002](002-build-on-windows-first.md) moves this decision's macOS window test to after the app is built, so its first commitment below no longer holds.
+
 Plates is written in Rust, and its interface is drawn with GPUI, the GPU-rendered UI framework Zed is built on.
 Decided by the user on 2026-11-15, after the mockup review.
 
