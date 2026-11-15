@@ -151,7 +151,7 @@ impl CardView {
         grown
     }
 
-    fn content(&self, t: &Tile, s: &Session, cx: &mut Context<Self>) -> Div {
+    fn content(&self, t: &Tile, s: &Session, parent: Option<&str>, cx: &mut Context<Self>) -> Div {
         let now = SystemTime::now();
         let link = s
             .app_id
@@ -221,15 +221,26 @@ impl CardView {
             .pt(px(12.))
             .pb(px(10.))
             .child(top)
-            .child(self.footer(t, s, link, cx))
+            .child(self.footer(t, s, parent, link, cx))
     }
 
-    fn footer(&self, t: &Tile, s: &Session, link: bool, cx: &mut Context<Self>) -> Div {
-        let place = div()
-            .text_size(px(11.))
-            .text_color(rgb(MUTED))
-            .truncate()
-            .child(self.place.clone());
+    fn footer(
+        &self,
+        t: &Tile,
+        s: &Session,
+        parent: Option<&str>,
+        link: bool,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let meta = |text: String| {
+            div()
+                .text_size(px(11.))
+                .text_color(rgb(MUTED))
+                .truncate()
+                .child(text)
+        };
+        let started = parent.map(|p| meta(format!("Started from \u{201c}{p}\u{201d}")));
+        let place = meta(self.place.clone());
         let timer = (s.state != SessionState::Ended).then(|| self.timer_row(t, cx));
         let open = link.then(|| {
             div()
@@ -256,6 +267,7 @@ impl CardView {
             .pt(px(10.))
             .border_t_1()
             .border_color(white(0.06))
+            .children(started)
             .child(place)
             .child(
                 div()
@@ -331,10 +343,26 @@ impl Render for CardView {
         window.request_animation_frame();
         let cursor = native::cursor_pos();
         let over = native::window_rect(self.hwnd).contains(cursor) || self.from.contains(cursor);
-        let tile = self
-            .rack
-            .upgrade()
-            .and_then(|rack| rack.read(cx).rack.tile(self.tile).cloned());
+        // A sub-session's card names the session it was started from, while that one's tile is
+        // on the rack.
+        let (tile, parent) = match self.rack.upgrade() {
+            Some(rack) => {
+                let rack = &rack.read(cx).rack;
+                let tile = rack.tile(self.tile).cloned();
+                let parent = tile
+                    .as_ref()
+                    .and_then(|t| t.session())
+                    .and_then(|s| s.app_parent.as_deref())
+                    .and_then(|p| {
+                        rack.tiles()
+                            .iter()
+                            .find(|o| o.session().and_then(|s| s.app_id.as_deref()) == Some(p))
+                    })
+                    .map(|o| o.title());
+                (tile, parent)
+            }
+            None => (None, None),
+        };
         let Some(tile) = tile.filter(|t| over && t.session().is_some()) else {
             self.close(window, cx);
             return div().into_any_element();
@@ -347,7 +375,7 @@ impl Render for CardView {
         // The text shows once the card is full size, rather than fading in as it grows, since
         // fades on hover read as slow (user, 2026-11-15).
         let content = self
-            .content(&tile, session, cx)
+            .content(&tile, session, parent.as_deref(), cx)
             .opacity(if grown { 1. } else { 0. });
         div()
             .size_full()

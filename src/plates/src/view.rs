@@ -61,6 +61,62 @@ fn grown(row: AnyElement, full: f32, factor: f32) -> AnyElement {
         .into_any_element()
 }
 
+/// How far a sub-session's tile sits in from its parent's, while its right edge stays flush with
+/// the other tiles' (user, 2026-11-15).
+const NEST: f32 = 26.;
+
+// Which of the rack's tiles to draw as sub-sessions under their parent: a session tile whose
+// parent is the tile above it, or is a sub-session drawn under that tile, so a family reads as one
+// group, one level deep. A sub-session whose parent's tile is gone, or sits elsewhere, keeps its
+// place without an indent.
+fn nesting(tiles: &[Tile]) -> Vec<bool> {
+    let mut family: Vec<&str> = Vec::new();
+    tiles
+        .iter()
+        .map(|t| {
+            let Some(s) = t.session() else {
+                family.clear();
+                return false;
+            };
+            let nested = s.app_parent.as_deref().is_some_and(|p| family.contains(&p));
+            if !nested {
+                family.clear();
+            }
+            family.extend(s.app_id.as_deref());
+            nested
+        })
+        .collect()
+}
+
+// A sub-session's tile, indented, with a line that comes down from under its parent's marker and
+// turns into the tile, as the Claude desktop app's sidebar draws a session's side sessions.
+fn nested_row(tile: AnyElement) -> AnyElement {
+    // The parent's marker is centered 16.5px in from its tile's left edge: 12px of padding and
+    // half of the 9px marker.
+    let branch = div()
+        .absolute()
+        .left(px(16.))
+        .top_0()
+        .w(px(NEST - 19.))
+        .h(px(30.))
+        .border_l_1()
+        .border_b_1()
+        .rounded_bl(px(5.))
+        .border_color(white(0.16));
+    div()
+        .flex()
+        .child(
+            div()
+                .flex_none()
+                .relative()
+                .w(px(NEST))
+                .h(px(60.))
+                .child(branch),
+        )
+        .child(div().flex_1().min_w_0().child(tile))
+        .into_any_element()
+}
+
 // A line Claude wrote, with its `code` in the monospace font on a faint background and its
 // **bold** in bold, and the marks around each left out.
 pub(crate) fn styled_line(line: &str, color: impl Into<Hsla>) -> StyledText {
@@ -661,21 +717,33 @@ impl RackView {
         self.spots.borrow_mut().clear();
         let present = self.rack.tiles();
         let leaving = self.rows.leaving();
+        let nested = nesting(present);
+        // A sub-session shrinking out keeps its indent while its parent is still on the rack.
+        let parent_shown = |t: &Tile| {
+            t.session()
+                .and_then(|s| s.app_parent.as_deref())
+                .is_some_and(|p| {
+                    present
+                        .iter()
+                        .any(|o| o.session().and_then(|s| s.app_id.as_deref()) == Some(p))
+                })
+        };
+        let row = |el: AnyElement, nest: bool| if nest { nested_row(el) } else { el };
         let mut tiles: Vec<AnyElement> = Vec::new();
         for (i, t) in present.iter().enumerate() {
             for (k, l) in leaving.iter().enumerate() {
                 if l.before == Some(t.id) {
                     let el = self.tile(LEAVING + k, &l.tile, now, cx);
-                    tiles.push(grown(el, 66., l.factor(at)));
+                    tiles.push(grown(row(el, parent_shown(&l.tile)), 66., l.factor(at)));
                 }
             }
             let el = self.tile(i, t, now, cx);
-            tiles.push(grown(el, 66., self.rows.factor(t.id, at)));
+            tiles.push(grown(row(el, nested[i]), 66., self.rows.factor(t.id, at)));
         }
         for (k, l) in leaving.iter().enumerate() {
             if l.before.is_none_or(|b| present.iter().all(|t| t.id != b)) {
                 let el = self.tile(LEAVING + k, &l.tile, now, cx);
-                tiles.push(grown(el, 66., l.factor(at)));
+                tiles.push(grown(row(el, parent_shown(&l.tile)), 66., l.factor(at)));
             }
         }
         let undo = self.undo_row(at, cx);

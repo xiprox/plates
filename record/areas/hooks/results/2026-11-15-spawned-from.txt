@@ -1,0 +1,30 @@
+The spawnedFrom record in the Claude desktop app's session files, 2026-11-15.
+Claude desktop app 5.11492.5.0, Windows 11 25H2. Read from
+%LOCALAPPDATA%\Claude-Data\claude_<package id>\claude-code-sessions\**\local_*.json.
+
+session files: 354
+with spawnedFrom: 42
+with spawnedFrom.sideSession true: 36
+
+The keys of each spawnedFrom, and how many files have each set:
+22 x {sessionId,taskId,title,sideSession,name}
+ 5 x {sessionId,taskId,title}
+ 4 x {sessionId,taskId,title,sideSession,sharedFolder,name}
+ 3 x {sessionId,taskId,title,sideSession,userFork,btw,name}
+ 3 x {sessionId,taskId,sideSession,userFork,btw,sharedFolder,name}
+ 2 x {sessionId,taskId,title,sideSession,userFork,name}
+ 1 x {sessionId,taskId,title,pendingPop}
+ 1 x {sessionId,taskId,title,sideSession,sharedCheckout,name}
+ 1 x {sessionId,taskId,title,sideSession,name,handOff,sharedFolder}
+
+One of them, from the file of a session this repository's own session started
+with the app's mcp__ccd_session__start_session tool:
+{
+    "sessionId":  "local_e4c2b1b0-16ce-4c53-be73-25a5e5fc8bd2",
+    "taskId":  "task_25ace5e8",
+    "title":  "Probe answering a desktop session through UI Automation",
+    "sideSession":  true,
+    "name":  "probe-answering-a-deskto"
+}
+Its sessionId is the app's own ID for the starting session, the sessionId in
+that session's own file.

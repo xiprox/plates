@@ -370,17 +370,14 @@ impl Rack {
             );
         match place {
             Place::Shown(_) => tile.refresh_need(now),
-            // A dismissed session comes back, after the last session tile, once it needs you or
-            // you send it a new prompt, and a session that ends while dismissed goes for good
-            // (user, 2026-11-15).
+            // A dismissed session comes back where a new session's tile would go, once it needs
+            // you or you send it a new prompt, and a session that ends while dismissed goes for
+            // good (user, 2026-11-15).
             Place::Hidden(i) if new_prompt || needs_you => {
                 let mut tile = self.hidden.remove(i);
                 tile.refresh_need(now);
-                let index = self
-                    .tiles
-                    .iter()
-                    .rposition(|t| t.session().is_some())
-                    .map_or(0, |i| i + 1);
+                let parent = tile.session().and_then(|s| s.app_parent.clone());
+                let index = self.session_slot(parent.as_deref());
                 self.tiles.insert(index, tile);
             }
             Place::Hidden(i) if state == SessionState::Ended => {
@@ -558,7 +555,78 @@ impl Rack {
         id
     }
 
-    /// Sets the title and ID the Claude desktop app keeps for a session, from its file for it.
+    // Where a session tile goes: after its parent's family, the parent's tile and the
+    // sub-sessions under it, when the parent's tile is shown, and otherwise after the last
+    // session tile, so no session tile above it moves (user, 2026-11-15).
+    fn session_slot(&self, parent: Option<&str>) -> usize {
+        parent
+            .and_then(|p| self.after_family(p))
+            .unwrap_or_else(|| {
+                self.tiles
+                    .iter()
+                    .rposition(|t| t.session().is_some())
+                    .map_or(0, |i| i + 1)
+            })
+    }
+
+    // The index just past the family of the shown session whose app ID is `parent`: its tile,
+    // and the tiles right after it whose parent is in the family, such as a sub-session's own
+    // sub-sessions.
+    fn after_family(&self, parent: &str) -> Option<usize> {
+        let start = self
+            .tiles
+            .iter()
+            .position(|t| t.session().and_then(|s| s.app_id.as_deref()) == Some(parent))?;
+        let mut family = vec![parent];
+        let mut end = start + 1;
+        while let Some(s) = self.tiles.get(end).and_then(|t| t.session()) {
+            match s.app_parent.as_deref() {
+                Some(p) if family.contains(&p) => {
+                    family.extend(s.app_id.as_deref());
+                    end += 1;
+                }
+                _ => break,
+            }
+        }
+        Some(end)
+    }
+
+    /// Moves a shown sub-session's tile to just after its parent's family. The app calls it for
+    /// a tile the event it's handling added, which nobody has seen yet, so no tile moves under
+    /// your cursor.
+    pub fn place_under_parent(&mut self, session_id: &str) {
+        let Some(i) = self
+            .tiles
+            .iter()
+            .position(|t| t.session().is_some_and(|s| s.id == session_id))
+        else {
+            return;
+        };
+        let Some(parent) = self.tiles[i].session().and_then(|s| s.app_parent.clone()) else {
+            return;
+        };
+        let tile = self.tiles.remove(i);
+        let index = self.after_family(&parent).unwrap_or(i);
+        self.tiles.insert(index, tile);
+    }
+
+    /// Moves each restored sub-session's tile under its parent's, in the order they were saved,
+    /// before the rack first shows them.
+    pub fn gather_families(&mut self) {
+        let children: Vec<String> = self
+            .tiles
+            .iter()
+            .filter_map(|t| t.session())
+            .filter(|s| s.app_parent.is_some())
+            .map(|s| s.id.clone())
+            .collect();
+        for id in children {
+            self.place_under_parent(&id);
+        }
+    }
+
+    /// Sets the title and ID the Claude desktop app keeps for a session, from its file for it,
+    /// and the app ID of the session it was started from.
     pub fn set_app_session(&mut self, session_id: &str, app: &AppSession) {
         let session = self
             .tiles
@@ -574,6 +642,9 @@ impl Rack {
             }
             if app.id.is_some() {
                 s.app_id = app.id.clone();
+            }
+            if app.parent.is_some() {
+                s.app_parent = app.parent.clone();
             }
         }
     }
@@ -768,6 +839,37 @@ mod tests {
             last_message: Some(message.into()),
             background: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_sub_session_goes_under_its_parent_after_the_ones_already_there() {
+        let app = |id: &str, parent: Option<&str>| AppSession {
+            id: Some(id.into()),
+            parent: parent.map(Into::into),
+            ..AppSession::default()
+        };
+        let mut rack = Rack::new();
+        let add = |rack: &mut Rack, id: &str, app_id: &str, parent: Option<&str>| {
+            let tile = apply(rack, id, started(), 0);
+            rack.set_app_session(id, &app(app_id, parent));
+            rack.place_under_parent(id);
+            tile
+        };
+        let plates = add(&mut rack, "plates", "local_p", None);
+        let other = add(&mut rack, "other", "local_o", None);
+        let probe = add(&mut rack, "probe", "local_c1", Some("local_p"));
+        let deeper = add(&mut rack, "deeper", "local_c2", Some("local_c1"));
+        let second = add(&mut rack, "second", "local_c3", Some("local_p"));
+        let orphan = add(&mut rack, "orphan", "local_x", Some("local_gone"));
+        let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
+        assert_eq!(order, [plates, probe, deeper, second, other, orphan]);
+
+        // A dismissed sub-session that needs you comes back under its parent, ahead of its own
+        // sub-session, which then follows it again.
+        rack.remove(probe);
+        apply(&mut rack, "probe", stop("Found it."), 5);
+        let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
+        assert_eq!(order, [plates, probe, deeper, second, other, orphan]);
     }
 
     #[test]

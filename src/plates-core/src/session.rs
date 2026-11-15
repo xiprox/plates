@@ -277,6 +277,9 @@ pub struct Session {
     pub app_title: Option<String>,
     /// The Claude desktop app's own ID for the session, which a link opens it by.
     pub app_id: Option<String>,
+    /// The app's own ID for the session this one was started from, which makes this one a
+    /// sub-session.
+    pub app_parent: Option<String>,
     pub custom_title: Option<String>,
     pub first_prompt: Option<String>,
     pub state: SessionState,
@@ -325,6 +328,7 @@ impl Session {
             transcript: None,
             app_title: None,
             app_id: None,
+            app_parent: None,
             custom_title: None,
             first_prompt: None,
             state: SessionState::New,

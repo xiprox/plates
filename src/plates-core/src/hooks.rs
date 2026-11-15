@@ -32,6 +32,11 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
     }
     if let Some(app) = &message.app {
         rack.set_app_session(&message.session_id, app);
+        // A sub-session's tile goes under its parent's, which only the app's file says, so the
+        // tile this message just added moves there before the rack draws it.
+        if !known {
+            rack.place_under_parent(&message.session_id);
+        }
     }
     if let Some(path) = &message.transcript_path {
         rack.set_transcript(&message.session_id, path);

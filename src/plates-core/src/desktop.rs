@@ -48,6 +48,10 @@ pub struct AppSession {
     /// desktop app 5.11492.5.0, app.asar, the handler that logs
     /// `desktop_ccd_session_visibility_changed`).
     pub focused_at: Option<SystemTime>,
+    /// The app's own ID for the session this one was started from, its `spawnedFrom.sessionId`,
+    /// which the app writes for a session one of its sessions started (measured on Windows 11
+    /// 25H2, 2026-11-15, record/areas/hooks/log.md).
+    pub parent: Option<String>,
 }
 
 /// The link that opens a session in the app by its own ID:
@@ -202,6 +206,12 @@ fn read_session(file: &Path, session_id: &str) -> Option<AppSession> {
             .get("lastFocusedAt")
             .and_then(Value::as_u64)
             .map(|ms| UNIX_EPOCH + Duration::from_millis(ms)),
+        parent: v
+            .get("spawnedFrom")
+            .and_then(|s| s.get("sessionId"))
+            .and_then(Value::as_str)
+            .filter(|id| id.starts_with("local_"))
+            .map(str::to_string),
     })
 }
 
@@ -237,7 +247,7 @@ mod tests {
             json!({ "cliSessionId": "abc", "sessionId": "local_e4c2b1b0-16ce", "title": "Plates",
                     "lastFocusedAt": 1794772321608u64 }),
         );
-        let session = AppSessions::new(Some(dir)).get("abc").unwrap();
+        let session = AppSessions::new(Some(dir.clone())).get("abc").unwrap();
         assert_eq!(session.id.as_deref(), Some("local_e4c2b1b0-16ce"));
         assert_eq!(
             session.focused_at,
@@ -247,6 +257,16 @@ mod tests {
             session_link("local_e4c2b1b0-16ce").as_deref(),
             Some("claude://code/continue?session=local_e4c2b1b0-16ce")
         );
+        assert_eq!(session.parent, None);
+        write(
+            &dir,
+            "local_8.json",
+            json!({ "cliSessionId": "child", "sessionId": "local_f00d",
+                    "spawnedFrom": { "sessionId": "local_e4c2b1b0-16ce", "taskId": "task_25ace5e8",
+                                     "sideSession": true } }),
+        );
+        let child = AppSessions::new(Some(dir)).get("child").unwrap();
+        assert_eq!(child.parent.as_deref(), Some("local_e4c2b1b0-16ce"));
         assert_eq!(session_link("local_"), None);
         assert_eq!(session_link("local_a&b=c"), None);
         assert_eq!(session_link("cse_abc"), None);

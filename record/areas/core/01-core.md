@@ -27,6 +27,9 @@ None of it is GPUI code, as [decision 001](../../decisions/001-rust-and-gpui.md)
 - A tile has an id that's unique for the life of the app, a body that's either a session or your own tile, and a timer.
 - Session tiles come first, in the order their sessions first reached Plates, and your own tiles follow, in the order you added them.
   A new session's tile goes after the last session tile, so no session tile above it moves.
+  While its parent's tile is on the rack, a sub-session's tile goes instead right after its parent's family: the parent's tile, and the tiles right below it whose parent is in the family, such as a sub-session's own sub-sessions.
+  Otherwise it goes after the last session tile, as any other session's does.
+  A dismissed sub-session that comes back goes there too, and a restored sub-session's tile moves after its parent's family before the rack first shows it, so no tile moves under the cursor.
   An Undo puts a tile back in its own group, at the place it had there.
 - A dismissed session's tile leaves `Rack::tiles` for a list the model keeps apart, where its events still apply, so the tile is current when it comes back, as [02-tiles](../rack/02-tiles.md#session-tiles) says it does.
 - A session tile's title comes from the sources [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries) lists, in its order.

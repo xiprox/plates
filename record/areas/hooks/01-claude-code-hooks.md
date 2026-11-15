@@ -3,7 +3,7 @@
 ```text
 Purpose:     How Plates learns what each Claude Code session is doing.
 Depends on:  02-tiles (../rack/02-tiles.md), for the states a session tile shows.
-Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, where a tile's title and summary come from, how the hooks get installed and reach Plates, and what clicking a session tile opens.
+Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, where a tile's title and summary come from, which session started a session, how the hooks get installed and reach Plates, and what clicking a session tile opens.
 ```
 
 Claude Code runs a small program, `plates-hook`, for each session's hook events, and `plates-hook` forwards each event to a receiver Plates runs on `127.0.0.1`, which turns it into a change to a session tile.
@@ -94,6 +94,9 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
 - The title skips the blocks of context the Claude desktop app puts before a prompt's text, such as `<artifact-view-context>` ([hooks log](log.md#2026-11-15-desktop-sessions-fire-the-hooks-and-an-http-hook-would-stall-2s-per-event-while-plates-is-closed)).
   A subagent's report or a task notification is nothing but such a block, so it can't name a session.
 - The session's folder comes from `cwd`, and its name is the tile's title until another title arrives.
+- The app's file for a session that another of its sessions started holds `spawnedFrom`, whose `sessionId` is the app's own ID for the session that started it ([hooks log](log.md#2026-11-15-the-apps-file-for-a-sub-session-names-the-session-that-started-it)).
+  Plates reads it with the title, and when the event that adds a sub-session's tile finds the file, Plates moves the tile under its parent's before the rack draws it.
+  Whether the app writes the file before the new session's first hook event is unverified, and a tile whose first event finds no file stays after the last session tile; starting a sub-session while Plates runs and watching where its tile appears would settle it.
 - An approval's summary line is built from the tool the `PermissionRequest` names, or else from the `PreToolUse` before it: "Wants to run: " and the command for a shell command, "Wants to edit: " and the file for an edit, and "Wants to use: " and the tool's name for any other tool.
   Where neither names a tool, the summary is the `Notification`'s `message`.
 - Your turn's summary line is the first line of `Stop`'s `last_assistant_message`, because the transcript isn't guaranteed to hold Claude's final message when `Stop` fires (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input), as of 2026-11-15).

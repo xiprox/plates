@@ -18,6 +18,12 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   The Undo button grows in and shrinks out the same way.
   A change of state, such as a new summary line or a new color, shows at once, so a fast change can still be read (user, 2026-11-15).
 - Session tiles come first, then your own tiles, with no divider or gap between the groups (user, 2026-11-15).
+- On Windows, a sub-session, a session that another session started in the Claude desktop app, sits under its parent's tile, indented 26px, with a line that comes down from under the parent's marker and turns into the tile (user, 2026-11-15).
+  The app's sidebar draws a session's sub-sessions the same way (user's screenshot, 2026-11-15).
+  A sub-session's tile keeps its right edge flush with the other tiles', so it's 26px narrower.
+  A sub-session's own sub-sessions sit at the same indent, so the rack nests one level deep.
+  [01-core](../core/01-core.md#tiles) says where a sub-session's tile goes.
+  A sub-session's tile is indented only while its parent's tile is above it with nothing but indented tiles between them, so one that sits anywhere else, such as after you dismiss its parent, keeps its place without the indent.
 - A session tile's marker is a circle, and your own tile's is a square.
 - A title wraps to two lines when the tile has no summary line, and truncates after the second.
 - Hovering a tile lays 3.5% white over its background, so a tinted tile keeps its tint.
@@ -45,7 +51,8 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
 - An ended tile clears itself 30 minutes after the session ends, and its × clears it at once.
 - Every other session tile shows an × on hover too, which dismisses the session: its tile shrinks out, with an Undo button for 5s, and the session is read and its timer stops (user, 2026-11-15).
-  A dismissed session stays off the rack while it works, compacts, or is opened, and comes back after the last session tile once it needs you again, with an approval, a question, an unread turn, or an MCP server's request, or once you send it a new prompt (user, 2026-11-15).
+  A dismissed session stays off the rack while it works, compacts, or is opened, and comes back once it needs you again, with an approval, a question, an unread turn, or an MCP server's request, or once you send it a new prompt (user, 2026-11-15).
+  It comes back after the last session tile, or for a sub-session where [01-core](../core/01-core.md#tiles) says.
   A dismissed session that ends doesn't come back.
 
 ## The hover card
@@ -57,15 +64,16 @@ Resting the pointer on a session tile's text for 400ms opens its hover card: a p
 - The card grows from the tile's own rectangle to its full size over 180ms, easing out, and its text shows once it's full size, without a fade (user, 2026-11-15).
   It grows right and down from the tile's top-left corner, left from the tile's right edge where the monitor's work area leaves no room on the right, and up from the tile's bottom edge where it leaves no room below.
 - It can reach past the rack's edges, and it closes as soon as the pointer is off both the card and the tile.
-- Clicking the card above its folder line, or its Open button, does what clicking the tile does.
+- Clicking the card's title, state, scrolling part, or wrap-up's box, or its Open button, does what clicking the tile does.
 
 From the top, the card shows:
 
 1. The tile's marker, its title on up to two lines, and the session's state in words with how long it has been in it, such as "Your turn · waiting 12m".
 2. What the session's state calls for, as the table below gives it, in a part that scrolls once it's taller than 300px, so a long message can be read whole while the rest of the card stays in place (user, 2026-11-15).
 3. For a tile at your turn, unread, done, or ended whose turn called the wrap-up, the wrap-up's box, which the bullets below describe.
-4. The session's folder and its branch, such as "plates · main".
-5. The timer's controls, except on an ended tile: a chip for each length the timer's menu offers, or, while a timer runs, the time left and a Cancel chip.
+4. For a sub-session whose parent's tile is on the rack, "Started from" and the parent's title in quotation marks.
+5. The session's folder and its branch, such as "plates · main".
+6. The timer's controls, except on an ended tile: a chip for each length the timer's menu offers, or, while a timer runs, the time left and a Cancel chip.
    Beside them, an Open button, for a session the Claude desktop app keeps.
 
 | State | The scrolling part shows |

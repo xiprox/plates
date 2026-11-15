@@ -120,6 +120,8 @@ struct SavedSession {
     wrap_up: Option<WrapUp>,
     #[serde(default)]
     background: Vec<BackgroundTask>,
+    #[serde(default)]
+    app_parent: Option<String>,
     asks: Option<bool>,
     read: bool,
     ended_at: Option<u64>,
@@ -156,6 +158,7 @@ pub fn save_sessions(rack: &Rack, path: &Path) -> io::Result<()> {
                 message: s.message.clone(),
                 wrap_up: s.wrap_up.clone(),
                 background: s.background.clone(),
+                app_parent: s.app_parent.clone(),
                 asks: s.asks,
                 read: s.read,
                 ended_at: s.ended_at.map(ms),
@@ -205,12 +208,14 @@ pub fn load_sessions(rack: &mut Rack, path: &Path, now: SystemTime) -> io::Resul
         session.message = s.message;
         session.wrap_up = s.wrap_up;
         session.background = s.background;
+        session.app_parent = s.app_parent;
         session.asks = s.asks;
         session.read = s.read;
         session.ended_at = s.ended_at.map(time);
         session.refresh_line(now);
         rack.restore_session(session, s.timer, s.dismissed, now);
     }
+    rack.gather_families();
     Ok(None)
 }
 

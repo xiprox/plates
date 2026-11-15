@@ -2,6 +2,24 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: The app's file for a sub-session names the session that started it
+
+**Asked:** can Plates draw a sub-session, a session that another session started, under the starting session's tile?
+
+**Expected:** a field in the app's file for each session, since no hook event names another session.
+
+**Found:** we read the app's file for a session this repository's own session had started with the app's `mcp__ccd_session__start_session` tool, and counted the app's files that hold the same field (measured on Windows 11 25H2, 2026-11-15, Claude desktop app 5.11492.5.0, [results/2026-11-15-spawned-from.txt](results/2026-11-15-spawned-from.txt)).
+
+- The file holds `spawnedFrom`, an object with `sessionId`, `taskId`, `title`, `sideSession` of true, and `name`.
+  Its `sessionId` is the starting session's own app ID, such as `local_e4c2b1b0-16ce-4c53-be73-25a5e5fc8bd2`.
+- 42 of the app's 354 session files on our PC hold a `spawnedFrom`, and every one has a `sessionId` and a `taskId`, while 36 of them mark `sideSession` true.
+- The hook events we captured, none of them from a sub-session, carry no field naming another session ([results/2026-11-15-desktop-session-events.txt](results/2026-11-15-desktop-session-events.txt)); whether a sub-session's own events do is untested.
+- Whether the app writes the new session's file before its first hook event is unverified, since we read the file after the fact.
+
+**Changed:** Plates reads `spawnedFrom.sessionId` with the session's title, and draws a sub-session's tile under its parent's.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#titles-and-summaries), [02-tiles](../rack/02-tiles.md#layout), and [01-core](../core/01-core.md#tiles).
+
 ## 2026-11-15: Stop lists the tasks still running, and a background agent's report starts a new turn
 
 **Asked:** a session's tile showed your turn while the session waited on two background agents it had started; can Plates tell such a turn from one that's yours?
