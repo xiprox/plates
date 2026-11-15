@@ -6,6 +6,5 @@ One small floating rack sits on top of everything. Each Claude session gets a ti
 
 **Status:** design settled, build starting. Targets Windows and macOS. Rust + [GPUI](https://www.gpui.rs/).
 
-- Design spec: [docs/DESIGN.md](docs/DESIGN.md)
-- Build plan: [docs/PLAN.md](docs/PLAN.md)
-- Mockups: the "Rack Mockups" design canvas (private Claude artifact)
+- [record/index.md](record/index.md) maps the design docs, the plan, the logs, and the decisions.
+- [record/areas/product/plan.md](record/areas/product/plan.md) is what's being built and where it stands.
