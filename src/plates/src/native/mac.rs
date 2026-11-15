@@ -1,6 +1,6 @@
 //! The native calls on macOS, through AppKit, with the same signatures as win.rs, so the rack's
-//! code is the same on both. It builds, and nobody has run it: the plan's step 7 tries it on a
-//! Mac (record/decisions/003-releases-with-release-please-and-velopack.md).
+//! code is the same on both. CI's macOS job is the only check it gets until the plan's step 7
+//! tries it on a Mac (record/decisions/003-releases-with-release-please-and-velopack.md).
 //!
 //! The rack works in pixels from the top-left corner of the primary screen, as Windows does.
 //! AppKit works in points from the bottom-left corner of the primary screen, so every position
@@ -119,13 +119,13 @@ pub fn cursor_pos() -> (f64, f64) {
 }
 
 pub fn left_button_down() -> bool {
-    unsafe { NSEvent::pressedMouseButtons() }
-    &1 != 0
+    let buttons = unsafe { NSEvent::pressedMouseButtons() };
+    buttons & 1 != 0
 }
 
 pub fn right_button_down() -> bool {
-    unsafe { NSEvent::pressedMouseButtons() }
-    &2 != 0
+    let buttons = unsafe { NSEvent::pressedMouseButtons() };
+    buttons & 2 != 0
 }
 
 /// The visible area of the screen at `p`, without the menu bar and the Dock, and which of its
@@ -218,7 +218,7 @@ pub fn idle_for() -> Duration {
 
 // Start at login is a launch agent in the user's LaunchAgents folder, which macOS loads when you
 // sign in. (documented, https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)
-const AGENT: &str = "io.github.xiprox.plates";
+const AGENT: &str = "plates.start-at-login";
 
 fn agent_file() -> Option<PathBuf> {
     Some(
