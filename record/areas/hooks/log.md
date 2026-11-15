@@ -2,6 +2,24 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-15: A desktop session's transcript marks a typed prompt with origin.kind human, after a system reminder
+
+**Asked:** how does the transcript of a session in the Claude desktop app hold the prompts you type, so the transcript reader can name a session Plates first saw after its first prompt?
+
+**Expected:** JSON Lines, with each typed prompt as a record whose `message.content` is the prompt's text.
+
+**Found:** we read the structure of one of this repository's session transcripts, the record types and keys only, on the Claude desktop app's Claude Code (measured on Windows 11 25H2, 2026-11-15).
+
+- The transcript is JSON Lines, with records of `type` `queue-operation`, `user`, `attachment`, `last-prompt`, `file-history-snapshot`, and others.
+- A prompt a person typed is a `user` record with `origin.kind` `human` and `isSidechain` false.
+  Its `message.content` is either a string or a list of `text` parts, and the first prompt's list started with a `<system-reminder>` part of context before the typed text.
+- A tool's result is also a `user` record, with a `tool_result` part and no `origin`, and a subagent's records carry `isSidechain` true.
+- `UserPromptSubmit` carries the typed text as `prompt` (documented, [hooks](https://code.claude.com/docs/en/hooks.md), as of 2026-11-15), so the transcript is needed only for a session whose first prompt came before Plates was listening.
+
+**Changed:** the transcript reader takes a session's first prompt from the first `user` record with `origin.kind` `human`, outside a subagent, leaving out `<system-reminder>` parts.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#titles-and-summaries).
+
 ## 2026-11-15: Claude Code documents the final message on Stop, failure events, and the session title on every prompt
 
 **Asked:** does the hooks design handle every event that changes what a session is doing, and does it read each value from where the documentation puts it?

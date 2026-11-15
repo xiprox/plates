@@ -27,8 +27,8 @@ pub enum SessionEvent {
     },
     /// `PreToolUse`, kept for the summary of an approval that follows.
     ToolPending { tool: Tool },
-    /// `PermissionRequest`.
-    ApprovalAsked,
+    /// `PermissionRequest`, which names the tool it asks about.
+    ApprovalAsked { tool: Option<Tool> },
     /// `Notification` with `notification_type` `permission_prompt`.
     ApprovalNotified { message: String },
     /// `PostToolUse` or `PostToolUseFailure`.
@@ -48,7 +48,7 @@ impl SessionEvent {
             SessionEvent::Started { .. } => Some(SessionState::New),
             SessionEvent::PromptSubmitted { .. } => Some(SessionState::Working),
             SessionEvent::ToolPending { .. } | SessionEvent::ToolFinished => None,
-            SessionEvent::ApprovalAsked | SessionEvent::ApprovalNotified { .. } => {
+            SessionEvent::ApprovalAsked { .. } | SessionEvent::ApprovalNotified { .. } => {
                 Some(SessionState::NeedsApproval)
             }
             SessionEvent::TurnEnded { .. } | SessionEvent::TurnFailed { .. } => {

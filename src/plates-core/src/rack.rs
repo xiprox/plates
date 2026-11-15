@@ -187,7 +187,10 @@ impl Rack {
             SessionEvent::ToolPending { tool } => {
                 s.pending_tool = Some(tool);
             }
-            SessionEvent::ApprovalAsked => {
+            SessionEvent::ApprovalAsked { tool } => {
+                if tool.is_some() {
+                    s.pending_tool = tool;
+                }
                 if s.state != SessionState::NeedsApproval {
                     s.summary = s.pending_tool.as_ref().map(|t| t.summary());
                 }
@@ -300,6 +303,18 @@ impl Rack {
             t.refresh_need(now);
         }
         id
+    }
+
+    /// Names a session from its first prompt, read from its transcript, when Plates first saw the
+    /// session after that prompt.
+    pub fn note_first_prompt(&mut self, session_id: &str, prompt: &str) {
+        let tile = self.tiles.iter_mut().find_map(|t| match &mut t.body {
+            Body::Session(s) if s.id == session_id => Some(s),
+            _ => None,
+        });
+        if let Some(s) = tile.filter(|s| s.first_prompt.is_none()) {
+            s.first_prompt = Some(prompt.to_string()).filter(|p| !first_line(p).is_empty());
+        }
     }
 
     /// Puts back your own tiles, in order, as `store` loaded them.
@@ -473,7 +488,12 @@ mod tests {
         let mut rack = Rack::new();
         let id = apply(&mut rack, "a", prompt("Go"), 0);
         apply(&mut rack, "a", bash("cargo test -p collector"), 1);
-        apply(&mut rack, "a", SessionEvent::ApprovalAsked, 2);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::ApprovalAsked { tool: None },
+            2,
+        );
         let s = session(&rack, id);
         assert_eq!(s.state, SessionState::NeedsApproval);
         assert_eq!(
@@ -489,7 +509,12 @@ mod tests {
         let mut rack = Rack::new();
         let id = apply(&mut rack, "a", prompt("Go"), 0);
         apply(&mut rack, "a", bash("cargo test"), 1);
-        apply(&mut rack, "a", SessionEvent::ApprovalAsked, 2);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::ApprovalAsked { tool: None },
+            2,
+        );
         let notified = SessionEvent::ApprovalNotified {
             message: "Claude needs your permission".into(),
         };
@@ -522,7 +547,12 @@ mod tests {
         let mut rack = Rack::new();
         let id = apply(&mut rack, "a", prompt("Go"), 0);
         apply(&mut rack, "a", bash("cargo test"), 1);
-        apply(&mut rack, "a", SessionEvent::ApprovalAsked, 2);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::ApprovalAsked { tool: None },
+            2,
+        );
         apply(&mut rack, "a", SessionEvent::ToolFinished, 30);
         let s = session(&rack, id);
         assert_eq!(s.state, SessionState::Working);
@@ -622,7 +652,12 @@ mod tests {
         let mut rack = Rack::new();
         let a = apply(&mut rack, "a", stop("Done"), 0);
         let b = apply(&mut rack, "b", bash("ls"), 0);
-        let c = apply(&mut rack, "c", SessionEvent::ApprovalAsked, 0);
+        let c = apply(
+            &mut rack,
+            "c",
+            SessionEvent::ApprovalAsked { tool: None },
+            0,
+        );
         assert_eq!(session(&rack, a).state, SessionState::YourTurn);
         assert_eq!(session(&rack, b).state, SessionState::Working);
         assert_eq!(session(&rack, c).state, SessionState::NeedsApproval);
