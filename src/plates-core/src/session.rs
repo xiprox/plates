@@ -107,6 +107,13 @@ pub enum SessionEvent {
     /// You opened the session in the Claude desktop app at `at`, which the app records in its
     /// file for the session as `lastFocusedAt`.
     Seen { at: SystemTime },
+    /// The Claude desktop app moved its session from the Claude Code session `from` to this one,
+    /// which the app records in its file for the session as `cliSessionId`, with `from` among
+    /// its `priorCliSessionIds`.
+    Continued { from: String },
+    /// The Claude desktop app's file for the session changed the session's title or parent, which
+    /// the message carries in its `app`.
+    AppChanged,
 }
 
 impl SessionEvent {
@@ -122,7 +129,9 @@ impl SessionEvent {
             | SessionEvent::CompactFinished { .. }
             | SessionEvent::InputGiven
             | SessionEvent::WrappedUp(_)
-            | SessionEvent::Seen { .. } => None,
+            | SessionEvent::Seen { .. }
+            | SessionEvent::Continued { .. }
+            | SessionEvent::AppChanged => None,
             SessionEvent::ApprovalAsked { .. }
             | SessionEvent::ApprovalNotified { .. }
             | SessionEvent::InputAsked { .. } => Some(SessionState::NeedsApproval),

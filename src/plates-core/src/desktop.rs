@@ -61,8 +61,14 @@ pub struct AppSession {
     pub focused_at: Option<SystemTime>,
     /// The app's own ID for the session this one was started from, its `spawnedFrom.sessionId`,
     /// which the app writes for a session one of its sessions started (measured on Windows 11
-    /// 25H2, 2026-11-15, record/areas/hooks/log.md).
+    /// 25H2, 2026-11-15, record/areas/hooks/log.md). It's `None` for a session whose
+    /// `lineageDetached` is true, which the app's sidebar shows on its own rather than under the
+    /// session that started it (seen by the user on Windows 11 25H2, 2026-11-16, the same log).
     pub parent: Option<String>,
+    /// The Claude Code session the app runs the session in, its `cliSessionId`. The app can move a
+    /// session to a new Claude Code session, and then lists the earlier one in
+    /// `priorCliSessionIds` (measured on Windows 11 25H2, 2026-11-16, record/areas/hooks/log.md).
+    pub cli_id: Option<String>,
 }
 
 /// The link that opens a session in the app by its own ID:
@@ -224,7 +230,9 @@ fn read_session(file: &Path, session_id: &str) -> Option<AppSession> {
             .and_then(|s| s.get("sessionId"))
             .and_then(Value::as_str)
             .filter(|id| id.starts_with("local_"))
+            .filter(|_| v.get("lineageDetached").and_then(Value::as_bool) != Some(true))
             .map(str::to_string),
+        cli_id: text("cliSessionId"),
     })
 }
 
@@ -278,8 +286,17 @@ mod tests {
                     "spawnedFrom": { "sessionId": "local_e4c2b1b0-16ce", "taskId": "task_25ace5e8",
                                      "sideSession": true } }),
         );
-        let child = AppSessions::new(Some(dir)).get("child").unwrap();
+        let child = AppSessions::new(Some(dir.clone())).get("child").unwrap();
         assert_eq!(child.parent.as_deref(), Some("local_e4c2b1b0-16ce"));
+        write(
+            &dir,
+            "local_9.json",
+            json!({ "cliSessionId": "detached", "sessionId": "local_d00d",
+                    "spawnedFrom": { "sessionId": "local_e4c2b1b0-16ce", "sideSession": true },
+                    "lineageDetached": true, "lineageDetachedBy": "user" }),
+        );
+        let detached = AppSessions::new(Some(dir)).get("detached").unwrap();
+        assert_eq!(detached.parent, None, "the app shows it on its own");
         assert_eq!(session_link("local_"), None);
         assert_eq!(session_link("local_a&b=c"), None);
         assert_eq!(session_link("cse_abc"), None);
@@ -313,6 +330,12 @@ mod tests {
         );
         let mut titles = AppSessions::new(Some(dir));
         assert_eq!(title(&mut titles, "old").as_deref(), Some("Hooks"));
+        let session = titles.get("old").unwrap();
+        assert_eq!(
+            session.cli_id.as_deref(),
+            Some("new"),
+            "the session it runs in now"
+        );
     }
 
     #[test]

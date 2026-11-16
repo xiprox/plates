@@ -2,6 +2,56 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-16: The app shows a session detached from its parent on its own
+
+**Asked:** why did the rack draw three sessions under one session, 42dd5edf, when the app's sidebar showed two of them on their own and the third under one of those two?
+
+**Expected:** the sidebar nests a session under the one named in its file's `spawnedFrom`, as the rack does ([entry](#2026-11-15-the-apps-file-for-a-sub-session-names-the-session-that-started-it)).
+
+**Found:** a file can name a parent the sidebar doesn't nest under (files read on Windows 11 25H2, Claude desktop app 5.11492.5.0, 2026-11-16, and the sidebar seen by the user the same day, [results](results/2026-11-16-detached-sessions.txt)):
+
+- The two that the sidebar showed on their own, 6ecf1193 and d86c46a2, were each started by 42dd5edf, and each file holds `lineageDetached` true, with a `lineageDetachedBy` of `user` for one and `agent` for the other.
+- The third, e045625a, started by 6ecf1193 and with `lineageDetached` false, sat under it in the sidebar.
+- Of the 25 sub-session files the app changed last, all 10 that name 42dd5edf as their parent hold `lineageDetached` true.
+
+What detaches a session is unmeasured: the values `user` and `agent` in `lineageDetachedBy` suggest that both you and Claude can (unverified), and 5 of the 11 detached files we read have no `lineageDetachedBy`.
+Plates also kept a parent once it had one, since it set a tile's parent only when the file named one, so a session detached after Plates saw its parent stayed nested (read in plates-core 0.3.0, `rack.rs`, `Rack::set_app_session`).
+
+**Changed:**
+
+- A session whose file holds `lineageDetached` true has no parent on the rack, and a tile whose file stops naming a parent loses that parent and, with its own sub-sessions, leaves the parent's family for just past it (user, 2026-11-16).
+- The once-a-second read of each session's file reports a change to its title or parent, and its first read after Plates starts reports every session's title and parent, so a title or parent the app changes shows within about 1s rather than at the session's next event.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#titles-and-summaries): the paragraphs on titles and sub-sessions.
+
+## 2026-11-16: A rewind moves a desktop session to a new Claude Code session
+
+**Asked:** why did a desktop session's tile say "Interrupted" when the app showed the session's newest turn finished?
+
+**Expected:** the tile shows its session's newest turn, so a finished turn would make it unread or your turn.
+
+**Found:** the tile showed a Claude Code session the app no longer ran (measured on Windows 11 25H2, Claude desktop app 5.11492.5.0, 2026-11-16, [results](results/2026-11-16-rewound-session.txt)):
+
+- The tile's Claude Code session, `6388b764`, ended with a `[Request interrupted by user]` record at 18:58:46Z, 8.3s after a typed prompt.
+- The app's file for the session holds a `rewindEdges` entry from `6388b764` to a new Claude Code session, `e002a09e`, with an `at` of 18:58:48Z and a `forkPoint` naming the record that ended the turn before that prompt.
+- The new session's transcript holds the old one's record that ended that turn, but neither the prompt nor the interrupt, and sits in the same folder.
+  Its first new record is a typed prompt at 19:00:30Z, and its turn ended at 19:10:04Z.
+- The app's file kept its `sessionId`, named `e002a09e` as `cliSessionId`, and listed `6388b764` in `priorCliSessionIds`, with 19:00:30Z as the time the app left it in `priorCliSessionLeftAt`.
+
+So we take it that the user interrupted Claude, edited the prompt, and sent it again, and the app carried the session on from the turn before in a new Claude Code session (unverified: the file's `rewindEdges` is our only sign of the rewind, since nobody watched the app as it happened).
+Plates started at 19:13:10Z, after the new session's events, so it heard none of them.
+When Plates starts, it reads only the transcripts of the tiles it restores, so the tile kept the old session's interrupt.
+Had Plates been running, the new session's prompt would have added a second tile for the same desktop session (read in plates-core 0.3.0, `hooks.rs`, `apply`).
+
+**Changed:** in the once-a-second read of each session's file, when the file's `cliSessionId` names another Claude Code session, the tile follows the session to it, in the same place on the rack, and catches up with the new transcript.
+The first event from the new session does the same when the app's file already names it.
+If the new session's events reach Plates before the app's file names it, they give it a tile of its own, and the old tile takes that tile's state while keeping its place, as [01-claude-code-hooks](01-claude-code-hooks.md#sessions-the-app-moves) says.
+An event from a Claude Code session the app has left adds no tile while a tile holds the app's session.
+
+Whether the old Claude Code session sends any event after the move is unmeasured, and running `plates listen --log <file>` with Plates closed, while rewinding a session that's running, would settle it.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#sessions-the-app-moves), which left open whether Plates keeps one tile for a session through the IDs the app lists in `priorCliSessionIds`.
+
 ## 2026-11-16: On macOS, the Accessibility API shows the app's session page under the name UI Automation does
 
 **Asked:** can Plates press a wrap-up's choice on macOS, as it does on Windows through UI Automation?

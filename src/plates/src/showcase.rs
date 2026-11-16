@@ -34,6 +34,7 @@ pub fn rack(now: SystemTime) -> (Rack, TileId) {
                 id: Some(format!("local_{id}")),
                 focused_at: None,
                 parent: parent.map(|p| format!("local_{p}")),
+                cli_id: Some(id.to_string()),
             },
         );
         rack.place_under_parent(id);

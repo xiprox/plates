@@ -40,30 +40,79 @@ pub fn data_dir() -> PathBuf {
         .join("Plates")
 }
 
-// Opening a session in the Claude desktop app fires no hook event, but the app saves the time in
-// its file for the session, so the events thread reads each session's file once a second and
-// reports a look that's newer than the last it reported.
-fn new_looks(
-    looks: &mut HashMap<String, (PathBuf, Option<SystemTime>)>,
+/// A session Plates has heard from or restored, as the events thread last read the Claude desktop
+/// app's file for it.
+struct Look {
+    cwd: PathBuf,
+    /// The last time the app says you opened the session.
+    seen: Option<SystemTime>,
+    /// The title and parent last reported, so the thread reports a change to either once.
+    named: Option<(Option<String>, Option<String>)>,
+}
+
+impl Look {
+    fn new(cwd: PathBuf) -> Self {
+        Look {
+            cwd,
+            seen: None,
+            named: None,
+        }
+    }
+}
+
+// Some things the Claude desktop app does fire no hook event, but the app records each in its
+// file for the session, so the events thread reads each session's file once a second and reports
+// what changed:
+// - Opening a session saves the time, and the thread reports a look that's newer than the last.
+// - Renaming a session, or detaching it from the session that started it, changes its title or
+//   its parent, and the thread reports the change, the first read reporting every session's.
+// - Moving a session to a new Claude Code session names the new one as the file's
+//   `cliSessionId`, and the thread reports the move, so the old session's tile follows it rather
+//   than showing where the old session was left (record/areas/hooks/log.md, 2026-11-16).
+fn read_app_files(
+    looks: &mut HashMap<String, Look>,
     app_sessions: &mut AppSessions,
 ) -> Vec<HookMessage> {
     let mut found = Vec::new();
-    for (session_id, (cwd, last)) in looks.iter_mut() {
-        let Some(at) = app_sessions.get(session_id).and_then(|a| a.focused_at) else {
+    let mut moved = Vec::new();
+    let message = |session_id: &str, cwd: &PathBuf, event: SessionEvent| HookMessage {
+        hook: "AppFile".to_string(),
+        session_id: session_id.to_string(),
+        cwd: cwd.clone(),
+        transcript_path: None,
+        event: Some(event),
+        status: None,
+        app: None,
+    };
+    for (session_id, look) in looks.iter_mut() {
+        let Some(app) = app_sessions.get(session_id) else {
             continue;
         };
-        if *last != Some(at) {
-            *last = Some(at);
-            found.push(HookMessage {
-                hook: "AppFile".to_string(),
-                session_id: session_id.clone(),
-                cwd: cwd.clone(),
-                transcript_path: None,
-                event: Some(SessionEvent::Seen { at }),
-                status: None,
-                app: None,
-            });
+        if let Some(to) = app.cli_id.filter(|to| to != session_id) {
+            moved.push((session_id.clone(), to));
+            continue;
         }
+        let named = Some((app.title, app.parent));
+        if look.named != named {
+            look.named = named;
+            found.push(message(session_id, &look.cwd, SessionEvent::AppChanged));
+        }
+        if let Some(at) = app.focused_at
+            && look.seen != Some(at)
+        {
+            look.seen = Some(at);
+            found.push(message(session_id, &look.cwd, SessionEvent::Seen { at }));
+        }
+    }
+    for (from, to) in moved {
+        let Some(look) = looks.remove(&from) else {
+            continue;
+        };
+        found.push(message(&to, &look.cwd, SessionEvent::Continued { from }));
+        looks.entry(to).or_insert(Look {
+            named: None,
+            ..look
+        });
     }
     found
 }
@@ -118,9 +167,10 @@ pub fn run() {
     // The receiver hands events on from a thread of its own, and the rack takes them on the UI
     // thread, so a thread between them moves each one onto a channel the UI can await. That
     // thread also reads each tool event's transcript for the session's status line, the desktop
-    // app's file for the session's title and ID, and, once a second, the transcripts of sessions in a
-    // turn for an interrupt or a denial, so none of these reads holds up the rack. A request to
-    // show the rack goes onto the channel the tray's menu uses.
+    // app's file for the session's title and ID, and, once a second, the transcripts of sessions
+    // in a turn for an interrupt or a denial and the app's file for each session, so none of
+    // these reads holds up the rack. A request to show the rack goes onto the channel the tray's
+    // menu uses.
     if let Err(e) = &receiver {
         eprintln!("Couldn't listen on port {PORT}, so no session tiles will show: {e}");
     }
@@ -132,11 +182,9 @@ pub fn run() {
         .spawn(move || {
             let mut app_sessions = AppSessions::new(desktop::sessions_folder());
             let mut cuts = Cuts::new();
-            // Each session Plates has heard from, or restored, with its folder and the last time
-            // the app says you opened it.
-            let mut looks: HashMap<String, (PathBuf, Option<SystemTime>)> = restored
+            let mut looks: HashMap<String, Look> = restored
                 .into_iter()
-                .map(|(id, folder)| (id, (folder, None)))
+                .map(|(id, folder)| (id, Look::new(folder)))
                 .collect();
             let mut polled = Instant::now();
             loop {
@@ -146,7 +194,7 @@ pub fn run() {
                         cuts.saw(&message);
                         looks
                             .entry(message.session_id.clone())
-                            .or_insert_with(|| (message.cwd.clone(), None));
+                            .or_insert_with(|| Look::new(message.cwd.clone()));
                         messages.push(*message);
                     }
                     Ok(Received::Show) => {
@@ -160,7 +208,7 @@ pub fn run() {
                 if polled.elapsed() >= POLL {
                     polled = Instant::now();
                     messages.extend(cuts.poll());
-                    messages.extend(new_looks(&mut looks, &mut app_sessions));
+                    messages.extend(read_app_files(&mut looks, &mut app_sessions));
                 }
                 for mut message in messages {
                     message.app = app_sessions.get(&message.session_id);

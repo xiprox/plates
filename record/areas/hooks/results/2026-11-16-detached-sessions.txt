@@ -1,0 +1,45 @@
+Sub-sessions in the Claude desktop app's session files, and where its sidebar showed them.
+Read on Windows 11 25H2, Claude desktop app 5.11492.5.0, 2026-11-16. Titles are left out, and
+each session is named by the first 8 characters after "local_" in its app ID.
+
+The 25 most recently changed files with a spawnedFrom.sessionId, newest first:
+
+  session   spawnedFrom  lineageDetached  lineageDetachedBy  isArchived
+  da17ea11  e045625a     false            -                  false
+  d86c46a2  42dd5edf     true             agent              false
+  e045625a  6ecf1193     false            -                  false
+  6ecf1193  42dd5edf     true             user               false
+  e91f373e  e4c2b1b0     false            -                  true
+  aeb38d45  42dd5edf     true             user               true
+  293f7f04  149ac412     false            -                  true
+  2e58fbdc  c4d5cca5     false            -                  true
+  5c91bec0  619aa898     false            -                  false
+  cd6d7ddf  2f2a7877     false            -                  true
+  d0d49805  42dd5edf     true             user               true
+  3e7b483c  42dd5edf     true             user               true
+  6ad05f1f  3e7b483c     false            -                  true
+  c7ed435c  42dd5edf     true             -                  true
+  408bab05  42dd5edf     true             user               true
+  7a12d03c  2f2a7877     false            -                  true
+  5a9f557e  619aa898     false            -                  true
+  1e3cd9e6  619aa898     false            -                  true
+  7c5ca4ea  2f2a7877     false            -                  true
+  c8f77f1b  619aa898     false            -                  true
+  b1654b33  d8c3f34e     true             -                  true
+  d8c3f34e  42dd5edf     true             -                  true
+  b3248e1d  42dd5edf     true             -                  true
+  8833b6db  42dd5edf     true             -                  true
+  fd6d66b3  d8c3f34e     false            -                  true
+
+Every session spawned from 42dd5edf has lineageDetached true. A "-" under lineageDetachedBy is
+a file without the field.
+
+The app's sidebar, in a screenshot the user took before da17ea11 started:
+
+  42dd5edf  shown on its own, with no session under it
+  6ecf1193  shown on its own
+  e045625a  shown under 6ecf1193
+  d86c46a2  shown on its own, in another project's group
+
+The rack, with Plates reading only spawnedFrom, drew 6ecf1193, e045625a, and d86c46a2 under
+42dd5edf, one level deep.

@@ -1,0 +1,44 @@
+A Claude desktop app session that moved to a new Claude Code session after a rewind.
+Read on Windows 11 25H2, Claude desktop app 5.11492.5.0, 2026-11-16, from the two transcripts and
+the app's file for the session. <project> stands for the transcripts' project folder, and the
+text of prompts is left out.
+
+Old transcript, <project>\6388b764-2846-497d-8d6e-e6924c83b521.jsonl, its last user and
+assistant records:
+
+  2026-11-16T18:52:37.393Z  assistant  stop_reason end_turn, uuid a18979a7-f3fd-42d9-bec6-fd07ca98d462
+  2026-11-16T18:58:37.797Z  user       a typed prompt
+  2026-11-16T18:58:39.798Z  assistant  tool_use mcp__terminal__read_terminal
+  2026-11-16T18:58:40.408Z  user       tool_result
+  2026-11-16T18:58:46.143Z  user       text "[Request interrupted by user]"
+
+New transcript, <project>\e002a09e-a1d7-4153-ba4a-a49ae4015fa1.jsonl:
+
+  holds the old transcript's record from 2026-11-16T18:52:37.393Z
+  holds neither the prompt from 18:58:37.797Z nor the interrupt
+  2026-11-16T19:00:30.885Z  user       a typed prompt, its first record after the copied ones
+  2026-11-16T19:10:04.033Z  assistant  stop_reason end_turn, the newest user or assistant record
+  no record starts with "[Request interrupted by user"
+
+The app's file for the session, local_6ecf1193-401f-414a-a4a9-ec01a743e880.json, with its project
+folder left out:
+
+  "sessionId": "local_6ecf1193-401f-414a-a4a9-ec01a743e880"
+  "cliSessionId": "e002a09e-a1d7-4153-ba4a-a49ae4015fa1"
+  "priorCliSessionIds": ["6388b764-2846-497d-8d6e-e6924c83b521"]
+  "priorCliSessionLeftAt": {"6388b764-2846-497d-8d6e-e6924c83b521": 1794855630970}
+      1794855630970ms is 2026-11-16T19:00:30.970Z
+  "rewindEdges": [{"id": "8a8d65c9-92d2-4d74-b18a-3d2d5064ef12",
+                   "parent": "6388b764-2846-497d-8d6e-e6924c83b521",
+                   "child": "e002a09e-a1d7-4153-ba4a-a49ae4015fa1",
+                   "at": 1794855528551,
+                   "forkPoint": "a18979a7-f3fd-42d9-bec6-fd07ca98d462",
+                   "cwd": "<project folder>"}]
+      1794855528551ms is 2026-11-16T18:58:48.551Z
+  "lastAssistantCliSessionId": "e002a09e-a1d7-4153-ba4a-a49ae4015fa1"
+  "lineageDetached": true
+  "lineageDetachedBy": "user"
+
+Both transcripts sit in the same <project> folder.
+Plates was started at 2026-11-16T19:13:10Z, and its rack showed one tile for the session, with
+the summary line "Interrupted".

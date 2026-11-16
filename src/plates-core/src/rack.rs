@@ -182,7 +182,11 @@ fn returned(tile: &mut Tile) {
     }
 }
 
-/// Where `apply` found a session's tile.
+fn holds(tile: &Tile, session_id: &str) -> bool {
+    tile.session().is_some_and(|s| s.id == session_id)
+}
+
+/// Where a session's tile is.
 enum Place {
     Shown(usize),
     Hidden(usize),
@@ -223,14 +227,9 @@ impl Rack {
         event: SessionEvent,
         now: SystemTime,
     ) -> TileId {
-        let holds = |t: &Tile| t.session().is_some_and(|s| s.id == session_id);
-        let place = match (
-            self.tiles.iter().position(holds),
-            self.hidden.iter().position(holds),
-        ) {
-            (Some(i), _) => Place::Shown(i),
-            (None, Some(i)) => Place::Hidden(i),
-            (None, None) => Place::Shown(self.add_session(session_id, folder, &event, now)),
+        let place = match self.place_of(session_id) {
+            Some(place) => place,
+            None => Place::Shown(self.add_session(session_id, folder, &event, now)),
         };
         let new_prompt = matches!(event, SessionEvent::PromptSubmitted { .. });
         let tile = match place {
@@ -390,6 +389,9 @@ impl Rack {
                 _ => {}
             },
             SessionEvent::Seen { .. } => {}
+            // hooks::apply handles these with `follow` and `set_app_session`, and never passes
+            // them on.
+            SessionEvent::Continued { .. } | SessionEvent::AppChanged => {}
             SessionEvent::TurnFailed { error, text } => {
                 s.pending_tool = None;
                 s.background.clear();
@@ -587,15 +589,7 @@ impl Rack {
         if prompt_title(prompt).is_empty() {
             return;
         }
-        let session = self
-            .tiles
-            .iter_mut()
-            .chain(self.hidden.iter_mut())
-            .find_map(|t| match &mut t.body {
-                Body::Session(s) if s.id == session_id => Some(s),
-                _ => None,
-            });
-        if let Some(s) = session {
+        if let Some(s) = self.session_mut(session_id) {
             s.first_prompt = Some(prompt.to_string());
         }
     }
@@ -607,15 +601,7 @@ impl Rack {
         if line.is_empty() {
             return;
         }
-        let session = self
-            .tiles
-            .iter_mut()
-            .chain(self.hidden.iter_mut())
-            .find_map(|t| match &mut t.body {
-                Body::Session(s) if s.id == session_id => Some(s),
-                _ => None,
-            });
-        if let Some(s) = session
+        if let Some(s) = self.session_mut(session_id)
             && s.status.as_deref() != Some(line.as_str())
         {
             s.status = Some(line);
@@ -626,17 +612,110 @@ impl Rack {
 
     /// Sets where a session's transcript is.
     pub fn set_transcript(&mut self, session_id: &str, path: &Path) {
-        let session = self
-            .tiles
+        if let Some(s) = self.session_mut(session_id) {
+            s.transcript = Some(path.to_path_buf());
+        }
+    }
+
+    /// A session's tile, shown or dismissed, and the session it holds.
+    pub fn session(&self, session_id: &str) -> Option<(TileId, &Session)> {
+        self.tiles
+            .iter()
+            .chain(&self.hidden)
+            .find_map(|t| match &t.body {
+                Body::Session(s) if s.id == session_id => Some((t.id, s)),
+                _ => None,
+            })
+    }
+
+    fn session_mut(&mut self, session_id: &str) -> Option<&mut Session> {
+        self.tiles
             .iter_mut()
             .chain(self.hidden.iter_mut())
             .find_map(|t| match &mut t.body {
                 Body::Session(s) if s.id == session_id => Some(s),
                 _ => None,
-            });
-        if let Some(s) = session {
-            s.transcript = Some(path.to_path_buf());
+            })
+    }
+
+    fn place_of(&self, session_id: &str) -> Option<Place> {
+        let shown = self.tiles.iter().position(|t| holds(t, session_id));
+        let hidden = || self.hidden.iter().position(|t| holds(t, session_id));
+        shown
+            .map(Place::Shown)
+            .or_else(|| hidden().map(Place::Hidden))
+    }
+
+    /// Has a session's tile follow the Claude desktop app's session from the Claude Code session
+    /// `from` to `to`, the one the app moved it to, so the tile stops showing where `from` was
+    /// left. It returns whether `from` had a tile.
+    ///
+    /// When `to` already has a tile, from events that reached Plates before the app's file named
+    /// `to`, the tile of `from` takes that tile's session and that tile goes. So what you set on
+    /// the tile of `from` stays: its place, whether it's dismissed or snoozed, a reminder for
+    /// tomorrow, and the app's title, ID, and parent while the newer tile has none yet. A dismissed
+    /// tile that isn't snoozed goes instead, since the newer tile's events have brought the session
+    /// back to the rack, as they would have brought the dismissed tile back.
+    pub fn follow(
+        &mut self,
+        from: &str,
+        to: &str,
+        transcript: Option<&Path>,
+        now: SystemTime,
+    ) -> bool {
+        if from == to {
+            return false;
         }
+        let Some(old) = self.place_of(from) else {
+            return false;
+        };
+        let Some(newer) = self.place_of(to) else {
+            let Some(s) = self.session_mut(from) else {
+                return false;
+            };
+            s.id = to.to_string();
+            if let Some(path) = transcript {
+                s.transcript = Some(path.to_path_buf());
+            }
+            return true;
+        };
+        if let (Place::Hidden(i), Place::Shown(_)) = (&old, &newer)
+            && !snoozed(&self.hidden[*i])
+        {
+            self.hidden.remove(*i);
+            return true;
+        }
+        let newer = match newer {
+            Place::Shown(j) => self.tiles.remove(j),
+            Place::Hidden(j) => self.hidden.remove(j),
+        };
+        let Some(old) = self.place_of(from) else {
+            return false;
+        };
+        let (tile, shown) = match old {
+            Place::Shown(i) => (&mut self.tiles[i], true),
+            Place::Hidden(i) => (&mut self.hidden[i], false),
+        };
+        let (Body::Session(mut s), Body::Session(was)) = (newer.body, &tile.body) else {
+            unreachable!("both tiles were found by their session IDs");
+        };
+        s.app_title = s.app_title.or_else(|| was.app_title.clone());
+        s.app_id = s.app_id.or_else(|| was.app_id.clone());
+        s.app_parent = s.app_parent.or_else(|| was.app_parent.clone());
+        s.custom_title = s.custom_title.or_else(|| was.custom_title.clone());
+        s.first_prompt = was.first_prompt.clone().or(s.first_prompt);
+        s.dismissed_at = was.dismissed_at;
+        if s.transcript.is_none() {
+            s.transcript = transcript.map(Path::to_path_buf);
+        }
+        tile.body = Body::Session(s);
+        if !tile.timer.is_tomorrow() {
+            tile.timer = newer.timer;
+        }
+        if shown {
+            tile.refresh_need(now);
+        }
+        true
     }
 
     /// Every session tile, shown or dismissed, with whether it's dismissed, for saving.
@@ -733,6 +812,28 @@ impl Rack {
         self.tiles.insert(index, tile);
     }
 
+    // Moves the shown tile of a session the app detached from `parent`, with its own sub-sessions,
+    // from the parent's family to just past it, so the parent's other sub-sessions stay under the
+    // parent, as the app's sidebar shows a detached session on its own (user, 2026-11-16). A tile
+    // that sat anywhere else stays there. The tile's parent is already cleared, so the family's
+    // run stops at the tile only if the tile sat in it.
+    fn leave_family(&mut self, session_id: &str, parent: &str) {
+        let Some(start) = self.tiles.iter().position(|t| holds(t, session_id)) else {
+            return;
+        };
+        if self.after_family(parent) != Some(start) {
+            return;
+        }
+        let end = self.tiles[start]
+            .session()
+            .and_then(|s| s.app_id.clone())
+            .and_then(|id| self.after_family(&id))
+            .unwrap_or(start + 1);
+        let block: Vec<Tile> = self.tiles.drain(start..end).collect();
+        let at = self.after_family(parent).unwrap_or(start);
+        self.tiles.splice(at..at, block);
+    }
+
     /// Moves each restored sub-session's tile under its parent's, in the order they were saved,
     /// before the rack first shows them.
     pub fn gather_families(&mut self) {
@@ -749,18 +850,11 @@ impl Rack {
     }
 
     /// Sets the title and ID the Claude desktop app keeps for a session, from its file for it,
-    /// and the app ID of the session it was started from. It returns whether that last one is
-    /// new, which moves the tile under its parent's.
+    /// and the app ID of the session it was started from, or none for a session the app shows on
+    /// its own, such as one detached from its parent, whose tile then leaves the parent's family.
+    /// It returns whether the session has a new parent, which moves the tile under the parent's.
     pub fn set_app_session(&mut self, session_id: &str, app: &AppSession) -> bool {
-        let session = self
-            .tiles
-            .iter_mut()
-            .chain(self.hidden.iter_mut())
-            .find_map(|t| match &mut t.body {
-                Body::Session(s) if s.id == session_id => Some(s),
-                _ => None,
-            });
-        let Some(s) = session else {
+        let Some(s) = self.session_mut(session_id) else {
             return false;
         };
         if app.title.is_some() {
@@ -769,19 +863,19 @@ impl Rack {
         if app.id.is_some() {
             s.app_id = app.id.clone();
         }
-        let new_parent = app.parent.is_some() && s.app_parent != app.parent;
-        if new_parent {
-            s.app_parent = app.parent.clone();
+        if s.app_parent == app.parent {
+            return false;
         }
-        new_parent
+        let was = std::mem::replace(&mut s.app_parent, app.parent.clone());
+        if let (None, Some(was)) = (&app.parent, was) {
+            self.leave_family(session_id, &was);
+        }
+        app.parent.is_some()
     }
 
     /// Whether the rack shows the session, or holds it dismissed.
     pub fn knows(&self, session_id: &str) -> bool {
-        self.tiles
-            .iter()
-            .chain(&self.hidden)
-            .any(|t| t.session().is_some_and(|s| s.id == session_id))
+        self.session(session_id).is_some()
     }
 
     /// Reads an unread session's tile, as clicking it does. It returns whether the tile changed.
@@ -1163,6 +1257,60 @@ mod tests {
     }
 
     #[test]
+    fn a_tile_follows_its_session_to_the_claude_code_session_the_app_moved_it_to() {
+        let mut rack = Rack::new();
+        let first = apply(&mut rack, "first", prompt("Go"), 0);
+        let old = apply(&mut rack, "old", prompt("Go"), 0);
+        let last = apply(&mut rack, "last", prompt("Go"), 0);
+        apply(
+            &mut rack,
+            "old",
+            SessionEvent::Interrupted { denied: false },
+            1,
+        );
+        let order = |rack: &Rack| -> Vec<TileId> { rack.tiles().iter().map(|t| t.id).collect() };
+
+        let now = at(1);
+        assert!(rack.follow("old", "new", Some(Path::new("/t/new.jsonl")), now));
+        assert!(!rack.knows("old"));
+        let s = session(&rack, old);
+        assert_eq!(s.id, "new");
+        assert_eq!(s.transcript.as_deref(), Some(Path::new("/t/new.jsonl")));
+        assert_eq!(s.summary.as_deref(), Some("Interrupted"), "the state stays");
+        assert_eq!(order(&rack), [first, old, last]);
+        assert!(
+            !rack.follow("gone", "elsewhere", None, now),
+            "no tile, no move"
+        );
+
+        // Events from the newer session came before the app's file named it, so it has a tile of
+        // its own at the end, whose session the old tile takes, keeping its place and the app's
+        // fields the newer tile hasn't learned yet.
+        let app = AppSession {
+            id: Some("local_s".into()),
+            parent: Some("local_p".into()),
+            ..AppSession::default()
+        };
+        rack.set_app_session("new", &app);
+        apply(&mut rack, "newer", prompt("Go on"), 2);
+        assert!(rack.follow("new", "newer", None, at(2)));
+        assert_eq!(order(&rack), [first, old, last]);
+        let s = session(&rack, old);
+        assert_eq!(s.id, "newer");
+        assert_eq!(s.state, SessionState::Working);
+        assert_eq!(s.app_id.as_deref(), Some("local_s"));
+        assert_eq!(s.app_parent.as_deref(), Some("local_p"));
+
+        // A snoozed tile stays snoozed, and the newer tile goes.
+        rack.snooze(old, Timer::later(at(3), 2), at(3));
+        apply(&mut rack, "newest", prompt("Again"), 4);
+        assert!(rack.follow("newer", "newest", None, at(4)));
+        assert_eq!(order(&rack), [first, last]);
+        assert!(rack.snoozed().any(|t| t.id == old));
+        assert_eq!(rack.session("newest").map(|(id, _)| id), Some(old));
+    }
+
+    #[test]
     fn a_sub_session_goes_under_its_parent_after_the_ones_already_there() {
         let app = |id: &str, parent: Option<&str>| AppSession {
             id: Some(id.into()),
@@ -1191,6 +1339,13 @@ mod tests {
         apply(&mut rack, "probe", stop("Found it."), 5);
         let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
         assert_eq!(order, [plates, probe, deeper, second, other, orphan]);
+
+        // A sub-session the app detaches leaves its parent's family with its own sub-session,
+        // so its sibling stays under the parent, and one that sat elsewhere stays there.
+        rack.set_app_session("probe", &app("local_c1", None));
+        rack.set_app_session("orphan", &app("local_x", None));
+        let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
+        assert_eq!(order, [plates, second, probe, deeper, other, orphan]);
     }
 
     #[test]

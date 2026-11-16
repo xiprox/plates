@@ -3,7 +3,7 @@
 ```text
 Purpose:     How Plates learns what each Claude Code session is doing, and how it opens and answers one.
 Depends on:  02-tiles (../rack/02-tiles.md), for the states a session tile shows.
-Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, where a tile's title and summary come from, which session started a session, how Plates answers a wrap-up's choice, how the hooks get installed and reach Plates, and what clicking a session tile opens.
+Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, where a tile's title and summary come from, which session started a session, which tile a session keeps when the app moves it to a new Claude Code session, how Plates answers a wrap-up's choice, how the hooks get installed and reach Plates, and what clicking a session tile opens.
 ```
 
 Claude Code runs a small program, `plates-hook`, for each session's hook events, and `plates-hook` forwards each event to a receiver Plates runs on `127.0.0.1`, which turns it into a change to a session tile.
@@ -53,11 +53,11 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
   It also counts background tasks, and only `Stop` and `SubagentStop` carry them, as the `background_tasks` still in flight when the turn or the subagent ends (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input), as of 2026-11-15).
   Of these states, Plates shows thinking, as [Titles and summaries](#titles-and-summaries) says, and the background tasks that keep a tile working, as [Background tasks](#background-tasks) says.
 - An event from a `session_id` Plates doesn't show adds that session's tile, in the state the event moves a tile to, and in working for an event that moves none, such as `PreToolUse`.
-  A `SessionStart` with a `source` of `resume` is the exception, since opening a session in the app isn't something happening in it.
+  A `SessionStart` with a `source` of `resume` is one exception, since opening a session in the app isn't something happening in it, and an event from a Claude Code session the app has moved away from, while a tile holds the app's session, is another ([Sessions the app moves](#sessions-the-app-moves)).
 - Opening a session in the Claude desktop app fires no event, but the app then saves the time in its file for the session as `lastFocusedAt` (read in the Claude desktop app 5.11492.5.0, app.asar, the handler that logs `desktop_ccd_session_visibility_changed`; [hooks log](log.md#2026-11-15-the-app-records-when-you-open-a-session-but-not-whether-a-turn-asked-you-anything)).
   So once a second, Plates reads each session's file, and a `lastFocusedAt` later than a turn's end reads the turn: an unread tile moves to done, and a your-turn tile is marked read.
   The app sets it only as a session becomes visible, so a turn that ends while you watch its session stays unread until you click its tile or open the session again.
-- In the Claude desktop app, `/clear` ends the session, with a `SessionEnd` `reason` of `other`, and goes on under a new `session_id`, so its tile ends and a new tile starts ([hooks log](log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)).
+- In the Claude desktop app, `/clear` ends the session, with a `SessionEnd` `reason` of `other`, and goes on under a new `session_id`, so its tile ends and a new tile starts ([hooks log](log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)), unless the app's file names the new session, which is unmeasured ([Left open](#left-open)).
 - Plates ignores `Notification` with `notification_type` `idle_prompt`, which arrives about 60s after Claude finishes ([hooks log](log.md#2026-11-15-claude-code-documents-hooks-in-desktop-sessions-and-an-http-hook-type-but-no-link-that-opens-one-desktop-session)), because `Stop` has already moved the tile to your turn.
 - After you interrupt Claude, or deny a tool, no event arrives until the session's next one ([hooks log](log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)).
   Claude Code does write a marker to the transcript: a `user` record whose text is `[Request interrupted by user]` for an interrupt, and for a denial, a tool result with `toolDenialKind` `user-rejected` followed by `[Request interrupted by user for tool use]` ([hooks log](log.md#2026-11-15-an-interrupt-and-a-denial-each-write-a-marker-record-to-the-transcript)).
@@ -86,7 +86,7 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
 ## Titles and summaries
 
 - A tile's title is the one the Claude desktop app shows for the session, which Plates reads from the app's own file for that session, the file whose `cliSessionId` or `priorCliSessionIds` holds the hook's `session_id` ([hooks log](log.md#2026-11-15-the-claude-desktop-app-keeps-a-file-per-session-with-its-title-and-its-claude-code-session-ids)).
-  Plates reads the file again on any hook event after the app changes it, so a title the app generates or you rename shows with the session's next event.
+  Plates reads the file again on any hook event after the app changes it, and in the once-a-second read of each session's file that [Events](#events) describes, so a title the app generates or you rename shows within about 1s ([hooks log](log.md#2026-11-16-the-app-shows-a-session-detached-from-its-parent-on-its-own)).
   A session with no file, such as one in a terminal, takes its title from the sources below, and so does a session whose file Plates can't read.
   The app doesn't document these files, so an update to the app can make them unreadable.
 - Without the app's title, a tile's title is the session's custom title, which `SessionStart` and `UserPromptSubmit` carry in `session_title` when one is set, such as with `/rename`, and leave out for a title the Claude app generates.
@@ -99,7 +99,9 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
 - The app's file for a session that another of its sessions started holds `spawnedFrom`, whose `sessionId` is the app's own ID for the session that started it ([hooks log](log.md#2026-11-15-the-apps-file-for-a-sub-session-names-the-session-that-started-it)).
   Plates reads it with the title, and when the event that adds a sub-session's tile finds the file, Plates moves the tile under its parent's before the rack draws it.
   A new sub-session's first events find no file naming its parent, so its tile first appears after the last session tile ([hooks log](log.md#2026-11-16-a-new-sub-sessions-first-events-come-before-the-apps-file-names-its-parent)).
-  Plates searches again 2s after a miss, doubling the wait after each miss up to 30s, and the first event after the file names the parent moves the tile under it, once.
+  Plates searches again 2s after a miss, doubling the wait after each miss up to 30s, and the first search that finds the file naming the parent moves the tile under it, once, whether or not an event has come.
+- A sub-session's file can also hold `lineageDetached` true, sometimes with a `lineageDetachedBy` of `user` or `agent`, and the app's sidebar then shows the session on its own rather than under the session that started it (seen by the user on Windows 11 25H2, 2026-11-16, [hooks log](log.md#2026-11-16-the-app-shows-a-session-detached-from-its-parent-on-its-own)).
+  Plates gives such a session no parent, so within about 1s of the app detaching a session, its tile leaves its parent's family without the indent, as [01-core](../core/01-core.md#tiles) says.
 - An approval's summary line is built from the tool the `PermissionRequest` names, or else from the `PreToolUse` before it: "Wants to run: " and the command for a shell command, "Wants to edit: " and the file for an edit, and "Wants to use: " and the tool's name for any other tool.
   Where neither names a tool, the summary is the `Notification`'s `message`.
 - Your turn's summary line is the first line of `Stop`'s `last_assistant_message`, because the transcript isn't guaranteed to hold Claude's final message when `Stop` fires (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input), as of 2026-11-15).
@@ -130,6 +132,28 @@ A transcript is JSON Lines, and a prompt you typed is a `user` record with `orig
 When Plates starts, it reads each restored session's transcript to catch up on what the session did while Plates was closed ([hooks log](log.md#2026-11-15-a-transcript-shows-when-a-turn-ended-through-claudes-end_turn-record)).
 Its newest `user` or `assistant` record, outside a subagent, says where the newest turn stands: a marker record says you interrupted Claude or denied a tool, a Claude record with a `stop_reason` of `end_turn` says the turn finished, with its text and its last wrap-up, and any other record says the turn goes on.
 The turn counts only if that record's `timestamp` is later than the tile's last change.
+
+## Sessions the app moves
+
+The Claude desktop app can move one of its sessions to a new Claude Code session, and the hooks then carry the new session's `session_id` (measured on Windows 11 25H2, 2026-11-16, [hooks log](log.md#2026-11-16-a-rewind-moves-a-desktop-session-to-a-new-claude-code-session)).
+It did so after what the app's file records as a rewind, which nobody watched happen, and whether the app does the same on macOS is unmeasured.
+The app's file for the session keeps its `sessionId`, names the new session as `cliSessionId`, and lists the earlier one in `priorCliSessionIds`.
+
+In the once-a-second read of each session's file that [Events](#events) describes for `lastFocusedAt`, when the file's `cliSessionId` names another Claude Code session, the tile follows the session to it, in the same place on the rack.
+An event from a `session_id` Plates doesn't show does the same when the app's file already names that ID as its `cliSessionId` and a tile, shown or dismissed, holds the file's `sessionId`.
+A tile that holds the app's `sessionId` follows only the file with that `sessionId`, so if another of the app's files lists the tile's `session_id` in its `priorCliSessionIds`, which we haven't seen, that file moves nothing.
+A tile that follows its session catches up with the new session's transcript, as a restored tile does, so a move made while Plates was closed shows within about 1s of Plates starting.
+Without an event from the new session to give its transcript's path, Plates takes `<new session_id>.jsonl` beside the old transcript, which is where Claude Code put the new one (same entry).
+If Claude Code hasn't written that file yet when the tile follows, Plates next reads it when Plates starts, and until then the new session's own events keep the tile up to date.
+If the old session's tile shows ended, such as after the old session's `SessionEnd`, it comes back as new before it catches up, since the session it now follows goes on.
+
+If the new session's events reach Plates before the app's file names it, they give it a tile of its own at the end of the rack.
+At the next read of the file, the old tile takes that tile's state, and that tile goes.
+The old tile keeps its place, on the rack or off it, and a snooze or a reminder for tomorrow.
+Without either, it takes that tile's timer.
+Until Plates reads the file for the new session, it keeps the app's title and parent.
+A dismissed tile that isn't snoozed goes instead, since the new session's events have brought the session back to the rack, as they would have brought the dismissed tile back.
+An event from a Claude Code session the app has moved away from, which the app's file lists in `priorCliSessionIds`, adds no tile while a tile holds the app's session.
 
 ## Installing
 
@@ -203,4 +227,5 @@ If a client's walk is what makes the app build the tree, the app keeps it built 
 
 - What Plates does when another program holds port 47231, which `receiver::PORT` sets.
 - Sessions that started while Plates was closed, whose tiles appear only at their next event, since Plates restores only the sessions it had.
-- Whether Plates keeps one tile across a `/clear`, through the app file's `priorCliSessionIds`, which may hold a session's earlier IDs (unverified).
+- Whether the app's file for a desktop session names the session a `/clear` starts as its `cliSessionId`. If it does, the new session's tile takes the ended tile's place, as [Sessions the app moves](#sessions-the-app-moves) says, rather than an ended tile staying beside a new one, as [Events](#events) says; typing `/clear` in a desktop session and reading the app's file for it would settle it.
+- Whether the old Claude Code session sends any event after the app moves its session, which Plates drops while a tile holds the app's session ([Sessions the app moves](#sessions-the-app-moves)); running `plates listen --log <file>` with Plates closed, while rewinding a session that's running, would settle it.

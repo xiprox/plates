@@ -20,7 +20,32 @@ use crate::{
 /// changed, or `None` for a message Plates ignores.
 pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<TileId> {
     let event = message.event?;
-    let known = rack.knows(&message.session_id);
+    let session_id = message.session_id.as_str();
+    let app = message.app.as_ref();
+    let transcript = message.transcript_path.as_deref();
+    match &event {
+        SessionEvent::Continued { from } => {
+            return follow(rack, from, session_id, transcript, app, now);
+        }
+        SessionEvent::AppChanged => return refresh_app(rack, session_id, app),
+        _ => {}
+    }
+    // Once the Claude desktop app moves its session to a new Claude Code session, the session's
+    // tile follows it. When the app's file already names the new session as its first event
+    // arrives, the tile follows it then, rather than the event adding a second tile for the same
+    // session of the app's. An event from the session the app left, such as its `SessionEnd`,
+    // would add a tile for a session that's over (unverified whether the app's old session sends
+    // any, record/areas/hooks/01-claude-code-hooks.md, Left open).
+    if !rack.knows(session_id)
+        && let Some(app) = app
+    {
+        if let Some(from) = moved_from(rack, session_id, app) {
+            follow(rack, &from, session_id, transcript, Some(app), now);
+        } else if left(rack, session_id, app) {
+            return None;
+        }
+    }
+    let known = rack.knows(session_id);
     // A look at a session Plates doesn't show, such as one whose tile you cleared, brings no
     // tile back. Nor does opening such a session in the Claude desktop app, which resumes it
     // without anything happening in it, so its tile comes with its next prompt or tool
@@ -66,52 +91,163 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
 /// transcript's record for it is later than the tile's last change, so the records Claude Code
 /// adds after a turn ends, such as its `system` record, don't replay the turn.
 pub fn catch_up(rack: &mut Rack) {
-    let sessions: Vec<_> = rack
+    let ids: Vec<String> = rack
         .session_tiles()
         .filter_map(|(tile, _)| tile.session())
-        .filter(|s| s.state != SessionState::Ended)
-        .filter_map(|s| {
-            let path = s.transcript.clone()?;
-            Some((s.id.clone(), s.folder.clone(), path, s.state, s.state_since))
-        })
+        .map(|s| s.id.clone())
         .collect();
-    for (id, folder, path, state, since) in sessions {
-        let Ok(Some((turn, at))) = transcript::newest_turn(&path) else {
-            continue;
-        };
-        if at <= since {
-            continue;
+    for id in ids {
+        catch_up_session(rack, &id);
+    }
+}
+
+fn catch_up_session(rack: &mut Rack, id: &str) {
+    let Some((folder, path, state, since)) = rack
+        .session(id)
+        .map(|(_, s)| s)
+        .filter(|s| s.state != SessionState::Ended)
+        .and_then(|s| {
+            Some((
+                s.folder.clone(),
+                s.transcript.clone()?,
+                s.state,
+                s.state_since,
+            ))
+        })
+    else {
+        return;
+    };
+    let Ok(Some((turn, at))) = transcript::newest_turn(&path) else {
+        return;
+    };
+    if at <= since {
+        return;
+    }
+    let in_turn = matches!(state, SessionState::Working | SessionState::NeedsApproval);
+    let started = SessionEvent::PromptSubmitted {
+        title: None,
+        prompt: None,
+    };
+    match turn {
+        Turn::Running => {
+            if !in_turn {
+                rack.apply(id, &folder, started, at);
+            }
         }
-        let in_turn = matches!(state, SessionState::Working | SessionState::NeedsApproval);
-        let started = SessionEvent::PromptSubmitted {
-            title: None,
-            prompt: None,
-        };
-        match turn {
-            Turn::Running => {
-                if !in_turn {
-                    rack.apply(&id, &folder, started, at);
-                }
+        Turn::Finished { last_text, wrap_up } => {
+            if !in_turn {
+                rack.apply(id, &folder, started, at);
             }
-            Turn::Finished { last_text, wrap_up } => {
-                if !in_turn {
-                    rack.apply(&id, &folder, started, at);
-                }
-                if let Some(wrap_up) = wrap_up {
-                    rack.apply(&id, &folder, SessionEvent::WrappedUp(wrap_up), at);
-                }
-                // The transcript doesn't say what was left running.
-                let ended = SessionEvent::TurnEnded {
-                    last_message: last_text,
-                    background: Vec::new(),
-                };
-                rack.apply(&id, &folder, ended, at);
+            if let Some(wrap_up) = wrap_up {
+                rack.apply(id, &folder, SessionEvent::WrappedUp(wrap_up), at);
             }
-            Turn::Interrupted { denied } => {
-                rack.apply(&id, &folder, SessionEvent::Interrupted { denied }, at);
-            }
+            // The transcript doesn't say what was left running.
+            let ended = SessionEvent::TurnEnded {
+                last_message: last_text,
+                background: Vec::new(),
+            };
+            rack.apply(id, &folder, ended, at);
+        }
+        Turn::Interrupted { denied } => {
+            rack.apply(id, &folder, SessionEvent::Interrupted { denied }, at);
         }
     }
+}
+
+/// Has the tile of the Claude Code session `from` follow the Claude desktop app's session to `to`,
+/// the Claude Code session the app moved it to, and returns the tile. A tile that follows catches
+/// up with the new session's transcript, as one restored from `sessions.json` does, since the new
+/// session's turns may have run while Plates was closed. Claude Code keeps a project's transcripts
+/// in one folder, each named for its session's ID (measured on Windows 11 25H2, 2026-11-16,
+/// record/areas/hooks/log.md), so without an event from the new session to say where its
+/// transcript is, Plates names the file beside the old one's. A file Claude Code hasn't written
+/// yet fails to read, and the next catch-up reads it.
+fn follow(
+    rack: &mut Rack,
+    from: &str,
+    to: &str,
+    transcript: Option<&Path>,
+    app: Option<&AppSession>,
+    now: SystemTime,
+) -> Option<TileId> {
+    let (_, old) = rack.session(from)?;
+    // Only the file for the tile's own session of the app's moves it, rather than one that lists
+    // its Claude Code session among another's earlier ones (unverified whether any file does).
+    if let (Some(tile_app), Some(file_app)) = (&old.app_id, app.and_then(|a| a.id.as_ref()))
+        && tile_app != file_app
+    {
+        return None;
+    }
+    let (was, since, folder) = (old.state, old.state_since, old.folder.clone());
+    let transcript = transcript.map(Path::to_path_buf).or_else(|| {
+        old.transcript
+            .as_ref()
+            .map(|path| path.with_file_name(format!("{to}.jsonl")))
+    });
+    let had_tile = rack.knows(to);
+    if !rack.follow(from, to, transcript.as_deref(), now) {
+        return None;
+    }
+    if !had_tile {
+        // The app may end the session it left before its file names the new one, as a `/clear`
+        // ends one (unverified for a move, record/areas/hooks/01-claude-code-hooks.md, Left
+        // open), and the session the tile now follows is still going.
+        if was == SessionState::Ended {
+            let started = SessionEvent::Started {
+                title: None,
+                resumed: false,
+            };
+            rack.apply(to, &folder, started, since);
+        }
+        catch_up_session(rack, to);
+    }
+    if let Some(app) = app
+        && rack.set_app_session(to, app)
+    {
+        rack.place_under_parent(to);
+    }
+    rack.session(to).map(|(tile, _)| tile)
+}
+
+// The Claude Code session of the tile that holds the app's session `app` is for, when the app's
+// file names `session_id` as the session it runs in now and the tile holds another: the app has
+// moved its session to `session_id`.
+fn moved_from(rack: &Rack, session_id: &str, app: &AppSession) -> Option<String> {
+    if app.cli_id.as_deref() != Some(session_id) {
+        return None;
+    }
+    let app_id = app.id.as_deref()?;
+    rack.session_tiles()
+        .filter_map(|(tile, _)| tile.session())
+        .find(|s| s.app_id.as_deref() == Some(app_id) && s.id != session_id)
+        .map(|s| s.id.clone())
+}
+
+// Whether `session_id` is a Claude Code session the app has moved its session away from: the
+// app's file names another as the session it runs in now, and a tile holds that session of the
+// app's, which has followed the move. Without such a tile, the file may only list the ID among
+// another session's earlier ones, and the event is the session's own.
+fn left(rack: &Rack, session_id: &str, app: &AppSession) -> bool {
+    let moved_on = app.cli_id.as_deref().is_some_and(|now| now != session_id);
+    moved_on
+        && app.id.as_deref().is_some_and(|app_id| {
+            rack.session_tiles()
+                .filter_map(|(tile, _)| tile.session())
+                .any(|s| s.app_id.as_deref() == Some(app_id))
+        })
+}
+
+/// Brings a tile's title and parent up to date with the Claude desktop app's file for its
+/// session, which can change with no event to carry it, such as when you rename a session or
+/// detach it from the session that started it. The events thread reports such a change within
+/// about 1s.
+fn refresh_app(rack: &mut Rack, session_id: &str, app: Option<&AppSession>) -> Option<TileId> {
+    let app = app?;
+    let (tile, _) = rack.session(session_id)?;
+    if rack.set_app_session(session_id, app) {
+        rack.place_under_parent(session_id);
+    }
+    Some(tile)
 }
 
 /// One hook event as the receiver got it.
@@ -732,6 +868,174 @@ mod tests {
         rack.mark_read(id, end_at + Duration::from_secs(5));
         catch_up(&mut rack);
         assert!(rack.tile(id).unwrap().session().unwrap().read);
+    }
+
+    #[test]
+    fn a_tile_follows_its_session_to_the_new_one_and_catches_up_with_it() {
+        let dir = std::env::temp_dir().join(format!("plates-core-follow-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let lines = [
+            json!({ "type": "user", "isSidechain": false, "timestamp": "2026-11-16T19:00:30Z",
+                    "message": { "role": "user", "content": "Done, and the popup test was faulty" } }),
+            json!({ "type": "assistant", "isSidechain": false, "timestamp": "2026-11-16T19:10:04Z",
+                    "message": { "role": "assistant", "stop_reason": "end_turn",
+                                 "content": [ { "type": "text", "text": "Stage 18 is closed." } ] } }),
+        ];
+        let text: Vec<String> = lines.iter().map(Value::to_string).collect();
+        std::fs::write(dir.join("new.jsonl"), text.join("\n")).unwrap();
+        let interrupted_at = transcript::parse_timestamp("2026-11-16T18:58:46Z").unwrap();
+
+        let mut rack = Rack::new();
+        let folder = Path::new("/w");
+        let prompt = SessionEvent::PromptSubmitted {
+            title: None,
+            prompt: None,
+        };
+        let id = rack.apply("old", folder, prompt, interrupted_at);
+        rack.set_transcript("old", &dir.join("old.jsonl"));
+        let cut = SessionEvent::Interrupted { denied: false };
+        rack.apply("old", folder, cut, interrupted_at);
+
+        let continued = |from: &str| HookMessage {
+            hook: "AppFile".into(),
+            session_id: "new".into(),
+            cwd: folder.into(),
+            transcript_path: None,
+            event: Some(SessionEvent::Continued { from: from.into() }),
+            status: None,
+            app: None,
+        };
+        assert_eq!(apply(&mut rack, continued("old"), some_time()), Some(id));
+        let s = rack.tile(id).unwrap().session().unwrap();
+        assert_eq!(s.id, "new");
+        assert_eq!(
+            s.transcript.as_deref(),
+            Some(dir.join("new.jsonl").as_path())
+        );
+        assert_eq!(s.state, SessionState::YourTurn);
+        assert_eq!(s.summary.as_deref(), Some("Stage 18 is closed."));
+
+        // A move from a session the rack doesn't show brings no tile.
+        assert_eq!(apply(&mut rack, continued("cleared"), some_time()), None);
+        assert_eq!(rack.tiles().len(), 1);
+    }
+
+    #[test]
+    fn a_tile_that_ended_before_it_followed_its_session_catches_up() {
+        let dir =
+            std::env::temp_dir().join(format!("plates-core-follow-ended-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let turn = json!({ "type": "assistant", "isSidechain": false,
+                           "timestamp": "2026-11-16T19:10:04Z",
+                           "message": { "role": "assistant", "stop_reason": "end_turn",
+                                        "content": [ { "type": "text", "text": "Closed." } ] } });
+        std::fs::write(dir.join("new.jsonl"), turn.to_string()).unwrap();
+        let ended_at = transcript::parse_timestamp("2026-11-16T19:00:00Z").unwrap();
+
+        let mut rack = Rack::new();
+        let id = rack.apply("old", Path::new("/w"), SessionEvent::Ended, ended_at);
+        rack.set_transcript("old", &dir.join("old.jsonl"));
+        let mut continued = message("SessionStart", json!({}));
+        continued.session_id = "new".into();
+        continued.transcript_path = None;
+        continued.event = Some(SessionEvent::Continued { from: "old".into() });
+        assert_eq!(apply(&mut rack, continued, some_time()), Some(id));
+        let s = rack.tile(id).unwrap().session().unwrap();
+        assert_eq!(s.state, SessionState::YourTurn);
+        assert_eq!(s.summary.as_deref(), Some("Closed."));
+    }
+
+    // A message from the Claude Code session `session_id`, with the app's file naming `cli_id` as
+    // the session its session `local_s` runs in now.
+    fn with_app(hook: &str, extra: Value, session_id: &str, cli_id: &str) -> HookMessage {
+        let mut m = message(hook, extra);
+        m.session_id = session_id.into();
+        m.transcript_path = None;
+        m.app = Some(AppSession {
+            id: Some("local_s".into()),
+            cli_id: Some(cli_id.into()),
+            ..AppSession::default()
+        });
+        m
+    }
+
+    #[test]
+    fn an_event_from_a_session_the_app_left_adds_no_tile() {
+        let now = some_time();
+        let mut rack = Rack::new();
+        let prompt = || json!({ "prompt": "Go" });
+        // Without a tile for the app's session, the file may only list the ID among another
+        // session's earlier ones, so the event is the session's own.
+        let stray = with_app("UserPromptSubmit", prompt(), "abc123", "newer");
+        assert!(apply(&mut rack, stray, now).is_some());
+
+        let mut rack = Rack::new();
+        apply(
+            &mut rack,
+            with_app("UserPromptSubmit", prompt(), "newer", "newer"),
+            now,
+        );
+        let late = with_app(
+            "SessionEnd",
+            json!({ "reason": "other" }),
+            "abc123",
+            "newer",
+        );
+        assert_eq!(apply(&mut rack, late, now), None);
+        assert!(!rack.knows("abc123"));
+    }
+
+    #[test]
+    fn a_new_sessions_first_event_moves_the_tile_when_the_app_already_names_it() {
+        let now = some_time();
+        let mut rack = Rack::new();
+        let prompt = || json!({ "prompt": "Go" });
+        let id = apply(
+            &mut rack,
+            with_app("UserPromptSubmit", prompt(), "old", "old"),
+            now,
+        )
+        .unwrap();
+        let cut = with_app("Stop", json!({}), "old", "old");
+        apply(&mut rack, cut, now);
+
+        let first = with_app("UserPromptSubmit", prompt(), "new", "new");
+        assert_eq!(apply(&mut rack, first, now), Some(id));
+        assert_eq!(rack.tiles().len(), 1, "no second tile");
+        let s = rack.tile(id).unwrap().session().unwrap();
+        assert_eq!(s.id, "new");
+        assert_eq!(s.state, SessionState::Working);
+
+        // A file for another session of the app's moves no tile.
+        let mut other = with_app("AppFile", json!({}), "elsewhere", "elsewhere");
+        other.event = Some(SessionEvent::Continued { from: "new".into() });
+        other.app.as_mut().unwrap().id = Some("local_other".into());
+        assert_eq!(apply(&mut rack, other, now), None);
+        assert!(rack.knows("new"));
+    }
+
+    #[test]
+    fn a_session_detached_from_its_parent_leaves_it_without_an_event() {
+        let now = some_time();
+        let mut rack = Rack::new();
+        let app = |parent: Option<&str>| AppSession {
+            id: Some("local_c".into()),
+            parent: parent.map(Into::into),
+            cli_id: Some("abc123".into()),
+            ..AppSession::default()
+        };
+        let mut prompt = message("UserPromptSubmit", json!({ "prompt": "Go" }));
+        prompt.app = Some(app(Some("local_p")));
+        let id = apply(&mut rack, prompt, now).unwrap();
+        let parent = |rack: &Rack| rack.tile(id).unwrap().session().unwrap().app_parent.clone();
+        assert_eq!(parent(&rack).as_deref(), Some("local_p"));
+
+        // The events thread reports the app's file changing with no event of the session's.
+        let mut changed = message("UserPromptSubmit", json!({}));
+        changed.event = Some(SessionEvent::AppChanged);
+        changed.app = Some(app(None));
+        assert_eq!(apply(&mut rack, changed, now), Some(id));
+        assert_eq!(parent(&rack), None);
     }
 
     #[test]
