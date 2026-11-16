@@ -57,10 +57,14 @@ fn icon(name: &str) -> Option<String> {
             "0 0 24 24",
             format!(r#"<path d="M5 12.5l4.5 4.5L19 7.5" {STROKE} stroke-width="1.8"/>"#),
         ),
-        // A crescent, for a reminder for tomorrow.
+        // A crescent, for a reminder for tomorrow. Every place that draws it centers it against
+        // something else, such as the count of snoozed tiles beside it, and a crescent's weight
+        // sits in its lower curve, so centering its outline left it looking 1.4px low at 12px.
+        // So it's drawn 2.86 units higher than its outline would sit, which puts the center of its
+        // area, at y 14.86 of 24 before the shift, at the middle of its box.
         "moon.svg" => svg(
             "0 0 24 24",
-            r#"<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.6 6.6 0 0 0 10.5 10.5z"/>"#.into(),
+            r#"<path d="M20 11.64A8.5 8.5 0 1 1 9.5 1.14a6.6 6.6 0 0 0 10.5 10.5z"/>"#.into(),
         ),
         "plus.svg" => svg(
             "0 0 24 24",
