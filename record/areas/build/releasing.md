@@ -31,6 +31,24 @@ The first release is 0.1.0, `release-please-config.json`'s `initial-version`.
 
 Velopack names each file from the pack ID `plates` and the channel (read in Velopack 1.2.161, `src/vpk/Velopack.Core/DefaultName.cs`, `GetSuggestedSetupName`, `GetSuggestedPortableName`, and `GetSuggestedReleaseName`).
 
+## The app icon
+
+`tools/make-icons.mjs` draws the app icon and writes it to `src/plates/icons/`, as `plates.ico` for Windows and `plates.icns` for macOS.
+`src/plates/build.rs` puts `plates.ico` in `plates.exe` as a resource, and the workflow hands `vpk pack` the platform's icon with `-i`.
+Velopack's documentation says only that `-i` is the "Path to icon file for package" (documented, [vpk pack on Windows](https://docs.velopack.io/reference/cli/content/vpk-windows) and [on macOS](https://docs.velopack.io/reference/cli/content/vpk-osx), as of 2026-11-16).
+Which of the installer, the app bundle, and the shortcuts show it is unverified, and the files from a dry run, as [How to try the packaging without releasing](#how-to-try-the-packaging-without-releasing) makes them, would settle it.
+
+## Where an install puts Plates
+
+| Installer | Puts Plates in | Where you open it by hand |
+| --- | --- | --- |
+| `plates-win-x64-Setup.exe` | `%LocalAppData%\plates\` | a shortcut in the Start menu, and one on the desktop |
+| `plates-osx-arm64-Setup.pkg` | `/Applications/Plates.app` or `~/Applications/Plates.app`, as you choose while installing | Applications in Finder, and Apps on macOS 26 |
+
+Velopack's installer decides every cell, and the Windows folder is lowercase because Velopack names it `%LocalAppData%\{packId}` from the pack ID `plates` (documented, [Velopack installers](https://docs.velopack.io/packaging/installer), as of 2026-11-16).
+The desktop shortcut is Velopack's default, and Plates keeps it (user, 2026-11-16).
+That Apps lists an installed `Plates.app` is unverified, and installing a dry run's `Setup.pkg` on macOS 26 would settle it.
+
 ## How to release from a tag
 
 1. Push a tag named for the version, such as `v0.2.0`.

@@ -1,0 +1,42 @@
+2026-11-16, macOS 26.5.2, Apple silicon. Two raw outputs for record/areas/product/log.md.
+
+1. A second Plates started while another ran.
+
+Another Plates, started from another session, held port 47231. From the repository's root,
+after `cargo build -p plates -p plates-hook` built the debug program with /plates/show, each
+run below started `./target/debug/plates`, timed it with Perl's Time::HiRes, and printed its
+exit code.
+
+First run after the build:
+second launch exited with 0 after 2.579s
+
+The next two runs:
+second launch exited with 0 after .132s
+second launch exited with 0 after .079s
+
+2. v0.1.0's macOS bundle.
+
+`gh release download v0.1.0 -R xiprox/plates -p plates-osx-arm64-Portable.zip`, unzipped, held:
+
+Plates.app/Contents/Info.plist
+Plates.app/Contents/MacOS/sq.version
+Plates.app/Contents/MacOS/plates-hook
+Plates.app/Contents/MacOS/plates
+Plates.app/Contents/MacOS/UpdateMac
+Plates.app/Contents/Resources/DefaultApp.icns
+Plates.app/Contents/Resources/sq.version
+
+`plutil -p Plates.app/Contents/Info.plist`:
+
+{
+  "CFBundleExecutable" => "plates"
+  "CFBundleIconFile" => "DefaultApp.icns"
+  "CFBundleIdentifier" => "com.plates.plates"
+  "CFBundleName" => "Plates"
+  "CFBundlePackageType" => "APPL"
+  "CFBundleShortVersionString" => "0.1.0.0"
+  "CFBundleSignature" => "????"
+  "CFBundleVersion" => "0.1.0"
+  "NSHighResolutionCapable" => true
+  "NSPrincipalClass" => "NSApplication"
+}

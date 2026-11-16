@@ -11,6 +11,7 @@ use crate::{
     markup::{self, Mark},
     menu::MenuKind,
     motion::{PEEK, Side},
+    native,
     rack_view::{POPOVER_GAP, POPOVER_W, RackView, STRIP_W, TOAST_H},
 };
 
@@ -42,6 +43,17 @@ const ENTER: Duration = crate::rows::ENTER;
 
 /// The font the rack's text uses. The root of the rack's view sets the same family.
 pub(crate) const SANS: &str = "Inter";
+/// Inter's faces for the four weights the rack draws, which app.rs hands GPUI before the rack
+/// opens. Without them, a Mac with no Inter installed draws the rack in a monospace font, since
+/// GPUI's fallback for a missing family starts with `.ZedMono`. (read in gpui-pre 0.3.12,
+/// src/text_system.rs, `TextSystem::new`)
+/// When the rack starts drawing another weight, add that face from Inter's release to fonts/.
+pub(crate) const SANS_FACES: [&[u8]; 4] = [
+    include_bytes!("../fonts/Inter-Regular.ttf"),
+    include_bytes!("../fonts/Inter-Medium.ttf"),
+    include_bytes!("../fonts/Inter-SemiBold.ttf"),
+    include_bytes!("../fonts/Inter-Bold.ttf"),
+];
 /// A monospace font each OS ships with, for the code in Claude's lines.
 pub(crate) const MONO: &str = if cfg!(windows) { "Consolas" } else { "Menlo" };
 
@@ -333,6 +345,9 @@ pub(crate) fn session_words(t: &Tile, now: SystemTime) -> String {
     match s.state {
         SessionState::New => "New".into(),
         SessionState::Working => format!("Working for {}", minutes(in_state)),
+        SessionState::NeedsApproval if s.question => {
+            format!("Needs your input · {}", minutes(in_state))
+        }
         SessionState::NeedsApproval => format!("Needs your approval · {}", minutes(in_state)),
         SessionState::YourTurn if s.read => {
             format!("Your turn · read · waiting {}", minutes(in_state))
@@ -804,7 +819,7 @@ impl RackView {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|this, e: &MouseDownEvent, _, cx| {
-                    let login = crate::native::starts_at_login();
+                    let login = native::starts_at_login();
                     this.open_menu(MenuKind::Rack { login }, e.position, cx)
                 }),
             )
@@ -973,7 +988,7 @@ impl RackView {
 
 impl Render for RackView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.scale = window.scale_factor() as f64;
+        self.scale = native::scale(window);
         self.track_rows();
         self.step(cx);
         self.place(cx);

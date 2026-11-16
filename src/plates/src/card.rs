@@ -241,7 +241,9 @@ impl CardView {
             .map(|a| paragraph_weighted(a, YOUR_TURN_TEXT, FontWeight::SEMIBOLD));
         // A choice answers the session as its button in the app does, by opening the session and
         // pressing that button (user, 2026-11-15). A session the app doesn't keep has no button
-        // to press, so there the choices only say what they are.
+        // to press, and on macOS Plates has no way to press one, since it presses through
+        // Windows' UI Automation, so there the choices only say what they are.
+        let pressable = link && cfg!(windows);
         let tile = self.tile;
         let choices = (!w.choices.is_empty()).then(|| {
             div()
@@ -258,7 +260,7 @@ impl CardView {
                         .rounded(px(6.))
                         .text_size(px(11.5))
                         .child(c.clone());
-                    if !link {
+                    if !pressable {
                         return label
                             .border_1()
                             .border_color(white(0.14))
@@ -460,7 +462,7 @@ impl Render for CardView {
         let Some(session) = tile.session() else {
             return div().into_any_element();
         };
-        let grown = self.step(f64::from(window.scale_factor()), cx);
+        let grown = self.step(native::scale(window), cx);
         let measured = self.measured.clone();
         // The text shows once the card is full size, rather than fading in as it grows, since
         // fades on hover read as slow (user, 2026-11-15).

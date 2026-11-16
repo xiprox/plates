@@ -2,6 +2,7 @@
 //! opens the rack's window.
 
 use std::{
+    borrow::Cow,
     collections::HashMap,
     path::PathBuf,
     sync::mpsc::{self, RecvTimeoutError},
@@ -16,13 +17,15 @@ use plates_core::{
     cuts::Cuts,
     desktop::{self, AppSessions},
     hooks::{self, HookMessage},
-    receiver::{PORT, Received, Receiver},
+    receiver::{self, PORT, Received, Receiver},
     store, transcript,
 };
 
 use crate::{
     assets::Assets,
     rack_view::{RACK_W, RackView, rack_height},
+    tray,
+    view::SANS_FACES,
 };
 
 /// How often the events thread reads the transcripts of sessions in a turn, which is how long an
@@ -66,6 +69,16 @@ fn new_looks(
 }
 
 pub fn run() {
+    // Only one Plates can hold the port its hooks post to, so a second one, such as one opened
+    // from the Start menu while Start at login already opened the first, would show a rack that
+    // never gets a session's tile. It asks the running Plates to show its rack instead, and quits
+    // before reading or writing any of the data files.
+    let (tx, rx) = mpsc::channel();
+    let receiver = Receiver::start(PORT, tx, true);
+    if receiver.is_err() && receiver::ask_to_show(PORT, Duration::from_millis(500)) {
+        return;
+    }
+
     let data_file = data_dir().join("rack.json");
     let mut rack = match store::load(&data_file) {
         Ok(loaded) => {
@@ -106,13 +119,14 @@ pub fn run() {
     // thread, so a thread between them moves each one onto a channel the UI can await. That
     // thread also reads each tool event's transcript for the session's status line, the desktop
     // app's file for the session's title and ID, and, once a second, the transcripts of sessions in a
-    // turn for an interrupt or a denial, so none of these reads holds up the rack.
-    let (tx, rx) = mpsc::channel();
-    let receiver = Receiver::start(PORT, tx);
+    // turn for an interrupt or a denial, so none of these reads holds up the rack. A request to
+    // show the rack goes onto the channel the tray's menu uses.
     if let Err(e) = &receiver {
         eprintln!("Couldn't listen on port {PORT}, so no session tiles will show: {e}");
     }
     let (events_tx, events) = async_channel::unbounded();
+    let (commands_tx, commands) = async_channel::unbounded();
+    let show = commands_tx.clone();
     thread::Builder::new()
         .name("plates-events".into())
         .spawn(move || {
@@ -134,6 +148,11 @@ pub fn run() {
                             .entry(message.session_id.clone())
                             .or_insert_with(|| (message.cwd.clone(), None));
                         messages.push(*message);
+                    }
+                    Ok(Received::Show) => {
+                        if show.send_blocking(tray::Command::Show).is_err() {
+                            return;
+                        }
                     }
                     Ok(Received::Unreadable(..)) | Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => break,
@@ -162,6 +181,9 @@ pub fn run() {
         // The receiver's thread runs for the life of the app.
         let _receiver = receiver;
         gpui_kit::init(cx);
+        cx.text_system()
+            .add_fonts(SANS_FACES.iter().map(|face| Cow::Borrowed(*face)).collect())
+            .expect("Inter's bundled faces should load");
         Theme::change(ThemeMode::Dark, None, cx);
         // gpui-component's Root fills the whole window with the theme's background, which would
         // show as dark squares outside the rack's rounded corners.
@@ -196,7 +218,7 @@ pub fn run() {
             ..Default::default()
         };
         gpui_kit::open_window(options, cx, move |window, cx| {
-            cx.new(|cx| RackView::new(rack, data_file, events, window, cx))
+            cx.new(|cx| RackView::new(rack, data_file, events, (commands_tx, commands), window, cx))
         })
         .expect("the rack's window should open");
     });

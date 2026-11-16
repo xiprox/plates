@@ -4,8 +4,9 @@
 //!
 //! The rack works in pixels from the top-left corner of the primary screen, as Windows does.
 //! AppKit works in points from the bottom-left corner of the primary screen, so every position
-//! here is flipped against the primary screen's height and multiplied by its scale. A second
-//! screen with another scale isn't handled.
+//! here is flipped against the primary screen's height and multiplied by its scale, on every
+//! screen. `scale` hands the rack that same factor, so the rack keeps its size in points on a
+//! screen with another scale.
 
 // objc2 marks some of these calls unsafe and not others, and which ones changes between its
 // versions, so every call sits in an unsafe block.
@@ -56,6 +57,15 @@ fn to_ns(r: Rect) -> NSRect {
         NSPoint::new(r.left / scale, height - r.bottom / scale),
         NSSize::new((r.right - r.left) / scale, (r.bottom - r.top) / scale),
     )
+}
+
+/// How many of the rack's pixels make one of GPUI's pixels.
+/// A rack sized by the scale of the screen it's on comes out at half size on a 1x screen beside a
+/// 2x primary, with GPUI still laying it out at full size, because every conversion here
+/// multiplies by the primary screen's scale. So the rack's scale is the primary screen's on every
+/// screen. (measured on macOS 26.5, 2026-11-16, record/areas/rack/log.md)
+pub fn scale(_window: &gpui_kit::Window) -> f64 {
+    primary().1
 }
 
 pub fn hwnd_of(window: &gpui_kit::Window) -> isize {

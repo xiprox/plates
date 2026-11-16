@@ -51,8 +51,13 @@ pub enum SessionState {
 /// One hook event that changes a session's tile, with the JSON already read out of it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SessionEvent {
-    /// `SessionStart`, which also fires on a resume, a `/clear`, and a compaction.
-    Started { title: Option<String> },
+    /// `SessionStart`, which also fires on a resume, a `/clear`, and a compaction. `resumed` is
+    /// whether its `source` is `resume`, which the Claude desktop app sends when you open a
+    /// session that wasn't running.
+    Started {
+        title: Option<String>,
+        resumed: bool,
+    },
     /// `UserPromptSubmit`.
     PromptSubmitted {
         title: Option<String>,
@@ -82,7 +87,8 @@ pub enum SessionEvent {
     CompactStarted,
     /// `PostCompact`, with whether you typed the `/compact`.
     CompactFinished { manual: bool },
-    /// `Elicitation`: an MCP server asks you to fill in a form or open a page.
+    /// `Elicitation`, when an MCP server asks you to fill in a form or open a page, and Claude's
+    /// `AskUserQuestion` tool, which asks you to pick among options.
     InputAsked { summary: String },
     /// `ElicitationResult`: you answered the MCP server.
     InputGiven,
@@ -317,6 +323,9 @@ pub struct Session {
     /// `refresh_line` keeps it current.
     pub line: Option<String>,
     pub pending_tool: Option<Tool>,
+    /// Whether what the session waits on in `NeedsApproval` is a question for you, from Claude's
+    /// `AskUserQuestion` tool or an MCP server, rather than a tool to approve.
+    pub question: bool,
     pub ended_at: Option<SystemTime>,
 }
 
@@ -348,6 +357,7 @@ impl Session {
             read: false,
             line: None,
             pending_tool: None,
+            question: false,
             ended_at: None,
         }
     }

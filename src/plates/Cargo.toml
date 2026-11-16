@@ -13,9 +13,19 @@ async-channel = "2"
 # (record/decisions/001-rust-and-gpui.md).
 gpui-kit = "=0.9.1"
 raw-window-handle = "0.6"
+# The tray icon on Windows and the menu bar item on macOS, with their menu. It uses the objc2,
+# objc2-app-kit, and windows-sys versions GPUI does, so they share one build.
+tray-icon = { version = "0.26", default-features = false }
+# Reads the tray's icon from the PNG tools/make-icons.mjs writes. 0.18 is the version tray-icon
+# uses on macOS.
+png = "0.18"
 # Installs, updates (with delta packages), and uninstalls. Keep in step with VPK_VERSION in
 # .github/workflows/release.yml, as the packages vpk makes are read by this crate.
 velopack = "=1.2.161"
+
+[build-dependencies]
+# build.rs gives plates.exe its icon.
+winresource = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The versions gpui-pre-macos 0.3.12 uses, so both share one build.

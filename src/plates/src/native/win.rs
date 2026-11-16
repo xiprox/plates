@@ -70,6 +70,12 @@ fn rect(r: RECT) -> Rect {
     }
 }
 
+/// How many of the rack's pixels, which are physical pixels here, make one of GPUI's pixels on the
+/// monitor the window is on.
+pub fn scale(window: &gpui_kit::Window) -> f64 {
+    f64::from(window.scale_factor())
+}
+
 pub fn hwnd_of(window: &gpui_kit::Window) -> isize {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     let handle = HasWindowHandle::window_handle(window)

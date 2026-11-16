@@ -2,6 +2,59 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-16: A new sub-session's first events come before the app's file names its parent
+
+**Asked:** why does a sub-session started while Plates runs show as a session of its own, and go under its parent's tile only after Plates restarts?
+
+**Expected:** a file the app had not yet written, which the hooks design left open: a tile whose first event finds no file stays after the last session tile.
+
+**Found:** the sub-session's tile appeared after the last session tile, and stayed there while the session worked, and after a restart it sat under its parent's tile (seen by the user on macOS 26.5.2, Claude desktop app 5.11492.5, 2026-11-16).
+So the first events found no file naming the parent, and the app's file named it by the restart.
+Plates moved a tile under its parent only for the event that added the tile, and after a miss searched for the file again only 30s later, so nothing moved the tile once the file named the parent, and only a restart, which gathers each family as it loads, did.
+
+**Changed:**
+
+- The first event that learns a tile's parent moves the tile under it, once.
+- A search that finds no file for a session tries again after 2s, doubling the wait after each miss up to the 30s it waited before.
+
+How soon after a sub-session starts the app's file names its parent is unmeasured, and watching where a new sub-session's tile goes, second by second, would measure it.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md): the paragraph on sub-sessions.
+
+## 2026-11-16: The Claude desktop app asks for AskUserQuestion through PermissionRequest
+
+**Asked:** why did a session waiting on Claude's question show as needing approval, with "Wants to use: AskUserQuestion"?
+
+**Expected:** a question to arrive as `PreToolUse` for `AskUserQuestion`, which Plates read as an ordinary tool.
+
+**Found:** the tile moved to needs approval, which only `PermissionRequest` and the `permission_prompt` notification do, with the `AskUserQuestion` tool's summary line, while the app showed the session as "Needs your input" with the question (seen by the user on macOS 26.5.2, Claude desktop app 5.11492.5, 2026-11-16).
+The app hosts Claude Code through the Agent SDK's `canUseTool` callback, which asks for every tool that way ([entry](#2026-11-15-claude-code-documents-the-final-message-on-stop-failure-events-and-the-session-title-on-every-prompt)), so a question asks for permission like any tool.
+
+**Changed:** `PreToolUse` and `PermissionRequest` for `AskUserQuestion` move the tile to needs approval as a question, with "Asks: " and the first line of the first question as its summary line, and the hover card says "Needs your input" for it, as it now does for an MCP server's `Elicitation`.
+The tool's `PostToolUse` moves the tile back to working once you answer, as for any tool.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md): a row for `AskUserQuestion`, and the `Elicitation` row. [02-tiles](../rack/02-tiles.md): the needs approval row.
+
+## 2026-11-16: On macOS, the app keeps its session files under Application Support, and opening a session adds its tile through a resume
+
+**Asked:** why does clicking a session tile on macOS open nothing, and why does opening a session the rack doesn't show add its tile, with nothing new in the session?
+
+**Expected:** no app ID behind the click, since Plates looked for the app's session files only on Windows, and behind the tile, the `SessionStart` with a `source` of `resume` that opening an older session sent on Windows ([entry](#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)).
+
+**Found:** on macOS, the app keeps the same files as on Windows, and the open came through `SessionStart` (measured on macOS 26.5.2, Claude desktop app 5.11492.5, 2026-11-16).
+
+- The app keeps a file per session at `~/Library/Application Support/Claude/claude-code-sessions/<id>/<id>/local_<id>.json`, 200 files and 63MB on this Mac, with the keys Plates reads on Windows: `sessionId`, `cliSessionId`, `title`, and `lastFocusedAt`.
+- macOS hands `claude://` links to `/Applications/Claude.app`.
+- Two sessions the user opened in the app, with no prompt since, had tiles in the new state, which only `SessionStart` sets.
+
+**Changed:**
+
+- Plates reads the app's session files on macOS from that folder, so a tile there has the app's ID and title, and a click opens its `claude://` link.
+- A `SessionStart` with a `source` of `resume` adds no tile for a session Plates doesn't show, and the tile comes with the session's next prompt or tool.
+- On macOS, a wrap-up's choices in the hover card stay labels, since Plates presses the app's buttons through Windows' UI Automation.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md): the `SessionStart` row, the rule for a session Plates doesn't show, and "Opening a session".
+
 ## 2026-11-15: UI Automation can press a session's wrap-up button and send a message from its message box
 
 **Asked:** with no supported channel into a desktop session, can another program answer one through Windows UI Automation, by pressing the app's own wrap-up button or typing into its message box?

@@ -2,6 +2,48 @@
 
 What we found about building and running Plates as a program, newest entry first.
 
+## 2026-11-16: v0.1.0's Plates.app has an icon Plates didn't supply, and no LSUIElement
+
+**Asked:** what v0.1.0's macOS app bundle holds, which an installed Plates shows in Finder and in Apps, macOS 26's list of apps.
+
+**Expected:** no icon of Plates' own, since v0.1.0's release passed `vpk pack` none.
+
+**Found:** v0.1.0's `plates-osx-arm64-Portable.zip` holds `Plates.app`, whose `Info.plist` gives `CFBundleName` `Plates`, `CFBundleIdentifier` `com.plates.plates`, `CFBundleIconFile` `DefaultApp.icns`, and no `LSUIElement` (read with `plutil -p`, 2026-11-16, [results/2026-11-16-second-plates.txt](results/2026-11-16-second-plates.txt)).
+`DefaultApp.icns` sits in the bundle's `Resources`, and nothing in Plates' repository makes a file of that name.
+
+**Changed:** nothing in v0.1.0; the next release's `vpk pack` gets `plates.icns` with `-i`.
+
+**Affects:** [releasing](../build/releasing.md#where-an-install-puts-plates), and the Dock icon question in [01-window](../rack/01-window.md#left-open).
+
+## 2026-11-16: A second Plates quits after asking the running one to show its rack
+
+**Asked:** what happens when you open Plates while it already runs, such as from the Start menu after Start at login opened it?
+
+**Expected:** a second rack with no session tiles, since nothing stopped a second Plates, and it would fail to listen on port 47231.
+
+**Found:** after the change below, we started the debug build, `./target/debug/plates`, three times while another Plates ran, and each time it quit with exit code 0, the second and third 0.13s and 0.08s after they started (measured on macOS 26.5.2, 2026-11-16, [results/2026-11-16-second-plates.txt](results/2026-11-16-second-plates.txt)).
+The first run after the build took 2.58s to quit, which we take to be macOS checking a new program on its first launch (unverified).
+The running Plates was another session's, and it may have been a build from before the change, which answers 200 to any request, so whether it moved its rack to the middle doesn't follow from this run.
+We didn't open `Plates.app`, and didn't run this on Windows.
+
+**Changed:** the receiver answers a post to `/plates/show` with 200 and sends the rack the same Show command as the tray's "Show Plates", and `plates listen` answers it with 404.
+A starting Plates that can't listen on the port posts there, quits if the answer is 200, and otherwise opens its own rack without session tiles.
+
+**Affects:** [01-window](../rack/01-window.md#launching-and-quitting).
+
+## 2026-11-16: An .icns holding PNGs at 16px and 32px reads back as garbage at those sizes
+
+**Asked:** does the `.icns` that `tools/make-icons.mjs` writes hold every size it should?
+
+**Expected:** yes, since Apple's icon types `icp4` and `icp5` take a PNG at 16px and 32px, as the larger types do.
+
+**Found:** `iconutil -c iconset` turned the `icp4` and `icp5` PNGs into noise, and every larger PNG back into its image (measured on macOS 26.5.2, 2026-11-16).
+An `.icns` that `iconutil -c icns` built from the same PNGs held its 16px and 32px images as `ic04` and `ic05`, in an ARGB form whose data starts with `ARGB`, and PNGs for the rest.
+
+**Changed:** `tools/make-icons.mjs` writes the 16px and 32px images as `ic04` and `ic05` in that ARGB form, and `iconutil` reads all 10 images back.
+
+**Affects:** nothing in the design docs.
+
 ## 2026-11-15: A Plates started from a shell inside the Claude desktop app keeps its data in the app's package
 
 **Asked:** why did a Plates started from Explorer not find the `place.json` we had written to `%APPDATA%\Plates\`?

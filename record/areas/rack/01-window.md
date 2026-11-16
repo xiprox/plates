@@ -3,7 +3,7 @@
 ```text
 Purpose:     What the rack's window is, how it moves and docks, and when it takes keyboard focus.
 Depends on:  01-aims (../product/01-aims.md), and 02-tiles (02-tiles.md) for the markers the docked strip copies.
-Decides:     The window's shape, the drag, throw, and dock gestures, the docked strip, the focus rules, where the rack opens, how you quit it, and whether Plates starts at login.
+Decides:     The window's shape, the drag, throw, and dock gestures, the docked strip, the focus rules, where the rack opens, what opening a running Plates does, how you quit it, whether Plates starts at login, and Plates' icon in the tray and the menu bar.
 ```
 
 The rack is Plates' one window: a 304px-wide rounded panel that stays on top of every other window and holds the tiles [02-tiles](02-tiles.md) describes.
@@ -13,6 +13,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 ## Shape
 
 - The window is borderless, with 14px rounded corners, and has no taskbar or Dock entry.
+  You reach Plates from outside the rack through its icon in the tray or the menu bar ([Tray and menu bar](#tray-and-menu-bar)).
 - It stays above every other window, a game in borderless full screen included (user, 2026-11-15).
   On Windows, a game in borderless full screen is a topmost window like the rack, and Windows puts whichever topmost window went on top last above the others, so the game covers the rack once Windows raises it ([rack log](log.md#2026-11-15-another-programs-topmost-window-covers-the-rack-until-the-rack-raises-itself)).
   So when another program's window comes to the front, and again 200ms later and once a second, Plates checks whether another program's shown, topmost window covers any of the rack, and if one does, puts the rack back on top without taking focus.
@@ -68,9 +69,32 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   A Plates started from a Claude Code shell in the Claude desktop app runs inside the app's package, and files it wrote to `%APPDATA%\Plates\` landed in the package's own folder ([product log](../product/log.md#2026-11-15-a-plates-started-from-a-shell-inside-the-claude-desktop-app-keeps-its-data-in-the-apps-package)).
   Whether its registry writes land in the package too is unverified, and reading the `Run` key from a terminal that Explorer started, after turning it on from such a Plates, would settle it.
   Until then, turn it on from a Plates started from Explorer.
+- You open Plates by hand where the installers put it ([releasing](../build/releasing.md#where-an-install-puts-plates)).
+- On Windows, and on macOS when you run the `plates` program rather than open `Plates.app`, opening Plates while it runs moves the rack to the middle of the primary monitor's work area, as "Show Plates" does, and opens no second rack (user, 2026-11-16).
+  Only one Plates can hold the port the hooks post to, so a second rack would never get a session's tile.
+  A starting Plates that finds the port taken posts to `/plates/show` on it, and quits once the running Plates answers 200, before it reads or writes any of its data files.
+  On any other answer, such as the 404 that `plates listen` gives, or with no connection within 500ms, it opens its own rack without session tiles.
+  On macOS, a debug build started while another Plates ran quit 0.08s and 0.13s after it started (measured on macOS 26.5.2, 2026-11-16, [product log](../product/log.md#2026-11-16-a-second-plates-quits-after-asking-the-running-one-to-show-its-rack)), and we haven't run this on Windows.
+  That the running Plates then moves its rack to the middle is unverified, and opening Plates while a build with `/plates/show` runs, on Windows and on macOS, would settle it.
+- On macOS, opening `Plates.app` while it runs makes LaunchServices send the running Plates a reopen rather than start a second one, so the rack stays where it is, and the menu bar's "Show Plates" moves it to the middle (unverified, and opening an installed `Plates.app` while it runs would settle it).
+  Plates registers no `on_reopen` callback, and GPUI would call one only while the app has no visible window, which never happens while the rack is open (read in gpui-pre-macos 0.3.12, `src/platform.rs`, `should_handle_reopen`).
 - A menu opens below and to the right of the pointer, to its left where the monitor's work area leaves no room on the right, and above the pointer where it leaves no room below (user, 2026-11-15).
 - Each menu fades in over 120ms.
   On Windows, the menu turns on DWM's shadow only once the fade ends, since DWM draws the shadow at full strength from the moment it's on (unverified; watching a menu open with its shadow on from the start would settle it).
+
+## Tray and menu bar
+
+- Plates puts its icon in Windows' notification area and in macOS' menu bar, since the rack has no taskbar or Dock entry, and a rack out of sight has no other way back (user, 2026-11-16).
+- The icon's menu holds "Show Plates", "Start at login", and "Quit Plates".
+  "Start at login" is the same setting as the grip band's, and changing it in either menu changes the check mark in both.
+- "Show Plates" takes the rack out of any dock and puts it at the middle of the primary monitor's work area, since a rack out of sight can be under another window, docked at the edge of a monitor you're not looking at, or off every monitor.
+- On Windows, clicking the icon does what "Show Plates" does, and right-clicking it opens the menu, as Windows' own tray icons do.
+  On macOS, clicking it opens the menu, as a menu bar item does.
+- The app icon is a stack of plates on the rack's own dark panel: four in the blue of a working session's marker, and one more in the orange of a session that needs you, being set down on top, its shadow already on the plate below (user, 2026-11-16).
+  The tray's icon on Windows is the app icon.
+- The menu bar's icon is a template image of the same moment seen side on, two plates and one being set down, which macOS tints to suit a light or dark menu bar (documented, [NSImage.isTemplate](https://developer.apple.com/documentation/appkit/nsimage/istemplate), as of 2026-11-16).
+  It's side on because at 18pt a plate seen from above reads as a coin, and it stacks two plates rather than four because at 18 pixels on a 1x screen four run together.
+- `tools/make-icons.mjs` draws every icon, and `src/plates/icons/` holds what it writes.
 
 ## OS snapping
 
@@ -80,6 +104,8 @@ On Windows, the OS started no move loop on the rack over 8,282 moves by hand (me
 ## Left open
 
 - How Start at login adds Plates to what macOS opens at login.
+- How long macOS shows a Dock icon for an installed `Plates.app`, whose `Info.plist` has no `LSUIElement` ([product log](../product/log.md#2026-11-16-v010s-platesapp-has-an-icon-plates-didnt-supply-and-no-lsuielement)), before Plates makes itself an accessory app as the rack opens.
+  Opening a dry run's `Plates.app` while watching the Dock would settle it.
 - Whether the rack also docks to the top and bottom edges.
 - Whether the rack keeps a place for each arrangement of monitors, so that when you unplug a laptop from its external monitors, the rack goes back to where it sat on the laptop's own screen.
 - Whether the rack hides from screen capture.

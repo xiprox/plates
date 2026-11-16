@@ -72,14 +72,17 @@ jobs:
         include:
           # Each platform gets its own channel, so the two never overwrite each other's files
           # on the shared release (a non-default channel is part of every file name).
+          # tools/make-icons.mjs writes both icons.
           - os: windows-latest
             channel: win-x64
             exe: plates.exe
             hook: plates-hook.exe
+            icon: src/plates/icons/plates.ico
           - os: macos-latest
             channel: osx-arm64
             exe: plates
             hook: plates-hook
+            icon: src/plates/icons/plates.icns
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -146,7 +149,7 @@ jobs:
 
       - name: Pack
         run: |
-          vpk pack -u "$PACK_ID" --packTitle "Plates" -v "$VERSION" \
+          vpk pack -u "$PACK_ID" --packTitle "Plates" -v "$VERSION" -i "${{ matrix.icon }}" \
             -p publish -e "${{ matrix.exe }}" -c "$CHANNEL" -o Releases
 
       - name: Attach to the release

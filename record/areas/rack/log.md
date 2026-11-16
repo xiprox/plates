@@ -2,6 +2,37 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-16: On a Mac, the rack shrinks to half size on a 1x screen beside a 2x primary
+
+**Asked:** why did the rack squeeze its tiles on the user's 1x external monitor, and why did a rack docked there come back too small to find?
+
+**Expected:** a mix-up between the two screens' scales, since mac.rs said a second screen with another scale wasn't handled.
+
+**Found:** the rack sized its window by GPUI's `window.scale_factor()`, the scale of the screen the window is on, while mac.rs turns the rack's pixels into points by the primary screen's scale on every screen (measured on macOS 26.5.2, 2026-11-16, with a 2x built-in display as primary and a 1x 3440×1440 monitor beside it).
+
+- On the 1x monitor, the rack asked for 304px, which mac.rs made 152 points, while GPUI still laid the rack out at 304 points, so its tiles squeezed and clipped.
+- A rack docked at that monitor's left edge came back from `place.json` as an 11×15-point window where the two screens meet.
+- The hover card sized itself the same way, and the drag threshold and throw speeds use the same scale, so those were off by 2x on that monitor too (read in this repository, not measured).
+
+**Changed:** `native::scale` gives the rack's pixels per GPUI pixel: the primary screen's scale on macOS, and the window's scale factor on Windows, as before.
+The rack and the hover card take their scale from it.
+With the change, a saved place on the 1x monitor opens a 304×168-point rack, and a dock at its left edge opens a 22×30-point strip, the same sizes as on the primary screen (measured on macOS 26.5.2, 2026-11-16).
+
+**Affects:** nothing in the design docs, which give sizes in GPUI's pixels.
+
+## 2026-11-16: On a Mac without Inter installed, the rack draws its text in a monospace font
+
+**Asked:** why is the rack's text monospace on macOS when it's Inter on Windows?
+
+**Expected:** Inter missing on the Mac, since Plates named the family without carrying the font.
+
+**Found:** macOS 26.5.2 has no Inter, and GPUI's fallback for a family it can't find starts with `.ZedMono` (measured 2026-11-16; read in gpui-pre 0.3.12, src/text_system.rs, `TextSystem::new`).
+That the Windows machine drew Inter because Inter was installed there is unverified, since no Windows ships with it, and the machine's list of installed fonts would settle it.
+
+**Changed:** Plates carries Inter 4.1's Regular, Medium, SemiBold, and Bold faces in `src/plates/fonts/`, with Inter's license, and hands them to GPUI before the rack opens.
+
+**Affects:** nothing in the design docs. [02-tiles](02-tiles.md) already sets the type in Inter, and now that holds on every machine.
+
 ## 2026-11-15: ShellExecuteW on the rack's thread lets GPUI run a task mid-click, and Plates crashes
 
 **Asked:** why did Plates vanish when the user clicked a session tile, and at 20:06 that day?

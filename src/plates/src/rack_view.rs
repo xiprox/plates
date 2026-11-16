@@ -25,6 +25,7 @@ use crate::{
     native,
     place::{self, Place},
     rows::Rows,
+    tray::{self, Tray},
 };
 
 pub const RACK_W: f32 = 304.;
@@ -162,6 +163,8 @@ pub struct RackView {
     pub(crate) scale: f64,
     last_frame: Option<Instant>,
     applied: Option<(i32, i32, i32, i32)>,
+    /// Plates' icon in the tray or the menu bar, or `None` when the OS wouldn't take it.
+    tray: Option<Tray>,
     _subs: Vec<Subscription>,
     _tasks: Vec<Task<()>>,
 }
@@ -171,6 +174,10 @@ impl RackView {
         rack: Rack,
         data_file: PathBuf,
         events: async_channel::Receiver<HookMessage>,
+        (commands_tx, commands): (
+            async_channel::Sender<tray::Command>,
+            async_channel::Receiver<tray::Command>,
+        ),
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -249,6 +256,19 @@ impl RackView {
                 }
             }
         });
+        let tray = Tray::new(commands_tx)
+            .map_err(|e| eprintln!("Couldn't put Plates in the tray or the menu bar: {e}"))
+            .ok();
+        let tray_commands = cx.spawn(async move |this, cx| {
+            while let Ok(command) = commands.recv().await {
+                if this
+                    .update(cx, |this, cx| this.tray_command(command, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
 
         let r = native::window_rect(hwnd);
         let place_file = data_file.with_file_name("place.json");
@@ -285,11 +305,12 @@ impl RackView {
             pos: (r.left, r.top),
             vel: (0., 0.),
             tween: None,
-            scale: window.scale_factor() as f64,
+            scale: native::scale(window),
             last_frame: None,
             applied: None,
+            tray,
             _subs: subs,
-            _tasks: vec![take_over, receive, tick, raised, on_top],
+            _tasks: vec![take_over, receive, tick, raised, on_top, tray_commands],
         };
         view.rack.tick(SystemTime::now());
         view.nudged_for = view.latest_need();
@@ -718,6 +739,52 @@ impl RackView {
             },
             After::Settle,
         ));
+        cx.notify();
+    }
+
+    fn tray_command(&mut self, command: tray::Command, cx: &mut Context<Self>) {
+        match command {
+            tray::Command::Show => self.show_centered(cx),
+            tray::Command::ToggleLogin => {
+                if !native::set_start_at_login(!native::starts_at_login()) {
+                    eprintln!("Couldn't change whether Plates starts at login.");
+                }
+                self.login_changed();
+            }
+            tray::Command::Quit => cx.quit(),
+        }
+    }
+
+    /// Brings the tray's menu up to date after either menu changed whether Plates starts at login.
+    pub(crate) fn login_changed(&self) {
+        if let Some(tray) = &self.tray {
+            tray.show_login(native::starts_at_login());
+        }
+    }
+
+    // A rack can be out of sight under another window, docked at the edge of a screen you're not
+    // looking at, or off every screen, so the tray's "Show Plates", and opening Plates again while
+    // it runs, put it undocked at the middle of the primary screen, where it's always found.
+    fn show_centered(&mut self, cx: &mut Context<Self>) {
+        self.press = None;
+        self.drag = None;
+        self.wait_release = false;
+        self.vel = (0., 0.);
+        self.tween = None;
+        self.nudge = None;
+        self.peek = false;
+        if self.docked.take().is_some() {
+            native::set_shadow(self.hwnd, true);
+        }
+        // The rack's coordinates start at the primary screen's top-left corner on both OSes, so
+        // (1, 1) is inside the primary screen and outside any screen that touches its edge.
+        let a = native::edges_at((1., 1.)).area;
+        let (w, h) = self.rack_size();
+        self.pos = (
+            a.left + ((a.right - a.left - w) / 2.).max(0.),
+            a.top + ((a.bottom - a.top - h) / 2.).max(0.),
+        );
+        native::keep_on_top(self.hwnd);
         cx.notify();
     }
 

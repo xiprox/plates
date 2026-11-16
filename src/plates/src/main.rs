@@ -13,12 +13,13 @@ mod menu;
 mod motion;
 mod native;
 mod place;
-// Pressing a wrap-up's choice goes through Windows' UI Automation, and on macOS Plates reads none
-// of the Claude desktop app's files, so a card there has no choice to press.
+// Pressing a wrap-up's choice goes through Windows' UI Automation, which macOS doesn't have, so a
+// card there has no choice to press.
 #[cfg(windows)]
 mod press;
 mod rack_view;
 mod rows;
+mod tray;
 mod view;
 
 use std::{

@@ -122,6 +122,8 @@ struct SavedSession {
     background: Vec<BackgroundTask>,
     #[serde(default)]
     app_parent: Option<String>,
+    #[serde(default)]
+    question: bool,
     asks: Option<bool>,
     read: bool,
     ended_at: Option<u64>,
@@ -159,6 +161,7 @@ pub fn save_sessions(rack: &Rack, path: &Path) -> io::Result<()> {
                 wrap_up: s.wrap_up.clone(),
                 background: s.background.clone(),
                 app_parent: s.app_parent.clone(),
+                question: s.question,
                 asks: s.asks,
                 read: s.read,
                 ended_at: s.ended_at.map(ms),
@@ -209,6 +212,7 @@ pub fn load_sessions(rack: &mut Rack, path: &Path, now: SystemTime) -> io::Resul
         session.wrap_up = s.wrap_up;
         session.background = s.background;
         session.app_parent = s.app_parent;
+        session.question = s.question;
         session.asks = s.asks;
         session.read = s.read;
         session.ended_at = s.ended_at.map(time);
@@ -243,7 +247,10 @@ mod tests {
         rack.apply(
             "a",
             Path::new("/work"),
-            SessionEvent::Started { title: None },
+            SessionEvent::Started {
+                title: None,
+                resumed: false,
+            },
             at(0),
         );
         let ci = rack.add_own("Check release CI", at(0));
@@ -279,7 +286,10 @@ mod tests {
         let b = rack.apply(
             "b",
             Path::new("/work/b"),
-            SessionEvent::Started { title: None },
+            SessionEvent::Started {
+                title: None,
+                resumed: false,
+            },
             at(0),
         );
         rack.remove(b);
