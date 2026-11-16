@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0](https://github.com/xiprox/plates/compare/v0.1.0...v0.2.0) (2026-11-16)
+
+
+### Features
+
+* fill a due reminder's hourglass with yellow ([6a16159](https://github.com/xiprox/plates/commit/6a16159e53d305dd4a9f7aeb4b8a4dbb7590438c))
+* put Plates in the tray and menu bar, with its own icon, and fix it on macOS ([6166d31](https://github.com/xiprox/plates/commit/6166d31935a9049a7b5a072aff23fd314322d475))
+* snooze tiles, swipe them away, and answer wrap-ups on macOS ([03b215f](https://github.com/xiprox/plates/commit/03b215f8be37afae03a9134b78b8984d4a1340a6))
+
 ## 0.1.0 (2026-11-15)
 
 
