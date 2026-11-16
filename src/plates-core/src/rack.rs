@@ -202,7 +202,7 @@ impl Rack {
         };
 
         match event {
-            SessionEvent::Started { title } => {
+            SessionEvent::Started { title, .. } => {
                 if title.is_some() {
                     s.custom_title = title;
                 }
@@ -255,11 +255,14 @@ impl Rack {
                 if s.state != SessionState::NeedsApproval {
                     s.summary = s.pending_tool.as_ref().map(|t| t.summary());
                 }
+                s.question = false;
                 set_state(s, &mut tile.timer, SessionState::NeedsApproval);
             }
+            // The notification also comes about 6s into a question, which it leaves a question.
             SessionEvent::ApprovalNotified { message } => {
                 if s.state != SessionState::NeedsApproval {
                     s.summary = s.pending_tool.as_ref().map(|t| t.summary());
+                    s.question = false;
                 }
                 if s.summary.is_none() {
                     s.summary = Some(first_line(&message));
@@ -341,6 +344,8 @@ impl Rack {
             }
             SessionEvent::InputAsked { summary } => {
                 s.summary = Some(summary);
+                s.pending_tool = None;
+                s.question = true;
                 set_state(s, &mut tile.timer, SessionState::NeedsApproval);
             }
             SessionEvent::InputGiven => {
@@ -617,8 +622,9 @@ impl Rack {
     }
 
     /// Moves a shown sub-session's tile to just after its parent's family. The app calls it for
-    /// a tile the event it's handling added, which nobody has seen yet, so no tile moves under
-    /// your cursor.
+    /// a tile the event it's handling added, which nobody has seen yet, and once more when the
+    /// app's file first names the tile's parent, a few seconds into a new sub-session, which moves
+    /// the tile once.
     pub fn place_under_parent(&mut self, session_id: &str) {
         let Some(i) = self
             .tiles
@@ -651,8 +657,9 @@ impl Rack {
     }
 
     /// Sets the title and ID the Claude desktop app keeps for a session, from its file for it,
-    /// and the app ID of the session it was started from.
-    pub fn set_app_session(&mut self, session_id: &str, app: &AppSession) {
+    /// and the app ID of the session it was started from. It returns whether that last one is
+    /// new, which moves the tile under its parent's.
+    pub fn set_app_session(&mut self, session_id: &str, app: &AppSession) -> bool {
         let session = self
             .tiles
             .iter_mut()
@@ -661,17 +668,20 @@ impl Rack {
                 Body::Session(s) if s.id == session_id => Some(s),
                 _ => None,
             });
-        if let Some(s) = session {
-            if app.title.is_some() {
-                s.app_title = app.title.clone();
-            }
-            if app.id.is_some() {
-                s.app_id = app.id.clone();
-            }
-            if app.parent.is_some() {
-                s.app_parent = app.parent.clone();
-            }
+        let Some(s) = session else {
+            return false;
+        };
+        if app.title.is_some() {
+            s.app_title = app.title.clone();
         }
+        if app.id.is_some() {
+            s.app_id = app.id.clone();
+        }
+        let new_parent = app.parent.is_some() && s.app_parent != app.parent;
+        if new_parent {
+            s.app_parent = app.parent.clone();
+        }
+        new_parent
     }
 
     /// Whether the rack shows the session, or holds it dismissed.
@@ -882,7 +892,10 @@ mod tests {
     }
 
     fn started() -> SessionEvent {
-        SessionEvent::Started { title: None }
+        SessionEvent::Started {
+            title: None,
+            resumed: false,
+        }
     }
 
     fn prompt(text: &str) -> SessionEvent {

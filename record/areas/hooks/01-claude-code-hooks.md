@@ -16,10 +16,11 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 
 | Event | What Plates does |
 | --- | --- |
-| `SessionStart` | adds the session's tile, as new, and brings back a tile it shows as ended, as new; any other tile it shows stays as it is, since `SessionStart` also fires on a resume, a `/clear`, and a compaction |
+| `SessionStart` | adds the session's tile, as new, unless its `source` is `resume`, which the Claude desktop app sends when you open a session that wasn't running ([hooks log](log.md#2026-11-16-on-macos-the-app-keeps-its-session-files-under-application-support-and-opening-a-session-adds-its-tile-through-a-resume)); brings back a tile it shows as ended, as new; any other tile it shows stays as it is, since `SessionStart` also fires on a resume, a `/clear`, and a compaction |
 | `UserPromptSubmit` | moves the tile to working, which stops its timer, while a tile already working keeps a timer you started on it |
 | `PreToolUse` | keeps the tool's name and input, for the summary line of an approval that follows, and for what a working tile shows Claude doing, and for `mcp__ccd_turn__wrap_up`, what the paragraph below the table says |
 | `PermissionRequest` | moves the tile to needs approval as Claude Code is about to ask you, and starts its timer |
+| `PreToolUse` or `PermissionRequest` for `AskUserQuestion`, Claude's tool for asking you to pick among options | moves the tile to needs approval as a question, which the hover card calls "Needs your input", with "Asks: " and the first line of the first question as its summary line, such as "Asks: Which design?", and starts its timer; the Claude desktop app asks for the tool through `PermissionRequest`, which would otherwise read as an approval ([hooks log](log.md#2026-11-16-the-claude-desktop-app-asks-for-askuserquestion-through-permissionrequest)) |
 | `Notification` with `notification_type` `permission_prompt` | moves the tile to needs approval if it isn't already, which covers an approval that fired no `PermissionRequest` |
 | `PostToolUse`, or `PostToolUseFailure` for a tool that failed | moves a tile that needed approval back to working, and stops its timer, since the tool ran |
 | `Stop` | moves the tile to your turn, starting its timer, if the turn's last wrap-up asked you something; else keeps it working while a task that counts still runs ([Background tasks](#background-tasks)); else moves it to unread if the turn had a wrap-up, and to your turn if it had none, such as in a terminal (user, 2026-11-15) |
@@ -27,7 +28,7 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 | `SessionEnd` | moves the tile to ended |
 | `PreCompact` | moves the tile to working, with "Compacting session…", the Claude desktop app's words, as its summary line until `PostCompact` |
 | `PostCompact` | ends "Compacting session…"; for a `trigger` of `manual`, a `/compact` you typed, it moves the tile to your turn with "Compacted session" as its summary line and starts its timer, since no turn follows one ([hooks log](log.md#2026-11-15-claude-code-documents-33-hook-events-and-the-apps-status-line-shows-8-states)), and for `auto` the turn goes on |
-| `Elicitation`, when an MCP server asks you to fill in a form or open a page | moves the tile to needs approval, with its `mcp_server_name`, " asks: ", and the first line of its `message` as its summary line, such as "github asks: Pick a repository", and starts its timer |
+| `Elicitation`, when an MCP server asks you to fill in a form or open a page | moves the tile to needs approval as a question, which the hover card calls "Needs your input", with its `mcp_server_name`, " asks: ", and the first line of its `message` as its summary line, such as "github asks: Pick a repository", and starts its timer |
 | `ElicitationResult`, once you've answered | moves a tile that needed approval back to working |
 
 For `mcp__ccd_turn__wrap_up`, the tool the Claude desktop app has Claude call at a turn's end, `PreToolUse` keeps the call's `recap` and `ask`, and for each of its `actions`, its `label`, or where that's empty, its `action` in words, such as "Commit" for `commit`, for the [hover card](../rack/02-tiles.md#the-hover-card).
@@ -52,6 +53,7 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
   It also counts background tasks, and only `Stop` and `SubagentStop` carry them, as the `background_tasks` still in flight when the turn or the subagent ends (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input), as of 2026-11-15).
   Of these states, Plates shows thinking, as [Titles and summaries](#titles-and-summaries) says, and the background tasks that keep a tile working, as [Background tasks](#background-tasks) says.
 - An event from a `session_id` Plates doesn't show adds that session's tile, in the state the event moves a tile to, and in working for an event that moves none, such as `PreToolUse`.
+  A `SessionStart` with a `source` of `resume` is the exception, since opening a session in the app isn't something happening in it.
 - Opening a session in the Claude desktop app fires no event, but the app then saves the time in its file for the session as `lastFocusedAt` (read in the Claude desktop app 5.11492.5.0, app.asar, the handler that logs `desktop_ccd_session_visibility_changed`; [hooks log](log.md#2026-11-15-the-app-records-when-you-open-a-session-but-not-whether-a-turn-asked-you-anything)).
   So once a second, Plates reads each session's file, and a `lastFocusedAt` later than a turn's end reads the turn: an unread tile moves to done, and a your-turn tile is marked read.
   The app sets it only as a session becomes visible, so a turn that ends while you watch its session stays unread until you click its tile or open the session again.
@@ -96,7 +98,8 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
 - The session's folder comes from `cwd`, and its name is the tile's title until another title arrives.
 - The app's file for a session that another of its sessions started holds `spawnedFrom`, whose `sessionId` is the app's own ID for the session that started it ([hooks log](log.md#2026-11-15-the-apps-file-for-a-sub-session-names-the-session-that-started-it)).
   Plates reads it with the title, and when the event that adds a sub-session's tile finds the file, Plates moves the tile under its parent's before the rack draws it.
-  Whether the app writes the file before the new session's first hook event is unverified, and a tile whose first event finds no file stays after the last session tile; starting a sub-session while Plates runs and watching where its tile appears would settle it.
+  A new sub-session's first events find no file naming its parent, so its tile first appears after the last session tile ([hooks log](log.md#2026-11-16-a-new-sub-sessions-first-events-come-before-the-apps-file-names-its-parent)).
+  Plates searches again 2s after a miss, doubling the wait after each miss up to 30s, and the first event after the file names the parent moves the tile under it, once.
 - An approval's summary line is built from the tool the `PermissionRequest` names, or else from the `PreToolUse` before it: "Wants to run: " and the command for a shell command, "Wants to edit: " and the file for an edit, and "Wants to use: " and the tool's name for any other tool.
   Where neither names a tool, the summary is the `Notification`'s `message`.
 - Your turn's summary line is the first line of `Stop`'s `last_assistant_message`, because the transcript isn't guaranteed to hold Claude's final message when `Stop` fires (documented, [hooks](https://code.claude.com/docs/en/hooks.md#stop-input), as of 2026-11-15).
@@ -149,7 +152,8 @@ On Windows, a program can bring its window to the front only in a few cases, suc
 The rack never takes the foreground, but its process got the last input, the click on the tile, which lets it call `AllowSetForegroundWindow` with `ASFW_ANY`, so Plates makes that call before it opens the link (documented, [AllowSetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-allowsetforegroundwindow), as of 2026-11-15).
 Whether the app then comes to the front over another window is unverified, and clicking a tile while another window covers the app would settle it.
 A session the app doesn't keep, such as one in a terminal, has no such ID, and clicking its tile does nothing.
-On macOS, Plates doesn't know where the app keeps its session files, so it reads none, and clicking a session tile does nothing; we haven't looked at how the app opens one session there.
+On macOS, the app keeps its session files in `~/Library/Application Support/Claude/claude-code-sessions/`, in the same form, and macOS hands `claude://` links to the app (measured on macOS 26.5.2, 2026-11-16, [hooks log](log.md#2026-11-16-on-macos-the-app-keeps-its-session-files-under-application-support-and-opening-a-session-adds-its-tile-through-a-resume)), so clicking a tile there opens the same link.
+Whether the app shows the session from it there, as it does on Windows, is unverified, and clicking a session tile on macOS would settle it.
 
 ## Answering a wrap-up
 

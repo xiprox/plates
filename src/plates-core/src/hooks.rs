@@ -22,8 +22,15 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
     let event = message.event?;
     let known = rack.knows(&message.session_id);
     // A look at a session Plates doesn't show, such as one whose tile you cleared, brings no
-    // tile back.
-    if !known && matches!(event, SessionEvent::Seen { .. }) {
+    // tile back. Nor does opening such a session in the Claude desktop app, which resumes it
+    // without anything happening in it, so its tile comes with its next prompt or tool
+    // (record/areas/hooks/log.md, 2026-11-16).
+    if !known
+        && matches!(
+            event,
+            SessionEvent::Seen { .. } | SessionEvent::Started { resumed: true, .. }
+        )
+    {
         return None;
     }
     let id = rack.apply(&message.session_id, &message.cwd, event, now);
@@ -31,10 +38,12 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
         rack.set_status(&message.session_id, status, now);
     }
     if let Some(app) = &message.app {
-        rack.set_app_session(&message.session_id, app);
+        let new_parent = rack.set_app_session(&message.session_id, app);
         // A sub-session's tile goes under its parent's, which only the app's file says, so the
-        // tile this message just added moves there before the rack draws it.
-        if !known {
+        // tile this message just added moves there before the rack draws it. A new sub-session's
+        // file names its parent only after its first events, so its tile moves there then, once
+        // (record/areas/hooks/log.md, 2026-11-16).
+        if !known || new_parent {
             rack.place_under_parent(&message.session_id);
         }
     }
@@ -159,6 +168,7 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
     let event = match hook.as_str() {
         "SessionStart" => Some(SessionEvent::Started {
             title: text("session_title"),
+            resumed: text("source").as_deref() == Some("resume"),
         }),
         "UserPromptSubmit" => Some(SessionEvent::PromptSubmitted {
             title: text("session_title"),
@@ -168,6 +178,17 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
         "PreToolUse" if text("tool_name").as_deref() == Some("mcp__ccd_turn__wrap_up") => Some(
             SessionEvent::WrappedUp(WrapUp::read(v.get("tool_input").unwrap_or(&Value::Null))),
         ),
+        // Claude asking you a question is a tool too, and the Claude desktop app asks for it
+        // through `PermissionRequest`, so without this the tile would ask you to approve it
+        // (measured on macOS 26.5.2, 2026-11-16, record/areas/hooks/log.md). The question shows
+        // from `PreToolUse`, and its `PostToolUse` moves the tile back to working once you answer.
+        "PreToolUse" | "PermissionRequest"
+            if text("tool_name").as_deref() == Some("AskUserQuestion") =>
+        {
+            Some(SessionEvent::InputAsked {
+                summary: question(v.get("tool_input").unwrap_or(&Value::Null)),
+            })
+        }
         "PreToolUse" => tool(&v, &cwd).map(|tool| SessionEvent::ToolPending { tool }),
         "PermissionRequest" => Some(SessionEvent::ApprovalAsked {
             tool: tool(&v, &cwd),
@@ -293,6 +314,26 @@ fn host(url: &str) -> String {
         .to_string()
 }
 
+/// `AskUserQuestion`'s summary line: the first line of its first question, such as "Asks: Which
+/// design should the icon use?", and how many more it asks.
+fn question(input: &Value) -> String {
+    let questions = input
+        .get("questions")
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    let first = questions
+        .first()
+        .and_then(|q| q.get("question"))
+        .and_then(Value::as_str)
+        .map(first_line)
+        .filter(|q| !q.is_empty());
+    match (first, questions.len()) {
+        (None, _) => "Asks you a question".to_string(),
+        (Some(q), 0 | 1) => format!("Asks: {q}"),
+        (Some(q), n) => format!("Asks: {q} (+{} more)", n - 1),
+    }
+}
+
 fn relative(file: &Path, cwd: &Path) -> String {
     file.strip_prefix(cwd)
         .unwrap_or(file)
@@ -337,7 +378,157 @@ mod tests {
             m.transcript_path,
             Some(PathBuf::from("/home/u/.claude/projects/p/abc123.jsonl"))
         );
-        assert_eq!(m.event, Some(SessionEvent::Started { title: None }));
+        assert_eq!(
+            m.event,
+            Some(SessionEvent::Started {
+                title: None,
+                resumed: false
+            })
+        );
+    }
+
+    fn message(hook: &str, extra: Value) -> HookMessage {
+        parse(with(hook, extra).to_string().as_bytes()).unwrap()
+    }
+
+    fn some_time() -> SystemTime {
+        SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000)
+    }
+
+    #[test]
+    fn opening_a_session_the_rack_doesnt_show_adds_no_tile_until_it_does_something() {
+        let now = some_time();
+        let mut rack = Rack::new();
+        let resumed = || message("SessionStart", json!({ "source": "resume" }));
+        assert_eq!(apply(&mut rack, resumed(), now), None);
+        assert!(!rack.knows("abc123"));
+
+        let prompt = message("UserPromptSubmit", json!({ "prompt": "Go on" }));
+        assert!(apply(&mut rack, prompt, now).is_some());
+        // Once the rack shows the session, a resume reaches its tile.
+        assert!(apply(&mut rack, resumed(), now).is_some());
+    }
+
+    #[test]
+    fn a_question_from_claude_asks_for_input_rather_than_approval() {
+        let input = json!({ "questions": [
+            { "question": "Which design?\nRow 1 or 2", "options": [] },
+            { "question": "Which background?", "options": [] },
+        ] });
+        let asks = Some(SessionEvent::InputAsked {
+            summary: "Asks: Which design? (+1 more)".into(),
+        });
+        let pre = with(
+            "PreToolUse",
+            json!({ "tool_name": "AskUserQuestion", "tool_input": input }),
+        );
+        let permission = with(
+            "PermissionRequest",
+            json!({ "tool_name": "AskUserQuestion", "tool_input": input }),
+        );
+        assert_eq!(event(pre), asks);
+        assert_eq!(event(permission), asks);
+
+        let now = some_time();
+        let mut rack = Rack::new();
+        let id = apply(
+            &mut rack,
+            message(
+                "PermissionRequest",
+                json!({ "tool_name": "AskUserQuestion", "tool_input": input }),
+            ),
+            now,
+        )
+        .unwrap();
+        let s = rack.tile(id).unwrap().session().unwrap();
+        assert_eq!(s.state, SessionState::NeedsApproval);
+        assert!(s.question);
+        // The notification that comes a few seconds into the question leaves it a question.
+        let notified = message(
+            "Notification",
+            json!({ "notification_type": "permission_prompt", "message": "Claude needs your permission" }),
+        );
+        apply(&mut rack, notified, now);
+        let s = rack.tile(id).unwrap().session().unwrap();
+        assert!(s.question);
+        assert_eq!(s.summary.as_deref(), Some("Asks: Which design? (+1 more)"));
+
+        let answered = message("PostToolUse", json!({ "tool_name": "AskUserQuestion" }));
+        apply(&mut rack, answered, now);
+        assert_eq!(
+            rack.tile(id).unwrap().session().unwrap().state,
+            SessionState::Working
+        );
+    }
+
+    #[test]
+    fn a_sub_session_moves_under_its_parent_once_the_app_names_it() {
+        let now = some_time();
+        let mut rack = Rack::new();
+        let from = |session: &str, hook: &str, extra: Value, app: Option<AppSession>| {
+            let mut m = message(hook, extra);
+            m.session_id = session.into();
+            m.app = app;
+            m
+        };
+        let order = |rack: &Rack| -> Vec<String> {
+            rack.tiles()
+                .iter()
+                .filter_map(|t| t.session())
+                .map(|s| s.id.clone())
+                .collect()
+        };
+        let prompt = || json!({ "prompt": "Go" });
+        let parent = AppSession {
+            id: Some("local_p".into()),
+            ..AppSession::default()
+        };
+        apply(
+            &mut rack,
+            from("parent", "UserPromptSubmit", prompt(), Some(parent)),
+            now,
+        );
+        apply(
+            &mut rack,
+            from("other", "UserPromptSubmit", prompt(), None),
+            now,
+        );
+        // The sub-session's first event finds no file of the app's, so its tile goes last.
+        apply(
+            &mut rack,
+            from("sub", "UserPromptSubmit", prompt(), None),
+            now,
+        );
+        assert_eq!(order(&rack), ["parent", "other", "sub"]);
+
+        let named = AppSession {
+            id: Some("local_s".into()),
+            parent: Some("local_p".into()),
+            ..AppSession::default()
+        };
+        let finished = json!({ "tool_name": "Read" });
+        apply(
+            &mut rack,
+            from("sub", "PostToolUse", finished.clone(), Some(named.clone())),
+            now,
+        );
+        assert_eq!(order(&rack), ["parent", "sub", "other"]);
+        // Once there, later events leave it in place.
+        apply(
+            &mut rack,
+            from("sub", "PostToolUse", finished, Some(named)),
+            now,
+        );
+        assert_eq!(order(&rack), ["parent", "sub", "other"]);
+    }
+
+    #[test]
+    fn a_new_session_adds_its_tile_from_its_start() {
+        let now = some_time();
+        let mut rack = Rack::new();
+        let started = message("SessionStart", json!({ "source": "startup" }));
+        assert!(apply(&mut rack, started, now).is_some());
+        assert!(rack.knows("abc123"));
     }
 
     #[test]

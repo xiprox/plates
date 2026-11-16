@@ -15,15 +15,26 @@ use std::{
 
 use serde_json::Value;
 
-/// How long a session ID that no file names waits before another search, so a session the app
-/// doesn't keep, such as one in a terminal, doesn't set off a search on every event.
+/// How long a session ID that no file names waits before another search: `FIRST_RETRY` after its
+/// first miss, doubling after each miss up to `RETRY_AFTER`. A new sub-session's file names its
+/// parent only after the session's first hook events (record/areas/hooks/log.md, 2026-11-16), so
+/// the first retries come soon, and a session the app doesn't keep, such as one in a terminal,
+/// soon searches only every 30s rather than on every event.
+const FIRST_RETRY: Duration = Duration::from_secs(2);
 const RETRY_AFTER: Duration = Duration::from_secs(30);
 
-/// The folder of the app's session files on Windows,
+/// The folder of the app's session files: on Windows,
 /// `%LOCALAPPDATA%\Claude-Data\claude_<package id>\claude-code-sessions\`, for the app installed
-/// as a Windows package (measured on Windows 11 25H2, 2026-11-15). Where the app keeps them on
-/// macOS is unverified, so there it finds none.
+/// as a Windows package (measured on Windows 11 25H2, 2026-11-15), and on macOS,
+/// `~/Library/Application Support/Claude/claude-code-sessions/` (measured on macOS 26.5.2,
+/// 2026-11-16). Both hold each session's file a few folders down.
 pub fn sessions_folder() -> Option<PathBuf> {
+    if cfg!(target_os = "macos") {
+        let folder = dirs::config_dir()?
+            .join("Claude")
+            .join("claude-code-sessions");
+        return folder.is_dir().then_some(folder);
+    }
     if !cfg!(windows) {
         return None;
     }
@@ -80,6 +91,8 @@ struct Miss {
     /// The wall-clock time the search began, since a file last modified before then was read in
     /// that search and can't name the ID.
     began: SystemTime,
+    /// How long until the next search.
+    wait: Duration,
 }
 
 impl AppSessions {
@@ -114,10 +127,10 @@ impl AppSessions {
     }
 
     fn find(&mut self, session_id: &str) -> Option<PathBuf> {
-        let since = match self.misses.get(session_id) {
-            Some(miss) if miss.at.elapsed() < RETRY_AFTER => return None,
-            Some(miss) => Some(miss.began),
-            None => None,
+        let (since, wait) = match self.misses.get(session_id) {
+            Some(miss) if miss.at.elapsed() < miss.wait => return None,
+            Some(miss) => (Some(miss.began), (miss.wait * 2).min(RETRY_AFTER)),
+            None => (None, FIRST_RETRY),
         };
         let began = SystemTime::now();
         let found = self
@@ -127,7 +140,7 @@ impl AppSessions {
         if found.is_none() {
             let at = Instant::now();
             self.misses
-                .insert(session_id.to_string(), Miss { at, began });
+                .insert(session_id.to_string(), Miss { at, began, wait });
         }
         found
     }

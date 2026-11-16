@@ -140,8 +140,8 @@ impl MenuView {
     }
 
     fn rack_items(&self, login: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        // Plates starts at login only once you turn it on here, since it adds Plates to what
-        // Windows runs when you sign in (user, 2026-11-16).
+        // Plates starts at login only once you turn it on, here or in the tray's menu, since it
+        // adds Plates to what Windows runs when you sign in (user, 2026-11-16).
         let check = login.then(|| {
             svg()
                 .path("plates/check.svg")
@@ -155,6 +155,7 @@ impl MenuView {
                     if !native::set_start_at_login(!login) {
                         eprintln!("Couldn't change whether Plates starts at login.");
                     }
+                    this.rack.update(cx, |rack, _| rack.login_changed()).ok();
                     this.close(window, cx);
                 }))
                 .into_any_element(),

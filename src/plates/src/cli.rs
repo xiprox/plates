@@ -164,8 +164,8 @@ fn unix_secs() -> u64 {
 // the hooks log measured what each hook event carries in a desktop session.
 fn listen(log: Option<PathBuf>) -> Result<(), String> {
     let (tx, rx) = mpsc::channel();
-    let _receiver =
-        Receiver::start(PORT, tx).map_err(|e| format!("Couldn't listen on port {PORT}: {e}"))?;
+    let _receiver = Receiver::start(PORT, tx, false)
+        .map_err(|e| format!("Couldn't listen on port {PORT}: {e}"))?;
     println!("Listening on {}", receiver::url(PORT));
     let mut log = match log {
         Some(path) => Some(
@@ -181,6 +181,8 @@ fn listen(log: Option<PathBuf>) -> Result<(), String> {
     for received in rx {
         let raw = match &received {
             Received::Event(_, raw) | Received::Unreadable(_, raw) => raw,
+            // A receiver that shows no rack never hands one on.
+            Received::Show => continue,
         };
         if let Some(file) = log.as_mut() {
             let line = serde_json::from_slice::<Value>(raw)
@@ -209,6 +211,7 @@ fn listen(log: Option<PathBuf>) -> Result<(), String> {
                 }
             }
             Received::Unreadable(error, _) => eprintln!("Couldn't read an event: {error}"),
+            Received::Show => {}
         }
     }
     Ok(())
