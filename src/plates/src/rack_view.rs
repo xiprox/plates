@@ -135,7 +135,7 @@ pub(crate) struct Spot {
 
 pub(crate) struct Toast {
     pub(crate) removed: Removed,
-    /// What the Undo row says, such as "Dismissed “Plates”".
+    /// What the Undo row says, such as "Archived “Plates”".
     pub(crate) title: String,
     until: Instant,
 }
@@ -1539,14 +1539,11 @@ impl RackView {
         let Some(tile) = self.rack.tile(id) else {
             return;
         };
-        // Your own tile and a dismissed session can come back with Undo, and an ended session's
-        // tile, which has nothing left to show, goes without one.
+        // Your own tile and a dismissed session go to the archive and can come back with Undo, and
+        // an ended session's tile, which has nothing left to show, goes without one.
         let title = tile.title();
-        let label = match tile.session().map(|s| s.state) {
-            None => Some(format!("Removed \u{201c}{title}\u{201d}")),
-            Some(SessionState::Ended) => None,
-            Some(_) => Some(format!("Dismissed \u{201c}{title}\u{201d}")),
-        };
+        let ended = tile.session().map(|s| s.state) == Some(SessionState::Ended);
+        let label = (!ended).then(|| format!("Archived \u{201c}{title}\u{201d}"));
         let own = tile.is_own();
         let Some(removed) = self.rack.remove(id, SystemTime::now()) else {
             return;
