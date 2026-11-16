@@ -212,6 +212,10 @@ pub struct RackView {
     pub(crate) swipe: Option<Swipe>,
     /// The tile whose hourglass a force click is pressing, whose click then starts no timer.
     forced: Option<TileId>,
+    /// Whether the rack shows the made-up tiles of `plates showcase`, and so writes no data files,
+    /// leaves the tray, the menu bar, and the shortcut to a Plates that runs, and keeps a card it
+    /// opens open without the pointer on it.
+    pub(crate) showcase: bool,
     _subs: Vec<Subscription>,
     _tasks: Vec<Task<()>>,
 }
@@ -225,6 +229,7 @@ impl RackView {
             async_channel::Sender<tray::Command>,
             async_channel::Receiver<tray::Command>,
         ),
+        showcase: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -284,7 +289,7 @@ impl RackView {
             this.update(cx, |this, cx| {
                 let r = native::window_rect(hwnd);
                 this.pos = (r.left, r.top);
-                if let Some(saved) = place::load(&this.place_file) {
+                if let Some(saved) = place::load(&this.place_file).filter(|_| !this.showcase) {
                     this.restore_place(saved);
                 }
                 this.saved_place = Some(this.current_place());
@@ -296,6 +301,9 @@ impl RackView {
         // The shortcut for a new tile, registered after the task above takes the window over,
         // which on Windows puts in place the subclass its presses arrive through.
         let hotkey = cx.spawn_in(window, async move |this, cx| {
+            if showcase {
+                return;
+            }
             let Some(presses) = native::watch_hotkey(hwnd) else {
                 eprintln!(
                     "Couldn't register the shortcut for a new tile; another app may hold it."
@@ -350,9 +358,13 @@ impl RackView {
                 }
             }
         });
-        let tray = Tray::new(commands_tx)
-            .map_err(|e| eprintln!("Couldn't put Plates in the tray or the menu bar: {e}"))
-            .ok();
+        let tray = (!showcase)
+            .then(|| {
+                Tray::new(commands_tx)
+                    .map_err(|e| eprintln!("Couldn't put Plates in the tray or the menu bar: {e}"))
+                    .ok()
+            })
+            .flatten();
         let tray_commands = cx.spawn(async move |this, cx| {
             while let Ok(command) = commands.recv().await {
                 if this
@@ -409,6 +421,7 @@ impl RackView {
             hourglass_held: None,
             swipe: None,
             forced: None,
+            showcase,
             _subs: subs,
             _tasks: vec![
                 take_over,
@@ -459,7 +472,7 @@ impl RackView {
         {
             self.toast = None;
         }
-        if self.sessions_dirty {
+        if self.sessions_dirty && !self.showcase {
             self.sessions_dirty = false;
             if let Err(e) = store::save_sessions(&self.rack, &self.sessions_file) {
                 eprintln!("Couldn't save {}: {e}", self.sessions_file.display());
@@ -492,6 +505,9 @@ impl RackView {
     }
 
     fn save(&self) {
+        if self.showcase {
+            return;
+        }
         if let Err(e) = store::save(&self.rack, &self.data_file) {
             eprintln!("Couldn't save {}: {e}", self.data_file.display());
         }
@@ -517,7 +533,7 @@ impl RackView {
 
     /// Saves where the rack sits once it has come to rest somewhere new.
     pub(crate) fn remember_place(&mut self) {
-        if self.animating() || self.saved_place.is_none() {
+        if self.showcase || self.animating() || self.saved_place.is_none() {
             return;
         }
         let place = self.current_place();
@@ -1204,19 +1220,46 @@ impl RackView {
         let Some(spot) = self.spots.borrow().get(&id).cloned().filter(|_| !busy) else {
             return;
         };
-        let s = self.scale;
-        let r = native::window_rect(self.hwnd);
-        let on_screen = |b: &Bounds<Pixels>| {
-            let n = |p: Pixels| f64::from(f32::from(p)) * s;
-            Rect::new(
-                (r.left + n(b.origin.x), r.top + n(b.origin.y)),
-                (n(b.size.width), n(b.size.height)),
-            )
-        };
-        if !on_screen(&spot.main).contains(native::cursor_pos()) {
+        if !self.on_screen(&spot.main).contains(native::cursor_pos()) {
             return;
         }
-        let from = on_screen(&spot.tile);
+        self.show_card(id, folder, &spot, cx);
+    }
+
+    /// Opens a tile's card for the showcase's picture, with no pointer resting on the tile.
+    #[cfg(feature = "capture")]
+    pub(crate) fn showcase_card(&mut self, id: TileId, cx: &mut Context<Self>) {
+        let folder = self
+            .rack
+            .tile(id)
+            .and_then(|t| t.session())
+            .map(|s| s.folder.clone());
+        let spot = self.spots.borrow().get(&id).cloned();
+        if let (Some(folder), Some(spot)) = (folder, spot) {
+            self.show_card(id, folder, &spot, cx);
+        }
+    }
+
+    /// The open card's window, once it has opened.
+    #[cfg(feature = "capture")]
+    pub(crate) fn card_window(&self) -> Option<AnyWindowHandle> {
+        self.card.as_ref().and_then(|c| c.window).map(Into::into)
+    }
+
+    // Where bounds in the rack's window sit on screen, in the rack's pixels.
+    fn on_screen(&self, b: &Bounds<Pixels>) -> Rect {
+        let s = self.scale;
+        let r = native::window_rect(self.hwnd);
+        let n = |p: Pixels| f64::from(f32::from(p)) * s;
+        Rect::new(
+            (r.left + n(b.origin.x), r.top + n(b.origin.y)),
+            (n(b.size.width), n(b.size.height)),
+        )
+    }
+
+    fn show_card(&mut self, id: TileId, folder: PathBuf, spot: &Spot, cx: &mut Context<Self>) {
+        let s = self.scale;
+        let from = self.on_screen(&spot.tile);
         let rack = cx.entity().downgrade();
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(

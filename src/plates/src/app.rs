@@ -24,7 +24,7 @@ use plates_core::{
 use crate::{
     assets::Assets,
     rack_view::{RACK_W, RackView, rack_height},
-    tray,
+    showcase, tray,
     view::SANS_FACES,
 };
 
@@ -180,46 +180,169 @@ pub fn run() {
     application().with_assets(Assets).run(move |cx: &mut App| {
         // The receiver's thread runs for the life of the app.
         let _receiver = receiver;
-        gpui_kit::init(cx);
-        cx.text_system()
-            .add_fonts(SANS_FACES.iter().map(|face| Cow::Borrowed(*face)).collect())
-            .expect("Inter's bundled faces should load");
-        Theme::change(ThemeMode::Dark, None, cx);
-        // gpui-component's Root fills the whole window with the theme's background, which would
-        // show as dark squares outside the rack's rounded corners.
-        // (read in gpui-component 0.9.1, src/root.rs, the Root plugin's style)
-        cx.global_mut::<Theme>().tokens.background = transparent_black().into();
-
-        let display = cx.primary_display().expect("there should be a display");
-        let db = display.bounds();
-        let size = size(px(RACK_W), px(rack_height(rack.tiles().len(), false)));
-        // The rack opens at the primary display's center, and then RackView moves it to where it
-        // last came to rest, if place.json says.
-        let origin = point(
-            db.left() + (db.size.width - size.width) / 2.,
-            db.top() + (db.size.height - size.height) / 2.,
-        );
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds::new(origin, size))),
-            titlebar: None,
-            focus: false,
-            show: true,
-            kind: WindowKind::PopUp,
-            is_movable: false,
-            is_resizable: false,
-            is_minimizable: false,
-            window_background: WindowBackgroundAppearance::Transparent,
-            // The rack is never the active window, and GPUI caps an inactive window at about 30
-            // frames a second by default, which would make every throw stutter.
-            inactive_frame_interval: None,
-            low_power_frame_interval: None,
-            thermal_frame_interval: None,
-            app_id: Some("plates".into()),
-            ..Default::default()
-        };
-        gpui_kit::open_window(options, cx, move |window, cx| {
-            cx.new(|cx| RackView::new(rack, data_file, events, (commands_tx, commands), window, cx))
-        })
-        .expect("the rack's window should open");
+        open_rack(rack, data_file, events, (commands_tx, commands), false, cx);
     });
+}
+
+/// Opens the rack on the made-up tiles of `showcase::rack`, which receives no hook events and
+/// writes none of Plates' data files, and with `capture`, saves a picture of it and quits.
+pub fn showcase(capture: Option<PathBuf>) {
+    crate::view::STILL.store(true, std::sync::atomic::Ordering::Relaxed);
+    let (rack, card_tile) = showcase::rack(SystemTime::now());
+    let (_events_tx, events) = async_channel::unbounded();
+    let (commands_tx, commands) = async_channel::unbounded();
+    application().with_assets(Assets).run(move |cx: &mut App| {
+        let data_file = data_dir().join("rack.json");
+        let (window, view) = open_rack(rack, data_file, events, (commands_tx, commands), true, cx);
+        if let Some(path) = capture {
+            save_picture(window, view.downgrade(), card_tile, path, cx);
+        }
+    });
+}
+
+/// How long the showcase waits for the tiles to grow in before it opens the card, and then for
+/// the card to grow before the picture.
+#[cfg(feature = "capture")]
+const SETTLE: Duration = Duration::from_millis(1000);
+
+// GPUI draws a window's last frame again into an image of its own, at the screen's scale and with
+// the transparent corners left clear, so the picture needs no permission to record the screen and
+// shows nothing behind the rack. That drawing comes with GPUI's test support, which only a build
+// with the `capture` feature turns on. The rack and the card are windows of their own, so each is
+// drawn on its own, and `showcase::compose` lays them on a canvas where they sat on screen.
+#[cfg(feature = "capture")]
+fn save_picture(
+    window: AnyWindowHandle,
+    view: WeakEntity<RackView>,
+    card_tile: plates_core::TileId,
+    path: PathBuf,
+    cx: &mut App,
+) {
+    cx.spawn(async move |cx| {
+        let draw = |window: AnyWindowHandle, cx: &mut AsyncApp| {
+            let image = window
+                .update(cx, |_, window, _| window.render_to_image())
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+            Ok::<_, String>(showcase::Picture {
+                width: image.width(),
+                height: image.height(),
+                rgba: image.into_raw(),
+            })
+        };
+        cx.background_executor().timer(SETTLE).await;
+        view.update(cx, |this, cx| this.showcase_card(card_tile, cx))
+            .ok();
+        cx.background_executor().timer(SETTLE).await;
+        let saved = (|| {
+            let bounds = |window: AnyWindowHandle, cx: &mut AsyncApp| {
+                window
+                    .update(cx, |_, window, _| window.bounds().origin)
+                    .map_err(|e| e.to_string())
+            };
+            let rack = draw(window, cx)?;
+            let rack_at = bounds(window, cx)?;
+            let card_window = view
+                .read_with(cx, |this, _| this.card_window())
+                .map_err(|e| e.to_string())?;
+            let card = match card_window {
+                Some(w) => {
+                    let at = bounds(w, cx)?;
+                    let (dx, dy) = (at.x - rack_at.x, at.y - rack_at.y);
+                    Some((draw(w, cx)?, f32::from(dx), f32::from(dy)))
+                }
+                None => None,
+            };
+            let picture = showcase::compose(&rack, card.as_ref().map(|(c, x, y)| (c, *x, *y)));
+            write_png(&path, picture.width, picture.height, &picture.rgba)
+        })();
+        match saved {
+            Ok(()) => println!("Saved {}", path.display()),
+            Err(e) => eprintln!("Couldn't save {}: {e}", path.display()),
+        }
+        cx.update(|cx| cx.quit());
+    })
+    .detach();
+}
+
+#[cfg(feature = "capture")]
+fn write_png(path: &std::path::Path, width: u32, height: u32, rgba: &[u8]) -> Result<(), String> {
+    let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+    let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .and_then(|mut w| w.write_image_data(rgba))
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(feature = "capture"))]
+fn save_picture(
+    _: AnyWindowHandle,
+    _: WeakEntity<RackView>,
+    _: plates_core::TileId,
+    _: PathBuf,
+    cx: &mut App,
+) {
+    eprintln!(
+        "Saving a picture needs a build with the capture feature: cargo run -p plates --features capture -- showcase --capture <file.png>"
+    );
+    cx.quit();
+}
+
+// Opens the rack's window. The theme and fonts are set up here, since the rack is the first
+// window either way Plates starts.
+fn open_rack(
+    rack: Rack,
+    data_file: PathBuf,
+    events: async_channel::Receiver<HookMessage>,
+    commands: (
+        async_channel::Sender<tray::Command>,
+        async_channel::Receiver<tray::Command>,
+    ),
+    showcase: bool,
+    cx: &mut App,
+) -> (AnyWindowHandle, Entity<RackView>) {
+    gpui_kit::init(cx);
+    cx.text_system()
+        .add_fonts(SANS_FACES.iter().map(|face| Cow::Borrowed(*face)).collect())
+        .expect("Inter's bundled faces should load");
+    Theme::change(ThemeMode::Dark, None, cx);
+    // gpui-component's Root fills the whole window with the theme's background, which would
+    // show as dark squares outside the rack's rounded corners.
+    // (read in gpui-component 0.9.1, src/root.rs, the Root plugin's style)
+    cx.global_mut::<Theme>().tokens.background = transparent_black().into();
+
+    let display = cx.primary_display().expect("there should be a display");
+    let db = display.bounds();
+    let size = size(px(RACK_W), px(rack_height(rack.tiles().len(), false)));
+    // The rack opens at the primary display's center, and then RackView moves it to where it
+    // last came to rest, if place.json says.
+    let origin = point(
+        db.left() + (db.size.width - size.width) / 2.,
+        db.top() + (db.size.height - size.height) / 2.,
+    );
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::new(origin, size))),
+        titlebar: None,
+        focus: false,
+        show: true,
+        kind: WindowKind::PopUp,
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        window_background: WindowBackgroundAppearance::Transparent,
+        // The rack is never the active window, and GPUI caps an inactive window at about 30
+        // frames a second by default, which would make every throw stutter.
+        inactive_frame_interval: None,
+        low_power_frame_interval: None,
+        thermal_frame_interval: None,
+        app_id: Some("plates".into()),
+        ..Default::default()
+    };
+    gpui_kit::open_window(options, cx, move |window, cx| {
+        cx.new(|cx| RackView::new(rack, data_file, events, commands, showcase, window, cx))
+    })
+    .expect("the rack's window should open")
 }

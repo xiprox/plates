@@ -16,6 +16,7 @@ mod place;
 mod press;
 mod rack_view;
 mod rows;
+mod showcase;
 mod swipe;
 mod tray;
 mod view;

@@ -305,6 +305,10 @@ fn brightened(base: u32, peak: u32, elapsed: Duration, length: Duration) -> Opti
 // timer, so your own tile's pip is outlined in yellow while its timer runs, or violet while it's
 // set for tomorrow, and turns solid yellow once it's time-up, which needs you where a running
 // timer doesn't (user, 2026-11-15 and 2026-11-16).
+/// Whether the working dots hold still, as in `plates showcase`, whose picture would catch a
+/// breathing dot at whatever opacity its breath had reached.
+pub(crate) static STILL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub(crate) fn marker(t: &Tile, pip: bool) -> AnyElement {
     let size = if pip { 8. } else { 9. };
     let base = div().flex_none().size(px(size));
@@ -344,7 +348,7 @@ pub(crate) fn marker(t: &Tile, pip: bool) -> AnyElement {
         Some(c) => shape.bg(rgb(c)),
         None => shape.shadow(vec![ring(rgb(0x6B6E76).into(), 1.5)]),
     };
-    if !breathe {
+    if !breathe || STILL.load(std::sync::atomic::Ordering::Relaxed) {
         return dot.into_any_element();
     }
     // A working session's dot breathes between 45% and 100% opacity every 2.4s. Drawing it 30

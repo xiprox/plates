@@ -2,6 +2,25 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-16: GPUI draws the rack into a picture offscreen, with no permission to record the screen
+
+**Asked:** how can we take a picture of Plates for the README that shows made-up tiles and nothing of the desktop behind them?
+
+**Expected:** `screencapture -l` on the rack's window, as choom-collector's `tools/capture-window.ps1` uses `PrintWindow` on Windows.
+
+**Found:** a shell started from Claude Code has no Screen Recording permission on macOS, as `CGPreflightScreenCaptureAccess` returned false (measured on macOS 26.5.2, 2026-11-16), so `screencapture` would picture only the desktop.
+GPUI's `Window::render_to_image`, which comes with its `test-support` feature, draws a window's last frame again into a texture of its own and returns it as RGBA, with the corners outside the rack's rounded panel left clear (read in gpui-pre-apple 0.3.12, `src/metal_renderer.rs`, `render_offscreen`).
+GPUI blends each color by its alpha onto a texture that starts transparent, so the picture's color comes already multiplied by its alpha (read in the same file, the pipeline's blend factors).
+`plates showcase --capture`, built with the `capture` feature that turns that support on, drew the rack's window and its hover card's window this way at the primary display's 2x scale, with no permission asked (measured on macOS 26.5.2, 2026-11-16).
+
+**Changed:** `plates showcase` opens the rack on the made-up tiles of `src/plates/src/showcase.rs`, writing none of Plates' data files and leaving the tray, the menu bar, and the shortcut to a Plates that runs, and its working dots hold still.
+With `--capture <file.png>`, it waits 1s for the tiles to settle, opens the landing page session's card, which stays open without the pointer on it, waits 1s more, and draws both windows.
+`showcase::compose` lays the rack twice on a 1,200 by 750 canvas, a blue-to-violet gradient, and the card over the second rack where its window sat beside the rack's on screen, with a soft shadow under each, and saves it at 2x, 2,400 by 1,500 (user, 2026-11-16).
+To take the README's picture again, run `cargo run -p plates --features capture -- showcase --capture .github/readme/rack.png`.
+On Windows, the `capture` feature turns on only the core's half of GPUI's test support, so `render_to_image` there returns GPUI's "not implemented" error (read in gpui-pre 0.3.12, `src/platform.rs`), which is unverified on Windows.
+
+**Affects:** nothing in the design docs.
+
 ## 2026-11-16: On a Mac, a tile's click hands the keyboard to the Claude app once Plates makes itself active and yields to it
 
 **Asked:** after clicking a session tile, why does typing go to the rack rather than the Claude app showing the session?

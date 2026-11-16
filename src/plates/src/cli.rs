@@ -4,6 +4,8 @@
 //!   the change, and `plates hooks uninstall` takes them out again. `--yes` skips the question.
 //! - `plates listen` runs the hook receiver and prints what each event does to a rack, and
 //!   `--log <file>` also appends each event's JSON to that file, one per line.
+//! - `plates showcase` opens the rack on made-up tiles, and `--capture <file.png>` saves a picture
+//!   of it and quits, in a build with the `capture` feature.
 
 use std::{
     fs,
@@ -29,6 +31,15 @@ pub fn run(args: &[String]) -> Result<(), String> {
             Some("uninstall") => change_hooks(Change::Uninstall, flag("--yes")),
             _ => Err(usage()),
         },
+        Some("showcase") => {
+            let capture = args
+                .iter()
+                .position(|a| a == "--capture")
+                .map(|i| args.get(i + 1).map(PathBuf::from).ok_or_else(usage))
+                .transpose()?;
+            crate::app::showcase(capture);
+            Ok(())
+        }
         Some("listen") => {
             let log = args
                 .iter()
@@ -42,7 +53,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "Usage: plates | plates hooks install [--yes] | plates hooks uninstall [--yes] | plates listen [--log <file>]"
+    "Usage: plates | plates hooks install [--yes] | plates hooks uninstall [--yes] | plates listen [--log <file>] | plates showcase [--capture <file.png>]"
         .to_string()
 }
 

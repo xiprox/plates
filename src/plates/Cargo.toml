@@ -22,12 +22,22 @@ png = "0.18"
 # Installs, updates (with delta packages), and uninstalls. Keep in step with VPK_VERSION in
 # .github/workflows/release.yml, as the packages vpk makes are read by this crate.
 velopack = "=1.2.161"
+# GPUI's test support, which `plates showcase --capture` draws the rack into a picture with. Only
+# a build with the `capture` feature has it. The version is gpui-kit's, the same pin as above.
+gpui-pre = { version = "=0.3.12", optional = true, features = ["test-support"] }
+
+[features]
+# `plates showcase --capture <file.png>` saves a picture of the made-up rack.
+capture = ["dep:gpui-pre", "dep:gpui-pre-macos", "dep:gpui-pre-apple"]
 
 [build-dependencies]
 # build.rs gives plates.exe its icon.
 winresource = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# The macOS window and Metal renderer's halves of GPUI's test support, for the `capture` feature.
+gpui-pre-macos = { version = "=0.3.12", optional = true, features = ["test-support"] }
+gpui-pre-apple = { version = "=0.3.12", optional = true, features = ["test-support"] }
 # The versions gpui-pre-macos 0.3.12 uses, so both share one build.
 objc2 = "0.6"
 objc2-app-kit = "0.3"

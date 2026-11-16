@@ -441,7 +441,9 @@ impl Render for CardView {
         // the tile, or once the tile has gone.
         window.request_animation_frame();
         let cursor = native::cursor_pos();
-        let over = native::window_rect(self.hwnd).contains(cursor) || self.from.contains(cursor);
+        let pinned = self.rack.upgrade().is_some_and(|r| r.read(cx).showcase);
+        let over =
+            pinned || native::window_rect(self.hwnd).contains(cursor) || self.from.contains(cursor);
         // A sub-session's card names the session it was started from, while that one's tile is
         // on the rack.
         let (tile, parent) = match self.rack.upgrade() {
