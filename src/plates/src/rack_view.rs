@@ -15,16 +15,17 @@ use plates_core::{
     Rack, Removed, SessionState, TileId, desktop,
     hooks::{self, HookMessage},
     store,
-    timer::DEFAULT_MINUTES,
+    timer::{DEFAULT_MINUTES, MENU_HOURS, MENU_MINUTES, Timer},
 };
 
 use crate::{
     card::{CARD_DELAY, CardView},
-    menu::{MENU_W, MenuKind, MenuView},
+    menu::{MenuKind, MenuView},
     motion::{self, Ease, Rect, Side, Tween},
     native,
     place::{self, Place},
     rows::Rows,
+    swipe::{Release, Swipe, Swiped},
     tray::{self, Tray},
 };
 
@@ -40,7 +41,16 @@ const AWAY: Duration = Duration::from_secs(30 * 60);
 /// How recent an input counts as you being back.
 const BACK: Duration = Duration::from_secs(5);
 
-/// The rack's height: a 28px band, a 60px row for each tile and for the phantom tile with 6px
+/// The moon's badge in the grip band, which lists the snoozed tiles: its height, and how far it
+/// sits inside the rack's border, from the top and from the right alike (user, 2026-11-16).
+pub const MOON_H: f32 = 22.;
+pub const MOON_INSET: f32 = 8.;
+
+/// The grip band at the rack's top, as tall as the moon's badge and its inset above and below, so
+/// the badge's middle is the band's middle, where the grip sits (user, 2026-11-16).
+pub const BAND_H: f32 = MOON_H + 2. * MOON_INSET;
+
+/// The rack's height: the band, a 60px row for each tile and for the phantom tile with 6px
 /// between rows, the Undo row while it shows, 12px of padding below, and a 1px border.
 pub fn rack_height(tiles: usize, toast: bool) -> f32 {
     rack_height_for(tiles as f32, if toast { 1. } else { 0. })
@@ -48,11 +58,12 @@ pub fn rack_height(tiles: usize, toast: bool) -> f32 {
 
 /// The rack's height while rows grow and shrink, with each row counted by how far it has grown.
 pub fn rack_height_for(tile_rows: f32, undo_row: f32) -> f32 {
-    102. + 66. * tile_rows + (TOAST_H + 6.) * undo_row
+    BAND_H + 74. + 66. * tile_rows + (TOAST_H + 6.) * undo_row
 }
 
-pub fn strip_height(tiles: usize) -> f32 {
-    14. + 16. * tiles.max(1) as f32
+/// The docked strip's height for `pips` marks, one per tile and a moon while any is snoozed.
+pub fn strip_height(pips: usize) -> f32 {
+    14. + 16. * pips.max(1) as f32
 }
 
 #[derive(Clone, Copy)]
@@ -82,11 +93,30 @@ pub(crate) enum FieldFor {
 pub(crate) struct Field {
     pub(crate) target: FieldFor,
     prev_focus: isize,
+    /// Whether the rack's window has been active since the field opened, after which losing
+    /// activation closes the field.
+    been_active: bool,
+    /// Which of `FIELD_REMINDERS` the new tile starts with, where 0 is none.
+    pub(crate) remind: usize,
+}
+
+/// How many reminders Tab steps through in a new tile's field: none, then each of the timer
+/// menu's "Remind me in" lengths, so the field and the menu offer the same ones (user, 2026-11-16).
+pub(crate) const FIELD_REMINDERS: usize = 1 + MENU_MINUTES.len() + MENU_HOURS.len();
+
+/// The minutes of the field's reminder `step`, or `None` for step 0, which sets none.
+pub(crate) fn field_reminder(step: usize) -> Option<u32> {
+    MENU_MINUTES
+        .iter()
+        .copied()
+        .chain(MENU_HOURS.iter().map(|h| h * 60))
+        .nth(step.checked_sub(1)?)
 }
 
 /// The menu of timer lengths, open in a window of its own.
 pub(crate) struct Menu {
     window: WindowHandle<MenuView>,
+    kind: MenuKind,
 }
 
 /// A session tile's hover card, open in a window of its own, or about to be.
@@ -114,6 +144,8 @@ pub(crate) struct Toast {
 enum Ended {
     Enter,
     Escape,
+    /// A press on the rack outside the field.
+    ClickedAway,
     Deactivated,
 }
 
@@ -137,6 +169,14 @@ pub struct RackView {
     /// The session tile the pointer last moved over, and when, which opens the tile's card once
     /// the pointer has rested there for `CARD_DELAY`.
     rest: Option<(TileId, Instant)>,
+    /// The tile last opened by a click, whose card stays closed until the pointer leaves the
+    /// tile, since the click opened the session the card would show (user, 2026-11-16).
+    opened: Option<TileId>,
+    /// Whether the menu a button in the grip band opens, the moon's or the grip's, was open as
+    /// the button was pressed, so the click closes it rather than opening it again.
+    menu_was_open: bool,
+    /// Which kind of menu last closed itself, at a press outside it, and when.
+    menu_closed_at: Option<(std::mem::Discriminant<MenuKind>, Instant)>,
     /// Filled in by the tiles' layout each frame.
     pub(crate) spots: Rc<RefCell<HashMap<TileId, Spot>>>,
     /// Whether you've been away from the PC since the last input Plates saw.
@@ -165,6 +205,13 @@ pub struct RackView {
     applied: Option<(i32, i32, i32, i32)>,
     /// Plates' icon in the tray or the menu bar, or `None` when the OS wouldn't take it.
     tray: Option<Tray>,
+    /// The tile whose hourglass you just clicked to start a timer, whose fill stays bright until
+    /// the pointer leaves it.
+    pub(crate) hourglass_held: Option<TileId>,
+    /// A two-finger swipe on a tile, from the fingers touching until the tile settles.
+    pub(crate) swipe: Option<Swipe>,
+    /// The tile whose hourglass a force click is pressing, whose click then starts no timer.
+    forced: Option<TileId>,
     _subs: Vec<Subscription>,
     _tasks: Vec<Task<()>>,
 }
@@ -194,8 +241,37 @@ impl RackView {
                     this.finish_field(Ended::Escape, window, cx);
                 }
             }),
+            // Losing activation closes the field, as clicking into another app ends typing there.
+            // On macOS, a field the shortcut opened while another app was in front closed at
+            // once, before you could type, so the rack's window reported a change while it wasn't
+            // yet active. So only a window that has been active since the field opened closes it
+            // by losing activation. (seen on macOS 26.5.2, 2026-11-16, record/areas/rack/log.md)
+            // The input binds Tab to indenting, and an interceptor runs before any binding, so
+            // Tab and Shift+Tab reach the field's reminder first (read in gpui-pre 0.3.12,
+            // src/window.rs, `dispatch_key_event`).
+            {
+                let view = cx.entity().downgrade();
+                cx.intercept_keystrokes(move |ev, _, cx| {
+                    if ev.keystroke.key != "tab" {
+                        return;
+                    }
+                    let back = ev.keystroke.modifiers.shift;
+                    if view
+                        .update(cx, |this, cx| this.step_reminder(back, cx))
+                        .unwrap_or(false)
+                    {
+                        cx.stop_propagation();
+                    }
+                })
+            },
             cx.observe_window_activation(window, |this, window, cx| {
-                if this.field.is_some() && !window.is_window_active() {
+                let active = window.is_window_active();
+                let Some(field) = this.field.as_mut() else {
+                    return;
+                };
+                if active {
+                    field.been_active = true;
+                } else if field.been_active {
                     this.finish_field(Ended::Deactivated, window, cx);
                 }
             }),
@@ -216,6 +292,24 @@ impl RackView {
                 cx.notify();
             })
             .ok();
+        });
+        // The shortcut for a new tile, registered after the task above takes the window over,
+        // which on Windows puts in place the subclass its presses arrive through.
+        let hotkey = cx.spawn_in(window, async move |this, cx| {
+            let Some(presses) = native::watch_hotkey(hwnd) else {
+                eprintln!(
+                    "Couldn't register the shortcut for a new tile; another app may hold it."
+                );
+                return;
+            };
+            while presses.recv().await.is_ok() {
+                if this
+                    .update_in(cx, |this, window, cx| this.hotkey(window, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
         });
         let receive = cx.spawn(async move |this, cx| {
             while let Ok(message) = events.recv().await {
@@ -287,6 +381,9 @@ impl RackView {
             menu: None,
             card: None,
             rest: None,
+            opened: None,
+            menu_was_open: false,
+            menu_closed_at: None,
             spots: Rc::default(),
             away: false,
             last_tick: SystemTime::now(),
@@ -309,8 +406,19 @@ impl RackView {
             last_frame: None,
             applied: None,
             tray,
+            hourglass_held: None,
+            swipe: None,
+            forced: None,
             _subs: subs,
-            _tasks: vec![take_over, receive, tick, raised, on_top, tray_commands],
+            _tasks: vec![
+                take_over,
+                hotkey,
+                receive,
+                tick,
+                raised,
+                on_top,
+                tray_commands,
+            ],
         };
         view.rack.tick(SystemTime::now());
         view.nudged_for = view.latest_need();
@@ -436,7 +544,7 @@ impl RackView {
             }
             Some(side) => {
                 let a = native::edges_at((saved.x, saved.y)).area;
-                let strip_h = strip_height(self.rack.tiles().len()) as f64 * self.scale;
+                let strip_h = strip_height(self.strip_pips()) as f64 * self.scale;
                 self.dock_area = a;
                 self.docked = Some(side);
                 self.peek = false;
@@ -511,7 +619,7 @@ impl RackView {
     }
 
     fn strip_window_height(&self) -> f32 {
-        let strip = strip_height(self.rack.tiles().len());
+        let strip = strip_height(self.strip_pips());
         if self.popover_shows() {
             strip.max(self.popover_height())
         } else {
@@ -540,10 +648,21 @@ impl RackView {
             .detach();
     }
 
-    pub(crate) fn on_press(&mut self, _: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn on_press(
+        &mut self,
+        _: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // A press anywhere on the rack but the field closes the field without adding the tile, as
+        // Esc does; the field stops its own presses reaching here (user, 2026-11-16).
+        if self.field.is_some() {
+            self.finish_field(Ended::ClickedAway, window, cx);
+        }
+        self.forced = None;
         self.last_press_focus = native::foreground_window();
         self.suppress_click = false;
-        if self.field.is_some() || self.docked.is_some() || self.tween.is_some() {
+        if self.docked.is_some() || self.tween.is_some() {
             return;
         }
         let r = native::window_rect(self.hwnd);
@@ -555,6 +674,88 @@ impl RackView {
         // A press catches a rack that's still sliding.
         self.vel = (0., 0.);
         cx.notify();
+    }
+
+    /// Fingers touching the trackpad over a tile, or over the Undo row, start a swipe on it,
+    /// which the rack then follows through `on_scroll`, since it slides out from under the
+    /// pointer.
+    pub(crate) fn swipe_touched(&mut self, target: Swiped, e: &ScrollEvent) {
+        if e.touch_phase == TouchPhase::Started && self.field.is_none() {
+            self.swipe = Some(Swipe::new(target));
+        }
+    }
+
+    /// Follows a two-finger swipe across the rack, sliding its tile with the fingers and, once
+    /// they lift, back into place or out, which dismisses the tile as its × does
+    /// (user, 2026-11-16).
+    pub(crate) fn on_scroll(&mut self, e: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // A mouse wheel's notches come as lines, and only a trackpad's or a touchscreen's scroll
+        // comes in exact pixels.
+        let ScrollDelta::Pixels(d) = e.delta else {
+            return;
+        };
+        let Some(swipe) = self.swipe.as_mut() else {
+            return;
+        };
+        let now = Instant::now();
+        match e.touch_phase {
+            TouchPhase::Started => {}
+            TouchPhase::Moved => {
+                if swipe.moved(f32::from(d.x), f32::from(d.y), now) {
+                    // A swipe doesn't move the pointer, so the card's wait would run out mid-swipe.
+                    if let Swiped::Tile(id) = swipe.target {
+                        self.rest = None;
+                        self.opened = Some(id);
+                        if self.card.as_ref().is_some_and(|c| c.tile == id) {
+                            self.close_card(cx);
+                        }
+                    }
+                }
+                cx.notify();
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                let cancel = e.touch_phase == TouchPhase::Cancelled;
+                let target = swipe.target;
+                if swipe.release(cancel, now) == Release::Dismiss {
+                    match target {
+                        Swiped::Tile(id) => self.take_off(id, cx),
+                        // Swiping the Undo row away keeps the removal, as waiting it out does.
+                        Swiped::Undo => {
+                            self.toast = None;
+                            self.after_change(cx);
+                        }
+                    }
+                }
+                cx.notify();
+            }
+        }
+    }
+
+    /// How far a tile sits sideways from its place, in logical px, while a swipe moves it. A
+    /// `leaving` tile is one shrinking out of the rack, which a swipe that dismissed it moves.
+    pub(crate) fn swipe_offset(&self, target: Swiped, leaving: bool, now: Instant) -> f32 {
+        match &self.swipe {
+            Some(s) if s.target == target && s.dismissed() == leaving => s.offset(now),
+            _ => 0.,
+        }
+    }
+
+    /// Pressing on past the click on a Mac trackpad, a force click, opens an hourglass's menu, as a
+    /// right-click does, and the click the press ends in starts or cancels no timer
+    /// (user, 2026-11-16).
+    pub(crate) fn force_press(
+        &mut self,
+        id: TileId,
+        e: &MousePressureEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if e.stage != PressureStage::Force || self.forced == Some(id) {
+            return;
+        }
+        self.forced = Some(id);
+        // The press goes on into the menu, so moving it mustn't drag or throw the rack.
+        self.press = None;
+        self.open_menu(MenuKind::Timer(id), e.position, cx);
     }
 
     pub(crate) fn note_press(&mut self) {
@@ -704,7 +905,7 @@ impl RackView {
     fn finish_dock(&mut self, side: Side) {
         let s = self.scale;
         let a = self.dock_area;
-        let h = strip_height(self.rack.tiles().len()) as f64 * s;
+        let h = strip_height(self.strip_pips()) as f64 * s;
         let y = (self.dock_y + 12. * s).clamp(a.top + 16. * s, (a.bottom - h - 16. * s).max(a.top));
         self.docked = Some(side);
         self.peek = false;
@@ -818,8 +1019,13 @@ impl RackView {
     }
 
     /// What a click on a tile or its card does: it reads a finished session's turn, as opening
-    /// the session in the app does, opens the session there, and clears time-up.
+    /// the session in the app does, opens the session there, and clears time-up. The tile's card
+    /// waits for the pointer to leave the tile before it can open again.
     pub(crate) fn open_tile(&mut self, id: TileId, cx: &mut Context<Self>) {
+        self.opened = Some(id);
+        if self.rest.is_some_and(|(resting, _)| resting == id) {
+            self.rest = None;
+        }
         if self.rack.mark_read(id, SystemTime::now()) {
             self.after_change(cx);
         }
@@ -833,6 +1039,27 @@ impl RackView {
             .and_then(|s| s.app_id.as_deref())
             .and_then(desktop::session_link)
         {
+            // On macOS, Plates hands the keyboard to the app that opens the link, and can only
+            // once it's the active app itself, which a click on the rack doesn't make it, so it
+            // asks to be and waits up to 300ms for macOS to make it so. native/mac.rs's
+            // `open_url` says why.
+            #[cfg(target_os = "macos")]
+            {
+                native::activate_self();
+                cx.spawn(async move |_, cx| {
+                    for _ in 0..30 {
+                        if native::is_active() {
+                            break;
+                        }
+                        cx.background_executor()
+                            .timer(Duration::from_millis(10))
+                            .await;
+                    }
+                    native::open_url(&link);
+                })
+                .detach();
+            }
+            #[cfg(not(target_os = "macos"))]
             native::open_url(&link);
         }
         if tile.timer.is_time_up() {
@@ -843,13 +1070,16 @@ impl RackView {
     }
 
     pub(crate) fn click_timer(&mut self, id: TileId, cx: &mut Context<Self>) {
-        if self.suppress_click {
+        if self.suppress_click || self.forced == Some(id) {
             return;
         }
         let now = SystemTime::now();
         match self.rack.tile(id).map(|t| t.timer.is_set()) {
             Some(true) => self.rack.cancel_timer(id, now),
-            Some(false) => self.rack.start_timer(id, DEFAULT_MINUTES, now),
+            Some(false) => {
+                self.rack.start_timer(id, DEFAULT_MINUTES, now);
+                self.hourglass_held = Some(id);
+            }
             None => return,
         }
         self.save();
@@ -866,12 +1096,9 @@ impl RackView {
             .and_then(|t| t.session())
             .and_then(|s| s.app_title.clone());
         self.open_tile(id, cx);
-        #[cfg(windows)]
         if let Some(title) = title {
             crate::press::press_choice(title, choice.to_string());
         }
-        #[cfg(not(windows))]
-        let _ = (title, choice);
     }
 
     /// Right-clicking a finished session's text opens a menu that marks its turn read, without
@@ -913,7 +1140,7 @@ impl RackView {
     /// Notes the pointer moving over a session tile's text. A task waits until it has rested
     /// there for `CARD_DELAY`, then opens the tile's card, and each move pushes the wait back.
     pub(crate) fn pointer_moved(&mut self, id: TileId, cx: &mut Context<Self>) {
-        if self.card.as_ref().is_some_and(|c| c.tile == id) {
+        if self.card.as_ref().is_some_and(|c| c.tile == id) || self.opened == Some(id) {
             return;
         }
         let waiting = self.rest.is_some();
@@ -930,6 +1157,14 @@ impl RackView {
             }
         })
         .detach();
+    }
+
+    /// Notes the pointer leaving a session tile's text, after which a tile opened by a click can
+    /// open its card again.
+    pub(crate) fn pointer_left(&mut self, id: TileId) {
+        if self.opened == Some(id) {
+            self.opened = None;
+        }
     }
 
     // How long the pointer has yet to rest, or `None` once the wait is over and the card has had
@@ -1051,7 +1286,9 @@ impl RackView {
     // The menu opens in a window of its own at the pointer, so it can reach past the rack's edges
     // without growing the rack's window, whose shadow DWM would draw around the grown rectangle.
     // It opens below and to the right of the pointer, to the left near the screen's right edge,
-    // and above it near the screen's bottom (user, 2026-11-15).
+    // and above it near the screen's bottom (user, 2026-11-15). The list of snoozed tiles opens
+    // from the moon at the rack's right edge, so it opens leftward, its right edge on the tiles'
+    // right edge, within the rack's width (user, 2026-11-16).
     pub(crate) fn open_menu(&mut self, kind: MenuKind, at: Point<Pixels>, cx: &mut Context<Self>) {
         self.close_menu(cx);
         self.close_card(cx);
@@ -1063,14 +1300,24 @@ impl RackView {
         );
         let area = native::edges_at(pointer).area;
         let menu_h = kind.height();
-        let (w, h) = (MENU_W as f64 * s, menu_h as f64 * s);
+        let menu_w = kind.width();
+        let (w, h) = (menu_w as f64 * s, menu_h as f64 * s);
         let right = pointer.0 - 12. * s;
-        let x = if right + w <= area.right {
+        let x = if let MenuKind::Snoozed { .. } = kind {
+            // Its right edge lines up with the moon's badge, inside the panel's 1px border.
+            (r.right - f64::from(1. + MOON_INSET) * s - w)
+                .clamp(area.left, (area.right - w).max(area.left))
+        } else if right + w <= area.right {
             right
         } else {
             (pointer.0 - w + 12. * s).clamp(area.left, (area.right - w).max(area.left))
         };
-        let below = pointer.1 + 6. * s;
+        // The list of snoozed tiles opens 4px under the moon's badge, below the panel's 1px border,
+        // so the list leaves the badge whole (user, 2026-11-16).
+        let below = match kind {
+            MenuKind::Snoozed { .. } => r.top + f64::from(1. + MOON_INSET + MOON_H + 4.) * s,
+            _ => pointer.1 + 6. * s,
+        };
         let y = if below + h <= area.bottom {
             below
         } else {
@@ -1081,7 +1328,7 @@ impl RackView {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                 point(px((x / s) as f32), px((y / s) as f32)),
-                size(px(MENU_W), px(menu_h)),
+                size(px(menu_w), px(menu_h)),
             ))),
             titlebar: None,
             focus: false,
@@ -1094,10 +1341,14 @@ impl RackView {
             inactive_frame_interval: None,
             ..Default::default()
         };
+        let snoozed = match kind {
+            MenuKind::Snoozed { .. } => self.rack.snoozed().cloned().collect(),
+            _ => Vec::new(),
+        };
         match cx.open_window(options, |window, cx| {
-            cx.new(|cx| MenuView::new(rack, kind, bounds, window, cx))
+            cx.new(|cx| MenuView::new(rack, kind, bounds, snoozed, window, cx))
         }) {
-            Ok(window) => self.menu = Some(Menu { window }),
+            Ok(window) => self.menu = Some(Menu { window, kind }),
             Err(e) => eprintln!("Couldn't open a menu: {e}"),
         }
     }
@@ -1109,19 +1360,80 @@ impl RackView {
         self.after_change(cx);
     }
 
-    /// Sets a reminder for when you're back tomorrow, from the timer's menu or the hover card
-    /// (user, 2026-11-16).
+    /// Snoozes a tile until tomorrow, from the timer's menu or the hover card (user, 2026-11-16).
     pub(crate) fn pick_tomorrow(&mut self, id: TileId, cx: &mut Context<Self>) {
+        let now = SystemTime::now();
+        self.snooze(id, Timer::tomorrow(now, native::utc_offset()), cx);
+    }
+
+    /// Snoozes a tile for `hours`, from the timer's menu.
+    pub(crate) fn snooze_for(&mut self, id: TileId, hours: u32, cx: &mut Context<Self>) {
+        self.snooze(id, Timer::later(SystemTime::now(), hours), cx);
+    }
+
+    // A snoozed tile leaves the rack until its time, and the moon in the grip band counts it, so
+    // a session you can't act on yet stops asking for you (user, 2026-11-16).
+    fn snooze(&mut self, id: TileId, until: Timer, cx: &mut Context<Self>) {
         self.menu = None;
-        self.rack
-            .remind_tomorrow(id, SystemTime::now(), native::utc_offset());
-        self.save();
-        self.after_change(cx);
+        self.close_card(cx);
+        if self.rack.snooze(id, until, SystemTime::now()) {
+            self.save();
+            self.after_change(cx);
+        }
+    }
+
+    /// Brings a snoozed tile back now, from the list the moon opens.
+    pub(crate) fn wake(&mut self, id: TileId, cx: &mut Context<Self>) {
+        self.menu = None;
+        if self.rack.wake(id, SystemTime::now()) {
+            self.save();
+            self.after_change(cx);
+        }
+    }
+
+    /// The docked strip's marks: one per tile, and a moon while any tile is snoozed.
+    pub(crate) fn strip_pips(&self) -> usize {
+        self.rack.tiles().len() + usize::from(self.rack.snoozed().next().is_some())
     }
 
     /// The menu window tells the rack it closed itself.
     pub(crate) fn menu_closed(&mut self) {
-        self.menu = None;
+        if let Some(menu) = self.menu.take() {
+            self.menu_closed_at = Some((std::mem::discriminant(&menu.kind), Instant::now()));
+        }
+    }
+
+    // The moon and the grip are buttons that open a menu, the moon's list of snoozed tiles and the
+    // grip's the rack's menu, and a second click closes it (user, 2026-11-16). A press on the
+    // button closes the open menu before its click lands, since a menu closes at any press
+    // outside it, and depending on which sees the press first, the menu is still open at the
+    // press or closed itself a moment before. Either way, the click that follows leaves it closed.
+    pub(crate) fn menu_button_pressed(&mut self, kind: &MenuKind) {
+        let kind = std::mem::discriminant(kind);
+        let open = self
+            .menu
+            .as_ref()
+            .is_some_and(|m| std::mem::discriminant(&m.kind) == kind);
+        let just_closed = self
+            .menu_closed_at
+            .is_some_and(|(k, at)| k == kind && at.elapsed() < Duration::from_millis(300));
+        self.menu_was_open = open || just_closed;
+    }
+
+    pub(crate) fn menu_button_clicked(
+        &mut self,
+        kind: MenuKind,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.suppress_click {
+            return;
+        }
+        if std::mem::take(&mut self.menu_was_open) {
+            self.close_menu(cx);
+            return;
+        }
+        self.open_menu(kind, at, cx);
     }
 
     fn close_menu(&mut self, cx: &mut Context<Self>) {
@@ -1136,6 +1448,13 @@ impl RackView {
         if self.suppress_click {
             return;
         }
+        self.take_off(id, cx);
+    }
+
+    // Takes a tile off the rack, with an Undo for your own tile and a dismissed session. A swipe
+    // comes here directly, since a click left over from a drag of the rack has nothing to do with
+    // it.
+    fn take_off(&mut self, id: TileId, cx: &mut Context<Self>) {
         let Some(tile) = self.rack.tile(id) else {
             return;
         };
@@ -1166,6 +1485,8 @@ impl RackView {
 
     pub(crate) fn undo_remove(&mut self, cx: &mut Context<Self>) {
         if let Some(toast) = self.toast.take() {
+            // A tile swiped away comes back in place, not at the end of its slide.
+            self.swipe = None;
             self.rack.restore(toast.removed);
             self.save();
             self.after_change(cx);
@@ -1176,6 +1497,19 @@ impl RackView {
     // bring its window forward only in certain cases, one being that it received the last input
     // event, which the click that opens the field is.
     // (documented, https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-setforegroundwindow)
+    // The shortcut for a new tile does what clicking the phantom tile does, from any app: it brings
+    // the rack forward, slides it out of the dock if it's docked, and opens the new tile's field,
+    // which takes keyboard focus until you press Enter or Esc (user, 2026-11-15).
+    fn hotkey(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.docked.is_some() {
+            self.undock(cx);
+        }
+        native::keep_on_top(self.hwnd);
+        // A press left over from a drag would otherwise stop the field opening.
+        self.suppress_click = false;
+        self.start_field(FieldFor::New, window, cx);
+    }
+
     pub(crate) fn start_field(
         &mut self,
         target: FieldFor,
@@ -1193,6 +1527,8 @@ impl RackView {
         self.field = Some(Field {
             target,
             prev_focus: native::foreground_window(),
+            been_active: window.is_window_active(),
+            remind: 0,
         });
         self.close_menu(cx);
         self.close_card(cx);
@@ -1221,7 +1557,11 @@ impl RackView {
         if ended == Ended::Enter && !text.is_empty() {
             match field.target {
                 FieldFor::New => {
-                    self.rack.add_own(&text, SystemTime::now());
+                    let now = SystemTime::now();
+                    let id = self.rack.add_own(&text, now);
+                    if let Some(minutes) = field_reminder(field.remind) {
+                        self.rack.start_timer(id, minutes, now);
+                    }
                 }
                 FieldFor::Rename(id) => {
                     self.rack.rename_own(id, &text);
@@ -1240,6 +1580,23 @@ impl RackView {
         })
         .detach();
         self.after_change(cx);
+    }
+
+    /// Steps the new tile's reminder to the next length, or the previous one if `back`, wrapping
+    /// through none, and says whether a new tile's field was open to take it.
+    pub(crate) fn step_reminder(&mut self, back: bool, cx: &mut Context<Self>) -> bool {
+        let Some(field) = self.field.as_mut().filter(|f| f.target == FieldFor::New) else {
+            return false;
+        };
+        let by = if back { FIELD_REMINDERS - 1 } else { 1 };
+        field.remind = (field.remind + by) % FIELD_REMINDERS;
+        cx.notify();
+        true
+    }
+
+    /// The Enter hint beside the field, clicked: it adds or renames the tile, as Enter does.
+    pub(crate) fn click_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.finish_field(Ended::Enter, window, cx);
     }
 
     pub(crate) fn is_renaming(&self, id: TileId) -> bool {

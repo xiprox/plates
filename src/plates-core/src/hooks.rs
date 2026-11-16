@@ -198,7 +198,10 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
                 message: text("message").unwrap_or_default(),
             })
         }
-        "PostToolUse" | "PostToolUseFailure" => Some(SessionEvent::ToolFinished),
+        "PostToolUse" | "PostToolUseFailure" => Some(SessionEvent::ToolFinished {
+            activity: tool(&v, &cwd).map(|t| t.activity()),
+            failed: hook == "PostToolUseFailure",
+        }),
         "Stop" => Some(SessionEvent::TurnEnded {
             last_message: text("last_assistant_message"),
             background: background_tasks(&v),
@@ -631,10 +634,22 @@ mod tests {
 
     #[test]
     fn a_tool_finishing_or_failing_both_finish_it() {
-        assert_eq!(event(base("PostToolUse")), Some(SessionEvent::ToolFinished));
+        let read =
+            json!({ "tool_name": "Read", "tool_input": { "file_path": "/work/plates/plan.md" } });
+        let finished = |hook: &str| event(with(hook, read.clone()));
         assert_eq!(
-            event(base("PostToolUseFailure")),
-            Some(SessionEvent::ToolFinished)
+            finished("PostToolUse"),
+            Some(SessionEvent::ToolFinished {
+                activity: Some("Reading plan.md".into()),
+                failed: false,
+            })
+        );
+        assert_eq!(
+            finished("PostToolUseFailure"),
+            Some(SessionEvent::ToolFinished {
+                activity: Some("Reading plan.md".into()),
+                failed: true,
+            })
         );
     }
 

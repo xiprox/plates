@@ -1,0 +1,16 @@
+Plates' log from a tile click, macOS 26.5.2, Claude desktop app 5.11492.5, 2026-11-16.
+native/mac.rs open_url logged these lines, after rack_view made Plates the active app with
+activateIgnoringOtherApps and waited for isActive. The user then typed, and the text went to
+the Claude app. frontmost is NSWorkspace.frontmostApplication, which reported none while
+Plates, an accessory app, was active. The logging thread slept 100ms, then 400ms more, then
+1000ms more, so its "after" lines came 100ms, 500ms, and 1.5s after the link opened, and the
+last line is the previous click's thread finishing.
+
+The last click, in the order the lines were logged:
+
+[focus-debug] before: plates active true, key window true, frontmost none, target Some("com.anthropic.claudefordesktop")
+[focus-debug] activate from Plates accepted: true
+[focus-debug] after 100ms: frontmost com.anthropic.claudefordesktop
+[focus-debug] after 400ms: frontmost com.anthropic.claudefordesktop
+[focus-debug] after 1000ms: frontmost com.anthropic.claudefordesktop
+[focus-debug] after 1000ms: frontmost com.anthropic.claudefordesktop

@@ -12,6 +12,12 @@ use serde_json::Value;
 /// How many of the turn's newest tools a session keeps, for the hover card.
 pub const RECENT_TOOLS: usize = 4;
 
+/// How long after you look at a session at your turn its reminder waits to start, and how long
+/// that reminder then runs, for a session you opened and then left for another before answering
+/// (user, 2026-11-16).
+pub const LOOK_WAIT: Duration = Duration::from_secs(120);
+pub const LOOK_REMINDER_MINUTES: u32 = 3;
+
 /// How long a working tile shows Claude's newest text before what Claude does next, so the text
 /// can be read even when a tool follows it at once.
 pub const STATUS_HOLDS: Duration = Duration::from_secs(4);
@@ -69,8 +75,11 @@ pub enum SessionEvent {
     ApprovalAsked { tool: Option<Tool> },
     /// `Notification` with `notification_type` `permission_prompt`.
     ApprovalNotified { message: String },
-    /// `PostToolUse` or `PostToolUseFailure`.
-    ToolFinished,
+    /// `PostToolUse`, or `PostToolUseFailure` with `failed`, and the finished tool in words.
+    ToolFinished {
+        activity: Option<String>,
+        failed: bool,
+    },
     /// `Stop`, with the tasks still running as the turn ended.
     TurnEnded {
         last_message: Option<String>,
@@ -109,7 +118,7 @@ impl SessionEvent {
                 Some(SessionState::Working)
             }
             SessionEvent::ToolPending { .. }
-            | SessionEvent::ToolFinished
+            | SessionEvent::ToolFinished { .. }
             | SessionEvent::CompactFinished { .. }
             | SessionEvent::InputGiven
             | SessionEvent::WrappedUp(_)
@@ -296,8 +305,8 @@ pub struct Session {
     pub message: Option<String>,
     /// What Claude passed the turn's wrap-up tool.
     pub wrap_up: Option<WrapUp>,
-    /// The turn's newest tools in words, oldest first, at most `RECENT_TOOLS` of them.
-    pub recent: Vec<String>,
+    /// The turn's newest tools, oldest first, at most `RECENT_TOOLS` of them.
+    pub recent: Vec<Recent>,
     /// The tasks still running when the turn ended.
     pub background: Vec<BackgroundTask>,
     /// The first line of the newest text Claude wrote in the turn.
@@ -326,7 +335,31 @@ pub struct Session {
     /// Whether what the session waits on in `NeedsApproval` is a question for you, from Claude's
     /// `AskUserQuestion` tool or an MCP server, rather than a tool to approve.
     pub question: bool,
+    /// Where the reminder after you look at a session at your turn stands.
+    pub remind: Remind,
     pub ended_at: Option<SystemTime>,
+}
+
+/// One of the turn's tools in words, such as "Reading plan.md", and whether it failed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recent {
+    pub text: String,
+    pub failed: bool,
+}
+
+/// The reminder that starts `LOOK_WAIT` after you look at a session at your turn, unless you've
+/// answered it, or set or canceled its timer yourself, by then.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Remind {
+    /// None waits: the session isn't at your turn, or you haven't looked.
+    #[default]
+    Off,
+    /// It starts at this time.
+    At(SystemTime),
+    /// It's the timer running now, which a look starts over.
+    Started,
+    /// You set or canceled the tile's timer yourself during this state, so none starts.
+    Mine,
 }
 
 impl Session {
@@ -358,6 +391,7 @@ impl Session {
             line: None,
             pending_tool: None,
             question: false,
+            remind: Remind::Off,
             ended_at: None,
         }
     }

@@ -20,7 +20,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   A game in exclusive full screen bypasses the Desktop Window Manager, and no other window shows over it (unverified).
 - On macOS, it shows on every Space and over full-screen apps.
 - It has no title.
-  A 28px band at its top holds a centered, horizontal grip of six dots.
+  A 38px band at its top holds a centered, horizontal grip of six dots, and the band is as tall as the 22px badge of the moon of [02-tiles](02-tiles.md#snoozing) with 8px above and below it, so the moon sits level with the grip and as far from the rack's side as from its top (user, 2026-11-16).
 - It has 12px of padding on the left, right, and bottom, and its tiles sit 6px apart.
 - Its background is `#131417`, with a 1px `#2A2C31` border.
 - It casts a drop shadow, which on Windows the Desktop Window Manager (DWM) draws outside the window ([rack log](log.md#2026-11-15-dwm-draws-the-racks-drop-shadow-once-the-windows-frame-reaches-1px-into-its-client-area)), and what draws it on macOS is unverified until the plan's step 7.
@@ -28,6 +28,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 
 ## Drag and throw
 
+- The pointer is the arrow everywhere on the rack and its menus and card, with no pointing hand over what you can click, as in a desktop app, and the closed hand only while you drag the rack (user, 2026-11-16).
 - A press anywhere on the rack becomes a drag once the pointer moves 5px.
   A click on a tile, its timer, or its × still lands, and a drag that starts on a tile doesn't also click it.
 - Letting go mid-drag keeps the rack's speed, measured over the drag's last 60ms, and capped only at 20,000px/s, a guard against a bad sample (user, 2026-11-15, [rack log](log.md#2026-11-15-by-hand-the-prototypes-throw-bounce-and-dock-numbers-got-in-the-way)).
@@ -42,15 +43,18 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   Letting go before the bar fills leaves the rack where it is.
 - The strip is 22px wide, with one 8px mark per tile, called a pip, in the tiles' order.
   A session's pip is a circle colored as its tile's marker is.
-  Your own tile's pip is a gray square, outlined in yellow while the tile's timer runs or is set for tomorrow, and solid yellow once the tile is time-up ([02-tiles](02-tiles.md#the-timer)), since the strip has no room for the timer, and time-up needs you where a running timer doesn't (user, 2026-11-15).
+  Your own tile's pip is a gray square, outlined in yellow while the tile's timer runs, or in violet while it's set for tomorrow, and solid yellow once the tile is time-up ([02-tiles](02-tiles.md#the-timer)), since the strip has no room for the timer, and time-up needs you where a running timer doesn't (user, 2026-11-15 and 2026-11-16).
+  While any tile is snoozed, a violet moon follows the pips, as the grip band's moon does on the rack ([02-tiles](02-tiles.md#snoozing)).
 - When a tile starts needing you, the strip nudges 12px out of the edge once, then sits still.
 - Hovering the strip peeks it 6px out of the edge and lists the tiles that need you, with their pips.
 - Clicking the strip slides the rack back out of the edge over 200ms, to sit flush with it (user, 2026-11-15).
 
 ## Focus
 
-- Clicking the rack never takes keyboard focus from the app you're in.
-- Only the inline field for adding or renaming a tile takes focus, and focus goes back to the app you were in when you press Enter or Esc.
+- On Windows, clicking the rack never takes keyboard focus from the app you're in.
+  On macOS, the rack is a panel that takes the keyboard when you click it, without making Plates the active app, so after a click your typing goes to the rack (seen on macOS 26.5.2, 2026-11-16).
+  A click on a session tile hands the keyboard on to the Claude app, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session) says, and a click anywhere else leaves it with the rack.
+- Only the inline field for adding or renaming a tile takes focus, and focus goes back to the app you were in when you press Enter or Esc, or click the rack outside the field.
 
 ## Launching and quitting
 
@@ -60,7 +64,9 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 - On Windows, starting Plates from Explorer or a shortcut opens no console window, because `tools/build-release.ps1` gives `plates.exe` a console allocation policy of `detached` ([product log](../product/log.md#2026-11-15-the-detached-console-policy-keeps-plates-console-window-away-when-explorer-starts-it)).
   The policy needs Windows 11 24H2 (build 26100) or later (documented, [console allocation policy](https://learn.microsoft.com/en-us/windows/console/console-allocation-policy), as of 2026-11-15).
   That an earlier Windows ignores it and opens the console window is unverified, and starting the release build on Windows 11 23H2 would settle it.
-- Right-clicking the grip band at the rack's top opens a menu with "Start at login" and "Quit Plates", in a popup at the pointer like the timer's menu (user, 2026-11-15 and 2026-11-16).
+- Clicking the grip, or right-clicking the grip band at the rack's top, opens a menu with "Start at login" and "Quit Plates", in a popup at the pointer like the timer's menu (user, 2026-11-15 and 2026-11-16).
+  The grip is a button as tall as the moon's badge, and a second click on it closes the menu, as on the moon.
+  Pressing it and moving drags the rack, as anywhere else on the rack does.
   While the rack is docked, you click the strip to slide the rack out, and then right-click the grip band.
 - "Start at login" is off until you click it, since it adds Plates to what Windows runs when you sign in, and a check mark shows while it's on (user, 2026-11-16).
   On Windows, it writes a value named "Plates", holding the program's path in quotes, under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`, and clicking it again deletes the value.

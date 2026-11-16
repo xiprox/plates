@@ -3,11 +3,11 @@
 ```text
 Purpose:     What each tile in the rack shows, and how you act on it.
 Depends on:  01-window (01-window.md), and 01-claude-code-hooks (../hooks/01-claude-code-hooks.md) for where a session's state comes from.
-Decides:     The tiles' layout and states, marking a turn read or unread, the hover card, the timer and setting it for tomorrow, how a tile asks for attention, adding, renaming, and removing tiles, the hotkey, what Plates saves, and the tiles' colors and type.
+Decides:     The tiles' layout and states, marking a turn read or unread, the hover card, the timer and snoozing, how a tile asks for attention, adding, renaming, and removing tiles, the hotkey, what Plates saves, and the tiles' colors and type.
 ```
 
 A tile is one 60px row of the rack: a session tile for each Claude Code session, and your own tiles for anything else you want kept in view.
-On every tile, the marker on the left is its status, and the timer slot on the right shows an hourglass, a draining ring while a timer runs, or a moon while it's set for tomorrow (user, 2026-11-15 and 2026-11-16).
+On every tile, the marker on the left is its status, and the timer slot on the right shows an hourglass, which fills with yellow while a timer runs, or a violet moon while it's set for tomorrow (user, 2026-11-15 and 2026-11-16).
 [The mockups](https://claude.ai/artifact/A81TcK3BfzDVyQ2qaCqgNd) draw every state on this page.
 
 ## Layout
@@ -67,10 +67,11 @@ Resting the pointer on a session tile's text for 400ms opens its hover card: a p
 
 - Each move of the pointer starts the wait again, so a pointer crossing the rack opens no card.
   The × and the timer slot sit beside the tile's text, so a pointer on its way to them, or resting on them, opens none either.
+- Clicking a tile, or its card, opens the session the card would show, so that tile's card doesn't open again until the pointer has left the tile (user, 2026-11-16).
 - The card grows from the tile's own rectangle to its full size over 180ms, easing out, and its text shows once it's full size, without a fade (user, 2026-11-15).
   It grows right and down from the tile's top-left corner, left from the tile's right edge where the monitor's work area leaves no room on the right, and up from the tile's bottom edge where it leaves no room below.
 - It can reach past the rack's edges, and it closes as soon as the pointer is off both the card and the tile.
-- Clicking the card's title, state, scrolling part, or wrap-up's box outside its choices, or its Open button, does what clicking the tile does.
+- Clicking the card's title, state, scrolling part, or wrap-up's box outside its choices does what clicking the tile does, so the card has no Open button (user, 2026-11-16).
 
 From the top, the card shows:
 
@@ -78,12 +79,15 @@ From the top, the card shows:
 2. What the session's state calls for, as the table below gives it, in a part that scrolls once it's taller than 300px, so a long message can be read whole while the rest of the card stays in place (user, 2026-11-15).
 3. For a tile at your turn, unread, done, or ended whose turn called the wrap-up, the wrap-up's box, which the bullets below describe.
 4. For a sub-session whose parent's tile is on the rack, "Started from" and the parent's title in quotation marks.
-5. The session's folder and its branch, such as "plates · main", and at the end of that line, an Open button, for a session the Claude desktop app keeps.
-6. The timer's controls, except on an ended tile: a chip for each length the timer's menu offers and one for Tomorrow, or, while a timer runs or is set for tomorrow, the time left, such as "Reminder in 4m", or "Reminder tomorrow", and a Cancel chip.
+5. The session's folder and its branch, such as "plates · main".
+6. The timer's controls, except on an ended tile, in two rows as the timer menu's two parts are: after the hourglass, a chip for each length to remind you in, and after a gray moon, a chip for each length to snooze for and Tomorrow (user, 2026-11-16).
+   A divider runs above items 4 and 5, and another above the timer's controls, since under one divider the folder line read as part of the timer (user, 2026-11-16).
+   While a timer runs, they're the time left, such as "Reminder in 4m", and a Cancel chip.
+   The menu's hours aren't chips too, since ten chips crowd the card (user, 2026-11-16).
 
 | State | The scrolling part shows |
 | --- | --- |
-| Working | the turn's newest four tools in words, oldest first, in the muted color, and then the summary line in the working text color |
+| Working | the turn's newest four tools in words, oldest first, in the muted color, each after a check, or a cross for one that failed, and then the summary line in the working text color, after three dots that light in turn every 400ms (user, 2026-11-16) |
 | Working, waiting on background agents | Claude's last message, the agents it waits on, and then the summary line |
 | Needs approval | the summary line, and below it the whole command, for a shell command |
 | Your turn, unread, done, or ended | Claude's last message, or for a turn with neither a message nor a wrap-up, the summary line |
@@ -94,29 +98,68 @@ From the top, the card shows:
 - The card runs in the order the Claude desktop app draws a session, with what came first at the top, so it reads like the session it opens (user, 2026-11-15).
 - The wrap-up's box holds what the app draws under Claude's last message, in its order: the recap in the secondary text color, then the question in the your-turn text color, then its choices, one for each of the wrap-up's `actions` (user, 2026-11-15; read in the wrap-up tool's own description, Claude desktop app 5.11492.5.0, which says the app draws its box under the message Claude writes after the call).
   It sits below the scrolling part, so the question stays in view however far the message scrolls (user, 2026-11-15).
-- On Windows, clicking one of the choices answers the session with it: Plates opens the session, as clicking the tile does, and presses the app's own button for that choice once the app shows it, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#answering-a-wrap-up) describes (user, 2026-11-15).
-  The app shows the session, and its message box takes keyboard focus ([hooks log](../hooks/log.md#2026-11-15-ui-automation-can-press-a-sessions-wrap-up-button-and-send-a-message-from-its-message-box)); whether the app comes in front of another app's window is unverified, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session) says.
+- Clicking one of the choices answers the session with it: Plates opens the session, as clicking the tile does, and presses the app's own button for that choice once the app shows that button, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#answering-a-wrap-up) describes (user, 2026-11-15 and 2026-11-16).
+  On Windows, the app shows the session, and its message box takes keyboard focus ([hooks log](../hooks/log.md#2026-11-15-ui-automation-can-press-a-sessions-wrap-up-button-and-send-a-message-from-its-message-box)); whether the app comes in front of another app's window is unverified, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session) says.
+  On macOS, the press needs Plates turned on under Accessibility in System Settings, and a choice you click before then has macOS offer to open that setting, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#answering-a-wrap-up) says.
   If the button doesn't show, the session stays open for you to answer there.
-- On macOS, where Plates reads none of the app's files, and for a session the app doesn't keep, such as one in a terminal, there's no button to press, so the card only names the choices.
+- A session whose file in the app Plates can't read has no title Plates can match, so the card only names its choices.
 
 ## Your own tiles
 
 - Your own tile has a gray square marker and a title, and shows no time except a timer you start ([01-aims](../product/01-aims.md#non-goals)).
-- The hotkey for a new tile is Ctrl + Shift + Space on Windows and ⌃⇧Space on macOS.
+- The hotkey for a new tile is Ctrl + Shift + Space on Windows and ⌃⇧Space on macOS, registered for the whole system, through `RegisterHotKey` on Windows and Carbon's `RegisterEventHotKey` on macOS, which needs no Accessibility permission (documented, [RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey), [RegisterEventHotKey](https://developer.apple.com/documentation/carbon/1514524-registereventhotkey), as of 2026-11-16).
+  If another app already holds the shortcut, Plates logs that and goes on without it.
 - The last item in the rack is a phantom tile: a dashed outline with a faint + and the hotkey's name beside it.
   Clicking it, or pressing the hotkey, brings the rack forward, slides it out of the dock if it's docked, and turns the phantom tile into an inline name field.
   Enter adds the tile, and Esc cancels.
+- After the text, the new tile's field shows two keys, which you can also click: a reminder, then Enter (user, 2026-11-16).
+  The reminder reads "Tab" beside a gray hourglass until you press Tab, and each Tab steps it through 5, 10, 15, 20, and 30 minutes and 1 hour, the timer menu's "Remind me in" lengths, then back to none, while Shift+Tab steps back.
+  Once set, it shows the length beside a yellow hourglass, such as "10m", and Enter adds the tile with that timer running.
+  Clicking the reminder steps it as Tab does, and clicking Enter adds the tile as Enter does.
+- A click anywhere on the rack outside the field closes it without adding or renaming the tile, as Esc does (user, 2026-11-16).
 - Double-clicking your own tile turns its title into the same inline field, to rename it.
 - An × appears on your own tile when you hover it, as on an ended session's tile (user, 2026-11-15).
   Clicking the × removes the tile and shows an Undo button for 5s, and there's no archive (user, 2026-11-15).
 
+## Swiping a tile away
+
+On a trackpad, swiping two fingers sideways over a tile does what its × does: it dismisses a session or removes your own tile, each with the same Undo, and clears an ended session's tile at once (user, 2026-11-16).
+The phantom tile doesn't swipe, and no swipe starts while a name field is open.
+We've read how macOS and Windows deliver the swipe but measured neither, as the last bullet says.
+
+- Once your fingers have moved 8px, a swipe that moved more sideways than up or down slides the tile, and any other swipe leaves it alone until your fingers lift.
+- The tile slides with your fingers, fading to 79% opacity at 96px and 30% at 320px, and the window's edges cut it off, since its row reaches out through the rack's padding and border (user, 2026-11-16).
+- The Undo row a removed tile leaves swipes away the same way, which keeps the removal, as waiting out its 5s does (user, 2026-11-16).
+- When you lift your fingers, the tile slides out over 180ms if it slid 96px or more either way, about a third of its width.
+  It also slides out if it slid at least 20px and, in the 60ms before the lift, your fingers carried it on that way at 600px/s or faster.
+  Otherwise it slides back into place over the same 180ms.
+- On macOS, the scrolling that coasts on after your fingers lift moves nothing, and on Windows it moves the tile, as the last bullet says.
+- A swipe doesn't move the pointer, so the hover card's 400ms wait would run out mid-swipe.
+  Once a swipe goes sideways, Plates closes the tile's card, and it doesn't open again until the pointer leaves the tile, as after a click.
+- On macOS, GPUI passes a trackpad's scroll on with AppKit's phases: `Started` as the scroll begins, `Ended` as your fingers lift, and the coasting that follows as `Moved` (read in gpui-pre-macos 0.3.12, `src/events.rs`, `platform_input_from_native`, the `ScrollWheel` arm).
+  That AppKit sends `Ended` at the lift is unverified until a Mac run swipes a tile.
+  On Windows, GPUI reads a precision touchpad's scrolls through DirectManipulation, and sends `Ended` only once the coast has stopped, with the coast as `Moved` (read in gpui-pre-windows 0.3.12, `src/direct_manipulation.rs`, `OnViewportStatusChanged` and `OnContentUpdated`).
+  So on Windows the tile would follow the coast as if your fingers still moved, and how that feels is unverified until someone swipes a tile there.
+
 ## The timer
 
 - Clicking the hourglass starts a 5-minute timer.
-  Right-clicking it opens a menu of 5, 10, 15, 20, and 30 minutes, 1 hour, and Tomorrow, in a popup at the pointer that can reach past the rack's edges, and picking one while a timer runs starts it over (user, 2026-11-15 and 2026-11-16).
-- While a timer runs, the timer slot shows a yellow ring that drains.
-  Hovering the ring shows a faint ×, at 55% opacity, and clicking the ring cancels the timer.
+  Right-clicking it, or a force click on a Mac trackpad, pressing on past the click, opens a menu in a popup at the pointer that can reach past the rack's edges, one length to a row, in two parts (user, 2026-11-15 and 2026-11-16):
+  - "Remind me in": 5, 10, 15, 20, and 30 minutes, and 1 hour, which start a timer and keep the tile on the rack, and picking one while a timer runs starts it over
+  - "Snooze": for 2 hours, for 4 hours, and until tomorrow, which take the tile off the rack until then, as [Snoozing](#snoozing) says
+- A force click opens the menu at the deeper press, and the click it ends in starts or cancels no timer (user, 2026-11-16).
+- A grid of chips for the minutes, above a list of the rest, didn't sit well beside the list's rows, whether the chips were filled, outlined, or inset.
+- A timer that starts, by your click or on its own, first rotates the hourglass a half turn over 500ms, as you'd turn one over to start it, and the yellow shows once it's upright (user, 2026-11-16).
+- While a timer runs, yellow fills the hourglass from the bottom up: it starts over the bottom bar, so a timer that just started shows yellow at once, and the yellow rises steadily to the top bar as the time runs out (user, 2026-11-16).
+  It fills the whole icon rather than the lower bulb as sand would, since the lower bulb alone is too small to read at 20px.
+  Hovering a running hourglass dims the yellow, and clicking it cancels the timer (user, 2026-11-16).
+  The hourglass shows no × on hover: the dimming already says a click cancels, and an × we tried there crowded the 20px icon.
+  After a click on the hourglass starts a timer, the yellow stays bright until the pointer leaves the hourglass, since dimming at once would look as if the click had canceled the timer it started (user, 2026-11-16).
 - A session tile starts a 5-minute timer on its own when it moves to your turn or needs approval, and the timer stops when the session moves to working or ends.
+- Reading a turn at your turn stops its timer, and if the session is still at your turn 2 minutes after you last looked at it, a 3-minute reminder starts, for a session you opened and left for another before answering (user, 2026-11-16).
+  Each look, a click on the tile or opening the session in the app, starts the 2 minutes over, and stops the reminder if it runs.
+  A timer you set or canceled yourself during the turn is yours, and no look stops it or starts a reminder over it.
+  Approvals and questions keep their timer when you look, so they need no reminder of their own.
 - When the timer runs out, the tile is time-up, and that becomes its status:
   - your own tile's square turns yellow, and the tile takes a yellow tint
   - a session tile takes a tint of its own status color, amber for your turn and orange for an approval, and its dot keeps showing Claude's state
@@ -124,17 +167,26 @@ From the top, the card shows:
 - A timer runs on the wall clock, whether or not anyone is at the desk.
 - The timer slot's icon, divider, and hover highlight are translucent white, so they take on a tile's tint without adding a color of their own (user, 2026-11-15).
 
-### Tomorrow
+### Snoozing
 
-Picking Tomorrow sets the tile's timer for tomorrow, for a tile you mean to deal with when you're back the next day (user, 2026-11-16):
+Snoozing a tile takes it off the rack until a time, for a session you can't act on for a while, or one of your own you'll deal with later (user, 2026-11-16):
 
-- A timer set for tomorrow runs out at 4:00 the next morning, local time, so the tile is time-up whenever you sit down.
-  Before 4:00, a night that went past midnight still counts as the day before, so it then runs out at the coming 4:00.
-  Plates takes the offset from UTC when you pick Tomorrow, so on a night the clocks change, the timer runs out at 3:00 or 5:00 by the new time.
-- The timer slot shows a yellow moon in place of the ring, which hovering dims behind the same faint ×, and clicking it cancels the timer.
-- No change in the session touches it: moving to your turn or needing approval starts no 5-minute timer over it, and moving to working, the session ending, a read, and a dismissal all leave it set.
-  A dismissed session comes back when its timer set for tomorrow runs out, and an ended tile stays, as the ended-tile bullet above says.
-- Your own tile's timer menu offers Tomorrow too.
+- The timer's menu snoozes a tile for 2 hours, for 4 hours, or until tomorrow, and the hover card's Tomorrow chip snoozes it until tomorrow.
+- Until tomorrow means until 4:00 the next morning, local time, so the tile is back whenever you sit down.
+  Before 4:00, a night that went past midnight still counts as the day before, so it then means the coming 4:00.
+  Plates takes the offset from UTC when you snooze, so on a night the clocks change, the tile comes back at 3:00 or 5:00 by the new time.
+- A snoozed tile waits for its time whatever its session does, since you snoozed it as one you can't act on yet.
+  Its session's events still keep it up to date, and a session that ends while snoozed goes for good.
+- At its time, the tile comes back time-up, where a new tile of its kind would go: a session's after its parent's family or the last session tile, and your own after your others.
+- While any tile is snoozed, a violet moon with their count sits at the right of the grip band, level with the grip, its badge 8px inside the rack's border at the top and at the side, and on the docked strip, a violet moon follows the pips.
+  The count takes a small orange dot while a snoozed session needs you, which leaves the session snoozed.
+- Clicking the moon lists the snoozed tiles, each with its marker as it stands now, its title, and when it comes back, on the 12-hour or 24-hour clock the OS shows you, such as "Returns 4:30 PM" or "Returns tomorrow 04:00" (user, 2026-11-16).
+  The list opens 4px under the moon's badge, leaving the badge whole, and to its left, its right edge on the tiles' right edge, so it stays within the rack's width, and clicking the moon again closes it (user, 2026-11-16).
+  Clicking one brings it back now, as it stands, with no timer.
+- Violet is a snooze's color, apart from yellow's timer running now (user, 2026-11-16).
+  A tile that Plates 0.1.0 set for tomorrow, without snoozing it, shows a violet moon in its timer slot, "Reminder tomorrow" in the hover card, and a violet outline on the docked strip.
+  Hovering the moon dims it, and clicking it cancels the reminder.
+- The tiles you dismiss with × aren't listed, since they come back on their own once they need you.
 
 ## Attention
 
@@ -168,7 +220,8 @@ When it starts, Plates brings each restored tile up to date with any turn that e
 | Unread: dot, and the color it brightens to | `#5BCB8A`, `#1D3A2B` |
 | Done: dot | `#5E626B` |
 | Approval: dot, and text | `#FF7A45`, `#FF9B6E` |
-| Timer ring, and your own tile's time-up square | `#F4D35E` |
+| A running timer's yellow, and your own tile's time-up square | `#F4D35E` |
+| A snooze: the moon and its count, and a reminder for tomorrow's moon, words, and outline | `#B39DFF` |
 | Your own tile's marker | `#5E626B` |
 | Time-up tints: your own tile, your turn, and approval | `#2B2715`, `#2F2616`, `#321F17` |
 

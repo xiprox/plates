@@ -153,23 +153,51 @@ The rack never takes the foreground, but its process got the last input, the cli
 Whether the app then comes to the front over another window is unverified, and clicking a tile while another window covers the app would settle it.
 A session the app doesn't keep, such as one in a terminal, has no such ID, and clicking its tile does nothing.
 On macOS, the app keeps its session files in `~/Library/Application Support/Claude/claude-code-sessions/`, in the same form, and macOS hands `claude://` links to the app (measured on macOS 26.5.2, 2026-11-16, [hooks log](log.md#2026-11-16-on-macos-the-app-keeps-its-session-files-under-application-support-and-opening-a-session-adds-its-tile-through-a-resume)), so clicking a tile there opens the same link.
-Whether the app shows the session from it there, as it does on Windows, is unverified, and clicking a session tile on macOS would settle it.
+The app showed the session from it (seen by the user on macOS 26.5.2, 2026-11-16).
+The rack takes the keyboard on a click without making Plates the active app, and macOS activates an app at another's request once the active app yields to it (documented, `activateFromApplication:options:` in AppKit's `NSRunningApplication.h`).
+So on a tile's click, Plates makes itself the active app, waits up to 300ms for macOS to make it so, yields to the Claude app, opens the link through `NSWorkspace`, and asks for the app to be activated from Plates.
+The Claude app was in front within 100ms, and your typing went to it ([rack log](../rack/log.md#2026-11-16-on-a-mac-a-tiles-click-hands-the-keyboard-to-the-claude-app-once-plates-makes-itself-active-and-yields-to-it)).
+Opening the link through the `open` command, or through `NSWorkspace` without Plates being active, showed the session while the rack kept the keyboard (same entry).
+Before macOS 14, which brought yielding, Plates asks for the app to be activated without yielding.
 
 ## Answering a wrap-up
 
-No supported channel lets a program outside the Claude desktop app send a message into one of its sessions ([hooks log](log.md#2026-11-15-no-supported-channel-puts-a-message-into-a-claude-desktop-app-session)), so on Windows, Plates answers a wrap-up's choice by pressing the app's own button for it through UI Automation ([hooks log](log.md#2026-11-15-ui-automation-can-press-a-sessions-wrap-up-button-and-send-a-message-from-its-message-box)).
+No supported channel lets a program outside the Claude desktop app send a message into one of its sessions ([hooks log](log.md#2026-11-15-no-supported-channel-puts-a-message-into-a-claude-desktop-app-session)), so when you click one of a wrap-up's choices on a [hover card](../rack/02-tiles.md#the-hover-card), Plates presses the app's own button for that choice.
+On Windows it presses through UI Automation ([hooks log](log.md#2026-11-15-ui-automation-can-press-a-sessions-wrap-up-button-and-send-a-message-from-its-message-box)), and on macOS through the Accessibility API, the interface VoiceOver reads apps through ([hooks log](log.md#2026-11-16-on-macos-the-accessibility-api-shows-the-apps-session-page-under-the-name-ui-automation-does)).
 
-1. Plates opens the session's link, as [Opening a session](#opening-a-session) says, and the app shows the session.
-2. On a thread of its own, in COM's multithreaded apartment, Plates looks through the visible `Chrome_WidgetWin_1` windows of `claude.exe` for a web document named "<session title> - Claude Code", with the title from the app's file for the session, so a button with the same label in another session is pressed only if that session has the same title.
-3. In that document, it looks for the group named "Suggested next actions", and in it, an enabled `Button` named with the choice's label.
-4. It presses the button through InvokePattern, which sends the label as your message, as a click on it would.
+1. Plates opens the session's link, as [Opening a session](#opening-a-session) says.
+   On Windows the app then shows the session, and on macOS whether it does is unverified, as that section says.
+2. Plates looks through the app's windows for the session's web page, named "<session title> - Claude Code", with the title from the app's file for the session.
+   Matching the title means Plates can press a button in the wrong session only if that session has the same title.
+   On Windows, the windows are the visible `Chrome_WidgetWin_1` windows of `claude.exe`, and the page is a `Document`.
+   On macOS, the windows are those of the app with the bundle ID `com.anthropic.claudefordesktop`, and the page is an `AXWebArea` whose `AXTitle` holds the name.
+   The app is built on Electron, which turns on its accessibility features when a third-party program sets the app's `AXManualAccessibility` attribute, and on its own while VoiceOver runs (documented, [Electron accessibility](https://www.electronjs.org/docs/latest/tutorial/accessibility), as of 2026-11-16), so on macOS Plates sets the attribute before it looks.
+   Whether the page's tree of controls is empty without it is unverified, since our macOS probe, `experiments/areas/hooks/ax-answer/probe.swift`, always set it.
+3. In that page, it looks for the group named "Suggested next actions", and in it, an enabled button named with the choice's label, looking again every 100ms.
+   If none shows within 3s, Plates presses nothing and leaves the session open in the app.
+   On macOS, every named element the probe read had its name in `AXTitle`, and one named by an `aria-label`, such as "Show sidebar", had it in `AXDescription` too (measured on macOS 26.5.2, 2026-11-16, [hooks log](log.md#2026-11-16-on-macos-the-accessibility-api-shows-the-apps-session-page-under-the-name-ui-automation-does)).
+   Plates checks both, in case the wrap-up's group or buttons carry the name only in `AXDescription`, and which of the two held their names when a press worked is unmeasured.
+4. It presses the button, through InvokePattern on Windows and the `AXPress` action on macOS, which sends the label as your message, as a click on it would.
 
-Pressing a choice from a hover card this way answered a throwaway session (measured on Windows 11 25H2, 2026-11-16).
-Plates looks again every 100ms, and if the button doesn't show within 3s, it presses nothing and leaves the session open in the app.
-A choice from an `action` the app draws its own button for, such as `commit`, carries Plates' own words for the action, which may not match the button's name, and then nothing is pressed (unverified; a wrap-up offering `commit` would settle it).
+Plates presses on a thread of its own, because the press waits on the app for as long as step 3 allows, and the rack's thread must keep drawing.
+On Windows, that thread owns no window and runs in COM's multithreaded apartment, as Microsoft directs for a UI Automation client that may reach its own UI (documented, [Understanding Threading Issues](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-threading), as of 2026-11-16).
+
+On Windows, pressing a choice from a hover card answered a throwaway session (measured on Windows 11 25H2, 2026-11-16).
+On macOS, pressing a choice from a hover card pressed the app's button for it (seen by the user on macOS 26.5.2, 2026-11-16, [hooks log](log.md#2026-11-16-on-macos-the-accessibility-api-shows-the-apps-session-page-under-the-name-ui-automation-does)), and Plates walked all 1,348 elements of a session's page in 63ms (measured on macOS 26.5.2, 2026-11-16, same entry).
+
+On macOS, a program can read and press another app's controls only once you turn it on under System Settings > Privacy & Security > Accessibility (documented, [AXIsProcessTrustedWithOptions](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions), as of 2026-11-16).
+Until you do, a choice opens the session and presses nothing, and Plates asks macOS through `AXIsProcessTrustedWithOptions` with `kAXTrustedCheckOptionPrompt`, which has macOS offer to open that setting (how often macOS shows the offer is unverified; clicking two choices before turning it on would settle it).
+macOS gives the permission to the program responsible for a process, so a `plates` started from a shell runs with the permission of whatever started the shell, which for a Claude Code shell is Claude Code's `claude` ([hooks log](log.md#2026-11-16-on-macos-the-accessibility-api-shows-the-apps-session-page-under-the-name-ui-automation-does)).
+An opened `Plates.app` asks for its own, and whether turning it on then works is unverified: System Settings didn't list the probe wrapped in an app until it was added by hand, which we didn't finish (same entry).
+Whether an update to `Plates.app` keeps the permission depends on how the release is signed, since macOS ties an ad-hoc signed app's permission to its exact build (unverified; updating an installed `Plates.app` with the permission on would settle it).
+
+A press can miss.
+For an app action, such as `commit`, the app draws the button with its own text and ignores the action's `label` (read in the wrap-up tool's own description, Claude desktop app 5.11492.5.0), while the card's choice carries that `label`, or Plates' words for the action where it's empty, such as "Commit" ([Events](#events)).
+If the two differ, Plates presses nothing (unverified; a wrap-up offering `commit` would settle it).
 The element names are undocumented, so an update to the app can rename them, and then nothing is pressed either.
-The probe found the session's web document empty on its first walk, built 300ms later, and built in every run after ([hooks log](log.md#2026-11-15-ui-automation-can-press-a-sessions-wrap-up-button-and-send-a-message-from-its-message-box)).
-If a client's walk is what makes the app build the tree, the app keeps it built after Plates' first press for as long as it runs, at a cost we haven't measured (unverified; timing the app's CPU with and without a UI Automation client would settle it).
+
+On Windows, the UI Automation probe found the session's web document empty on its first walk, built 300ms later, and built on the first walk of every later run ([hooks log](log.md#2026-11-15-ui-automation-can-press-a-sessions-wrap-up-button-and-send-a-message-from-its-message-box)).
+If a client's walk is what makes the app build the tree, the app keeps it built after Plates' first press for as long as it runs, and setting `AXManualAccessibility` could do the same on macOS (unverified; timing the app's CPU with and without Plates having pressed, on each OS, would settle both).
 
 ## Left open
 

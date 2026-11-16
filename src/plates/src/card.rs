@@ -13,7 +13,8 @@ use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::*;
 use plates_core::{
     Session, SessionState, Tile, TileId, WrapUp, desktop, git,
-    timer::{MENU_MINUTES, Timer},
+    session::Recent,
+    timer::{MENU_HOURS, MENU_MINUTES, SNOOZE_HOURS, Timer},
 };
 
 use crate::{
@@ -22,7 +23,7 @@ use crate::{
     native,
     rack_view::RackView,
     view::{
-        APPROVAL_TEXT, BORDER, MONO, MUTED, SANS, TEXT, TEXT2, TILE, WORKING_TEXT, YELLOW,
+        APPROVAL_TEXT, MONO, MUTED, SANS, TEXT, TEXT2, TILE, VIOLET, WORKING_TEXT, YELLOW,
         YOUR_TURN_TEXT, marker, minutes, session_words, styled_line, styled_line_weighted, text,
         white,
     },
@@ -215,9 +216,8 @@ impl CardView {
             .children(middle)
             .children(pinned);
         if link {
-            top = top
-                .cursor_pointer()
-                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.open(window, cx)));
+            top =
+                top.on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.open(window, cx)));
         }
         div()
             .flex()
@@ -227,7 +227,7 @@ impl CardView {
             .pt(px(12.))
             .pb(px(10.))
             .child(top)
-            .child(self.footer(t, s, parent, link, cx))
+            .child(self.footer(t, s, parent, cx))
     }
 
     // The wrap-up as the Claude desktop app draws it under Claude's message: the recap, then the
@@ -241,9 +241,8 @@ impl CardView {
             .map(|a| paragraph_weighted(a, YOUR_TURN_TEXT, FontWeight::SEMIBOLD));
         // A choice answers the session as its button in the app does, by opening the session and
         // pressing that button (user, 2026-11-15). A session the app doesn't keep has no button
-        // to press, and on macOS Plates has no way to press one, since it presses through
-        // Windows' UI Automation, so there the choices only say what they are.
-        let pressable = link && cfg!(windows);
+        // to press, so there the choices only say what they are.
+        let pressable = link;
         let tile = self.tile;
         let choices = (!w.choices.is_empty()).then(|| {
             div()
@@ -272,7 +271,6 @@ impl CardView {
                         .bg(white(0.08))
                         .hover(|s| s.bg(white(0.14)))
                         .text_color(rgb(TEXT))
-                        .cursor_pointer()
                         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                             // The box sits in the part of the card whose click opens the session,
                             // which this click does already.
@@ -300,14 +298,7 @@ impl CardView {
             .into_any_element()
     }
 
-    fn footer(
-        &self,
-        t: &Tile,
-        s: &Session,
-        parent: Option<&str>,
-        link: bool,
-        cx: &mut Context<Self>,
-    ) -> Div {
+    fn footer(&self, t: &Tile, s: &Session, parent: Option<&str>, cx: &mut Context<Self>) -> Div {
         let meta = |text: String| {
             div()
                 .text_size(px(11.))
@@ -316,48 +307,30 @@ impl CardView {
                 .child(text)
         };
         let started = parent.map(|p| meta(format!("Started from \u{201c}{p}\u{201d}")));
-        let place = meta(self.place.clone()).flex_1().min_w_0();
         let timer = (s.state != SessionState::Ended).then(|| self.timer_row(t, cx));
-        let open = link.then(|| {
+        // The folder line says where the session runs, and the timer acts on it, so each gets a
+        // divider of its own, since under one divider the folder line read as part of the timer
+        // (user, 2026-11-16).
+        let section = || {
             div()
-                .id("open")
-                .flex_none()
-                .h(px(26.))
-                .px(px(10.))
                 .flex()
-                .items_center()
-                .rounded(px(6.))
-                .bg(rgb(BORDER))
-                .hover(|s| s.bg(rgb(0x34363C)))
-                .text_size(px(12.))
-                .text_color(rgb(WORKING_TEXT))
-                .font_weight(FontWeight::SEMIBOLD)
-                .cursor_pointer()
-                .child("Open")
-                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.open(window, cx)))
-        });
+                .flex_col()
+                .gap(px(8.))
+                .pt(px(10.))
+                .border_t_1()
+                .border_color(white(0.06))
+        };
         div()
             .flex()
             .flex_col()
-            .gap(px(8.))
-            .pt(px(10.))
-            .border_t_1()
-            .border_color(white(0.06))
-            .children(started)
-            // The folder line holds Open at its end, so the timer's chips get a row of their own.
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(place)
-                    .children(open),
-            )
-            .children(timer)
+            .gap(px(10.))
+            .child(section().children(started).child(meta(self.place.clone())))
+            .children(timer.map(|row| section().child(row)))
     }
 
-    // The tile's timer: a chip for each length the timer menu offers, and one for tomorrow, or
+    // The tile's timer: a chip for each length in the timer menu's grid, and one for tomorrow, or
     // while a timer or a reminder for tomorrow is set, what's left and a chip that cancels it.
+    // The menu's hours aren't chips too, since ten chips crowd the card (user, 2026-11-16).
     fn timer_row(&self, t: &Tile, cx: &mut Context<Self>) -> Div {
         let id = self.tile;
         let row = div().flex().items_center().gap(px(4.));
@@ -373,12 +346,17 @@ impl CardView {
             _ => None,
         };
         if let Some(words) = set {
+            let color = if t.timer.is_tomorrow() {
+                VIOLET
+            } else {
+                YELLOW
+            };
             return row
                 .child(
                     div()
                         .mr(px(4.))
                         .text_size(px(11.5))
-                        .text_color(rgb(YELLOW))
+                        .text_color(rgb(color))
                         .child(words),
                 )
                 .child(chip("cancel", "Cancel").on_click(cx.listener(
@@ -398,6 +376,30 @@ impl CardView {
             } else {
                 text(0.5)
             });
+        let remind = row.child(hourglass).children(
+            MENU_MINUTES
+                .iter()
+                .map(|&m| (m, format!("{m}m")))
+                .chain(MENU_HOURS.iter().map(|&h| (h * 60, format!("{h}h"))))
+                .map(|(m, label)| {
+                    chip(("minutes", m as u64), &label).on_click(cx.listener(
+                        move |this, _: &ClickEvent, _, cx| {
+                            this.rack
+                                .update(cx, |rack, cx| rack.pick_minutes(id, m, cx))
+                                .ok();
+                        },
+                    ))
+                }),
+        );
+        // A second row snoozes the tile, after the moon, as the timer menu's second part does
+        // (user, 2026-11-16).
+        let moon = svg()
+            .path("plates/moon.svg")
+            .size(px(14.))
+            .mr(px(2.))
+            // Gray, as the hourglass beside the reminders is, since it names the row rather than
+            // showing a snooze (user, 2026-11-16).
+            .text_color(text(0.5));
         let tomorrow = chip("tomorrow", "Tomorrow").on_click(cx.listener(
             move |this, _: &ClickEvent, _, cx| {
                 this.rack
@@ -405,22 +407,27 @@ impl CardView {
                     .ok();
             },
         ));
-        row.child(hourglass)
-            .children(MENU_MINUTES.iter().map(|&m| {
-                let label = if m == 60 {
-                    "1h".to_string()
-                } else {
-                    format!("{m}m")
-                };
-                chip(("minutes", m as u64), &label).on_click(cx.listener(
+        let snooze = div()
+            .flex()
+            .items_center()
+            .gap(px(4.))
+            .child(moon)
+            .children(SNOOZE_HOURS.iter().map(|&h| {
+                chip(("snooze", h as u64), &format!("{h}h")).on_click(cx.listener(
                     move |this, _: &ClickEvent, _, cx| {
                         this.rack
-                            .update(cx, |rack, cx| rack.pick_minutes(id, m, cx))
+                            .update(cx, |rack, cx| rack.snooze_for(id, h, cx))
                             .ok();
                     },
                 ))
             }))
-            .child(tomorrow)
+            .child(tomorrow);
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(remind)
+            .child(snooze)
     }
 }
 
@@ -533,7 +540,6 @@ fn chip(id: impl Into<ElementId>, label: &str) -> Stateful<Div> {
         .rounded(px(6.))
         .bg(white(0.06))
         .hover(|s| s.bg(white(0.12)))
-        .cursor_pointer()
         .text_size(px(11.5))
         .text_color(rgb(TEXT2))
         .child(label.to_string())
@@ -541,6 +547,49 @@ fn chip(id: impl Into<ElementId>, label: &str) -> Stateful<Div> {
 
 fn paragraph(line: &str, color: u32) -> Div {
     paragraph_weighted(line, color, FontWeight::NORMAL)
+}
+
+/// The column the card's log lines start with: a check, a cross, or the working dots, 14px wide.
+const MARK_W: f32 = 14.;
+
+fn mark(icon: &'static str) -> Div {
+    div()
+        .flex_none()
+        .w(px(MARK_W))
+        .flex()
+        .justify_center()
+        .child(svg().path(icon).size(px(11.)).text_color(rgb(MUTED)))
+}
+
+// What Claude does now, after three dots that light in turn every 400ms, as Claude's own
+// working dots do. They step rather than glide, since the card draws every frame anyway and a
+// step reads as calmer (user, 2026-11-16).
+fn working_line(line: &str) -> Div {
+    let step = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() / 400 % 3) as usize;
+    let dots = div()
+        .flex_none()
+        .w(px(MARK_W))
+        // The dots sit on the middle of the text's first line, which is 12px at 1.35.
+        .h(px(16.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(px(2.))
+        .children((0..3).map(|i| {
+            div()
+                .size(px(3.))
+                .rounded_full()
+                .bg(rgb(WORKING_TEXT))
+                .opacity(if i == step { 1. } else { 0.3 })
+        }));
+    div()
+        .flex()
+        .items_start()
+        .gap(px(6.))
+        .child(dots)
+        .child(paragraph(line, WORKING_TEXT).flex_1().min_w_0())
 }
 
 fn paragraph_weighted(line: &str, color: u32, weight: FontWeight) -> Div {
@@ -580,14 +629,16 @@ fn body(s: &Session) -> (Vec<AnyElement>, bool) {
                     .into_any_element(),
             );
             if let Some(line) = &s.line {
-                out.push(paragraph(line, WORKING_TEXT).into_any_element());
+                out.push(working_line(line).into_any_element());
             }
         }
+        // The turn's earlier tools read as a log: a check for each one that finished, a cross for
+        // one that failed, and the stepping dots beside what Claude does now (user, 2026-11-16).
         SessionState::Working => {
-            let earlier: Vec<&String> = s
+            let earlier: Vec<&Recent> = s
                 .recent
                 .iter()
-                .filter(|r| Some(*r) != s.line.as_ref())
+                .filter(|r| Some(&r.text) != s.line.as_ref())
                 .collect();
             if !earlier.is_empty() {
                 out.push(
@@ -597,16 +648,29 @@ fn body(s: &Session) -> (Vec<AnyElement>, bool) {
                         .gap(px(3.))
                         .children(earlier.into_iter().map(|r| {
                             div()
-                                .text_size(px(11.5))
-                                .text_color(rgb(MUTED))
-                                .truncate()
-                                .child(styled_line(r, rgb(MUTED)))
+                                .flex()
+                                .items_center()
+                                .gap(px(6.))
+                                .child(mark(if r.failed {
+                                    "plates/x.svg"
+                                } else {
+                                    "plates/check.svg"
+                                }))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .text_size(px(11.5))
+                                        .text_color(rgb(MUTED))
+                                        .truncate()
+                                        .child(styled_line(&r.text, rgb(MUTED))),
+                                )
                         }))
                         .into_any_element(),
                 );
             }
             if let Some(line) = &s.line {
-                out.push(paragraph(line, WORKING_TEXT).into_any_element());
+                out.push(working_line(line).into_any_element());
             }
         }
         SessionState::NeedsApproval => {

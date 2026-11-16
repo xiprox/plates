@@ -31,12 +31,21 @@ winresource = "0.1"
 # The versions gpui-pre-macos 0.3.12 uses, so both share one build.
 objc2 = "0.6"
 objc2-app-kit = "0.3"
+objc2-application-services = { version = "0.3", default-features = false, features = [
+    "std",
+    "libc",
+    "AXError",
+    "AXUIElement",
+    "HIServices",
+] }
+objc2-core-foundation = "0.3"
 objc2-foundation = "0.3"
 
 [target.'cfg(windows)'.dependencies]
 # 0.62 is the version gpui-pre-windows 0.3.12 uses, so both share one build.
 windows = { version = "0.62", features = [
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_System_Com",

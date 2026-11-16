@@ -1,19 +1,25 @@
 //! The rack's menus: a popup window of their own at the pointer that opened them, so they can
 //! reach past the rack's edges without growing the rack's window.
 
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gpui_kit::*;
-use plates_core::{TileId, timer::MENU_MINUTES};
+use plates_core::{
+    Tile, TileId,
+    timer::{MENU_HOURS, MENU_MINUTES, SNOOZE_HOURS},
+};
 
 use crate::{
     motion::Rect,
     native,
     rack_view::RackView,
-    view::{BORDER, MUTED, TEXT, TILE},
+    view::{BORDER, MUTED, TEXT, TILE, marker},
 };
 
 pub const MENU_W: f32 = 156.;
+
+/// The list of snoozed tiles is wider than the other menus, for their titles.
+const SNOOZED_W: f32 = 260.;
 
 /// How long a menu takes to fade in.
 const FADE: Duration = Duration::from_millis(120);
@@ -30,18 +36,29 @@ pub enum MenuKind {
     /// the rack works out as it opens the menu, since the menu's first frame is drawn while the
     /// rack is still handling the click. (read in gpui-pre 0.3.12, src/app.rs, App::open_window)
     Tile(TileId, bool),
+    /// The snoozed tiles, from the moon in the grip band, with how many there were as it opened.
+    Snoozed { count: usize },
 }
 
 impl MenuKind {
     pub fn height(self) -> f32 {
         match self {
-            // A 6px pad top and bottom, a 23px heading, seven 32px rows, six of minutes and one
-            // for tomorrow, and a 1px border.
-            MenuKind::Timer(_) => 262.,
+            // A 6px pad top and bottom, a 23px heading, six 32px rows to remind you in, a 27px
+            // heading, three 32px rows to snooze for, and a 1px border.
+            MenuKind::Timer(_) => 352.,
             // A 6px pad top and bottom, two 32px rows, and a 1px border.
             MenuKind::Rack { .. } => 78.,
             // A 6px pad top and bottom, one 32px row, and a 1px border.
             MenuKind::Tile(..) => 46.,
+            // A 6px pad top and bottom, a 23px heading, a 32px row per tile, and a 1px border.
+            MenuKind::Snoozed { count } => 37. + 32. * count as f32,
+        }
+    }
+
+    pub fn width(self) -> f32 {
+        match self {
+            MenuKind::Snoozed { .. } => SNOOZED_W,
+            _ => MENU_W,
         }
     }
 }
@@ -54,6 +71,11 @@ pub struct MenuView {
     /// opened it doesn't close it.
     armed: bool,
     opened: Instant,
+    /// The snoozed tiles as they stood when the rack opened the list of them. The menu can't read
+    /// the rack while drawing, since GPUI draws a new window once before open_window returns, and
+    /// the rack is still handling the click then, so the read panics and Plates aborts. (read in
+    /// gpui-pre 0.3.12, src/app.rs, App::open_window)
+    snoozed: Vec<Tile>,
 }
 
 impl MenuView {
@@ -61,6 +83,7 @@ impl MenuView {
         rack: WeakEntity<RackView>,
         kind: MenuKind,
         bounds: Rect,
+        snoozed: Vec<Tile>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -81,6 +104,7 @@ impl MenuView {
             hwnd,
             armed: false,
             opened: Instant::now(),
+            snoozed,
         }
     }
 
@@ -96,47 +120,138 @@ impl MenuView {
             .text_size(px(13.))
             .text_color(rgb(TEXT))
             .hover(|s| s.bg(rgb(BORDER)))
-            .cursor_pointer()
             .child(label.to_string())
     }
 
-    fn timer_items(&self, tile: TileId, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let heading = div()
-            .pt(px(6.))
+    // A heading over a menu's rows, 23px tall, or 27px with `top` above it to part it from the
+    // rows before it.
+    fn heading(text: &'static str, top: f32) -> AnyElement {
+        div()
+            .pt(px(top))
             .pb(px(4.))
             .px(px(10.))
             .text_size(px(11.))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(rgb(MUTED))
-            .child("REMIND ME IN")
-            .into_any_element();
-        let rows = MENU_MINUTES.iter().map(|&m| {
-            let label = if m == 60 {
+            .child(text)
+            .into_any_element()
+    }
+
+    // The timer's menu has two parts: lengths to remind you in, which keep the tile on the rack
+    // with its timer, and lengths to snooze it for, which take it off the rack until then
+    // (user, 2026-11-16).
+    fn timer_items(&self, tile: TileId, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let mut items = vec![Self::heading("REMIND ME IN", 6.)];
+        for m in MENU_MINUTES {
+            items.push(
+                Self::row(("minutes", u64::from(m)), &format!("{m} min"))
+                    .on_click(Self::pick(tile, m, cx))
+                    .into_any_element(),
+            );
+        }
+        for h in MENU_HOURS {
+            let label = if h == 1 {
                 "1 hour".to_string()
             } else {
-                format!("{m} min")
+                format!("{h} hours")
             };
-            Self::row(("minutes", m as u64), &label)
+            items.push(
+                Self::row(("hours", u64::from(h)), &label)
+                    .on_click(Self::pick(tile, h * 60, cx))
+                    .into_any_element(),
+            );
+        }
+        items.push(Self::heading("SNOOZE", 10.));
+        for h in SNOOZE_HOURS {
+            items.push(
+                Self::row(("snooze", u64::from(h)), &format!("For {h} hours"))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.rack
+                            .update(cx, |rack, cx| rack.snooze_for(tile, h, cx))
+                            .ok();
+                        window.remove_window();
+                    }))
+                    .into_any_element(),
+            );
+        }
+        items.push(
+            Self::row("tomorrow", "Until tomorrow")
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.rack
-                        .update(cx, |rack, cx| rack.pick_minutes(tile, m, cx))
+                        .update(cx, |rack, cx| rack.pick_tomorrow(tile, cx))
                         .ok();
                     window.remove_window();
                 }))
-                .into_any_element()
-        });
-        let tomorrow = Self::row("tomorrow", "Tomorrow")
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                this.rack
-                    .update(cx, |rack, cx| rack.pick_tomorrow(tile, cx))
-                    .ok();
-                window.remove_window();
-            }))
-            .into_any_element();
-        std::iter::once(heading)
-            .chain(rows)
-            .chain(std::iter::once(tomorrow))
-            .collect()
+                .into_any_element(),
+        );
+        items
+    }
+
+    // Each snoozed tile, with its marker as it stands now and when it comes back, and a click
+    // brings it back now (user, 2026-11-16).
+    fn snoozed_items(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let mut items = vec![Self::heading("SNOOZED", 6.)];
+        let now = SystemTime::now();
+        let offset = native::utc_offset();
+        let hours24 = native::uses_24_hour_clock();
+        let rows: Vec<_> = self
+            .snoozed
+            .iter()
+            .map(|t| (t.id, marker(t, false), t.title(), t.timer.later_ends()))
+            .collect();
+        for (id, mark, title, ends) in rows {
+            let when = ends
+                .map(|e| back_at(e, now, offset, hours24))
+                .unwrap_or_default();
+            items.push(
+                div()
+                    .id(("snoozed", id.0))
+                    .h(px(32.))
+                    .px(px(10.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .rounded(px(6.))
+                    .hover(|s| s.bg(rgb(BORDER)))
+                    .child(mark)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(13.))
+                            .text_color(rgb(TEXT))
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_size(px(11.5))
+                            .text_color(rgb(MUTED))
+                            .child(when),
+                    )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.rack.update(cx, |rack, cx| rack.wake(id, cx)).ok();
+                        window.remove_window();
+                    }))
+                    .into_any_element(),
+            );
+        }
+        items
+    }
+
+    /// What picking a length does: starts the tile's timer for `minutes` and closes the menu.
+    fn pick(
+        tile: TileId,
+        minutes: u32,
+        cx: &mut Context<Self>,
+    ) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+        cx.listener(move |this, _: &ClickEvent, window, cx| {
+            this.rack
+                .update(cx, |rack, cx| rack.pick_minutes(tile, minutes, cx))
+                .ok();
+            window.remove_window();
+        })
     }
 
     fn rack_items(&self, login: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
@@ -206,6 +321,7 @@ impl Render for MenuView {
             MenuKind::Timer(tile) => self.timer_items(tile, cx),
             MenuKind::Rack { login } => self.rack_items(login, cx),
             MenuKind::Tile(tile, read) => self.tile_items(tile, read, cx),
+            MenuKind::Snoozed { .. } => self.snoozed_items(cx),
         };
         let shown = (self.opened.elapsed().as_secs_f32() / FADE.as_secs_f32()).min(1.);
         div()
@@ -221,5 +337,55 @@ impl Render for MenuView {
             .border_1()
             .border_color(rgb(0x34363C))
             .children(items)
+    }
+}
+
+// When a snoozed tile comes back, in local time on the clock the OS shows you: "Returns 4:30 PM"
+// or "Returns 16:30" later today, and "Returns tomorrow 4:00 AM" or "Returns tomorrow 04:00" on
+// a later day (user, 2026-11-16).
+fn back_at(ends: SystemTime, now: SystemTime, utc_offset: i64, hours24: bool) -> String {
+    let local = |t: SystemTime| {
+        t.duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64)
+            + utc_offset
+    };
+    let (at, today) = (local(ends), local(now));
+    let (hour, minute) = (at.rem_euclid(86_400) / 3600, at.rem_euclid(3600) / 60);
+    let clock = if hours24 {
+        format!("{hour:02}:{minute:02}")
+    } else {
+        let half = if hour < 12 { "AM" } else { "PM" };
+        format!("{}:{minute:02} {half}", (hour + 11) % 12 + 1)
+    };
+    if at.div_euclid(86_400) == today.div_euclid(86_400) {
+        format!("Returns {clock}")
+    } else {
+        format!("Returns tomorrow {clock}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Only what the test needs, since the module's glob import of GPUI brings a `test` attribute
+    // of its own, which shadows the standard one.
+    use super::back_at;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn a_return_time_follows_the_clock_you_read() {
+        let now = UNIX_EPOCH + Duration::from_secs(14 * 3600 + 37 * 60);
+        let at = |h: u64, m: u64| UNIX_EPOCH + Duration::from_secs(h * 3600 + m * 60);
+        assert_eq!(back_at(at(18, 22), now, 0, false), "Returns 6:22 PM");
+        assert_eq!(back_at(at(18, 22), now, 0, true), "Returns 18:22");
+        assert_eq!(back_at(at(12, 5), now, 0, false), "Returns 12:05 PM");
+        assert_eq!(
+            back_at(at(28, 0), now, 0, false),
+            "Returns tomorrow 4:00 AM"
+        );
+        assert_eq!(
+            back_at(at(24, 30), now, 0, false),
+            "Returns tomorrow 12:30 AM"
+        );
+        assert_eq!(back_at(at(28, 0), now, 0, true), "Returns tomorrow 04:00");
     }
 }

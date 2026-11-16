@@ -9,10 +9,46 @@ use std::{
 use crate::{
     desktop::AppSession,
     session::{
-        COMPACTED, RECENT_TOOLS, Session, SessionEvent, SessionState, first_line, prompt_title,
+        COMPACTED, LOOK_REMINDER_MINUTES, LOOK_WAIT, RECENT_TOOLS, Recent, Remind, Session,
+        SessionEvent, SessionState, first_line, prompt_title,
     },
     timer::{DEFAULT_MINUTES, Timer},
 };
+
+/// A look at a session at your turn, from a click on its tile or from opening it in the app, at
+/// `at`. The first look reads the turn and stops its timer, and each look waits `LOOK_WAIT`
+/// before the reminder starts, so a look while that reminder runs starts the wait over. A timer
+/// you set or canceled yourself during the turn is yours, and no look touches it. It returns
+/// whether the tile changed.
+fn look(s: &mut Session, timer: &mut Timer, at: SystemTime) -> bool {
+    let first = !s.read;
+    s.read = true;
+    if s.remind == Remind::Mine {
+        return first;
+    }
+    let started = s.remind == Remind::Started;
+    if first || started {
+        timer.stop();
+    }
+    if !timer.is_tomorrow() {
+        s.remind = Remind::At(at + LOOK_WAIT);
+    }
+    first || started
+}
+
+/// Whether a tile off the rack is snoozed: it waits for a reminder for later, rather than for its
+/// session to need you.
+fn snoozed(tile: &Tile) -> bool {
+    tile.timer.is_tomorrow()
+}
+
+/// Notes that you set or canceled a session tile's timer yourself, which no reminder after a
+/// look overrides until the session's next state.
+fn take_in_hand(tile: &mut Tile) {
+    if let Body::Session(s) = &mut tile.body {
+        s.remind = Remind::Mine;
+    }
+}
 
 /// How long an ended session's tile stays before it clears itself.
 pub const ENDED_CLEARS_AFTER: Duration = Duration::from_secs(30 * 60);
@@ -112,7 +148,7 @@ pub struct Removed {
 pub struct Rack {
     tiles: Vec<Tile>,
     /// The tiles of sessions you dismissed, kept up to date off the rack until one needs you
-    /// again or you send it a new prompt.
+    /// again or you send it a new prompt, and the tiles you snoozed, which wait for their time.
     hidden: Vec<Tile>,
     next_id: u64,
 }
@@ -185,6 +221,7 @@ impl Rack {
             s.state = to;
             s.state_since = now;
             s.read = false;
+            s.remind = Remind::Off;
             // A reminder for tomorrow is for when you're back, so the session's turns leave it.
             if timer.is_tomorrow() {
                 return;
@@ -237,11 +274,14 @@ impl Rack {
             }
             SessionEvent::ToolPending { tool } => {
                 let activity = tool.activity();
-                if s.recent.last() != Some(&activity) {
+                if s.recent.last().map(|r| &r.text) != Some(&activity) {
                     if s.recent.len() == RECENT_TOOLS {
                         s.recent.remove(0);
                     }
-                    s.recent.push(activity.clone());
+                    s.recent.push(Recent {
+                        text: activity.clone(),
+                        failed: false,
+                    });
                 }
                 s.activity = Some(activity);
                 s.activity_at = now;
@@ -269,7 +309,18 @@ impl Rack {
                 }
                 set_state(s, &mut tile.timer, SessionState::NeedsApproval);
             }
-            SessionEvent::ToolFinished => {
+            SessionEvent::ToolFinished { activity, failed } => {
+                // Tools can run side by side, so a failure marks the newest of the turn's tools
+                // that has the failed tool's words.
+                if failed
+                    && let Some(r) = s
+                        .recent
+                        .iter_mut()
+                        .rev()
+                        .find(|r| activity.as_ref().is_none_or(|a| *a == r.text))
+                {
+                    r.failed = true;
+                }
                 s.pending_tool = None;
                 s.tool_running = false;
                 if s.state == SessionState::NeedsApproval {
@@ -304,9 +355,8 @@ impl Rack {
             // last recorded, while the turn ran.
             SessionEvent::Seen { at } if at >= s.state_since => match s.state {
                 SessionState::Unread => set_state(s, &mut tile.timer, SessionState::Done),
-                SessionState::YourTurn if !s.read => {
-                    s.read = true;
-                    tile.timer.stop();
+                SessionState::YourTurn => {
+                    look(s, &mut tile.timer, at);
                 }
                 _ => {}
             },
@@ -381,8 +431,9 @@ impl Rack {
             Place::Shown(_) => tile.refresh_need(now),
             // A dismissed session comes back where a new session's tile would go, once it needs
             // you or you send it a new prompt, and a session that ends while dismissed goes for
-            // good (user, 2026-11-15).
-            Place::Hidden(i) if new_prompt || needs_you => {
+            // good (user, 2026-11-15). A snoozed one waits for its time whatever it does, since
+            // you snoozed it as one you can't act on yet (user, 2026-11-16).
+            Place::Hidden(i) if (new_prompt || needs_you) && !snoozed(&self.hidden[i]) => {
                 let mut tile = self.hidden.remove(i);
                 tile.refresh_need(now);
                 let parent = tile.session().and_then(|s| s.app_parent.clone());
@@ -442,8 +493,8 @@ impl Rack {
                     .is_none_or(|ended| now < ended + ENDED_CLEARS_AFTER)
         });
         let mut changed = self.tiles.len() != before;
-        // A dismissed session whose reminder for tomorrow runs out comes back, as one that needs
-        // you does.
+        // A snoozed tile, or a dismissed session with a reminder for tomorrow, comes back when
+        // its time runs out, time-up, as one that needs you does.
         let mut i = 0;
         while i < self.hidden.len() {
             let timer = self.hidden[i].timer.at(now);
@@ -451,9 +502,7 @@ impl Rack {
                 let mut tile = self.hidden.remove(i);
                 tile.timer = timer;
                 tile.refresh_need(now);
-                let parent = tile.session().and_then(|s| s.app_parent.clone());
-                let index = self.session_slot(parent.as_deref());
-                self.tiles.insert(index, tile);
+                self.show(tile);
                 changed = true;
             } else {
                 i += 1;
@@ -461,6 +510,18 @@ impl Rack {
         }
         for tile in &mut self.tiles {
             let (timer, need) = (tile.timer, tile.need);
+            // A session still at your turn when the wait after your look is over gets its
+            // reminder, counted from the end of the wait.
+            if let Body::Session(s) = &mut tile.body
+                && s.state == SessionState::YourTurn
+                && let Remind::At(due) = s.remind
+                && now >= due
+            {
+                s.remind = Remind::Started;
+                if !tile.timer.is_set() {
+                    tile.timer = Timer::start(due, LOOK_REMINDER_MINUTES);
+                }
+            }
             tile.timer = tile.timer.at(now);
             tile.refresh_need(now);
             changed |= tile.timer != timer || tile.need != need;
@@ -705,11 +766,11 @@ impl Rack {
                 s.state = SessionState::Done;
                 s.state_since = now;
             }
-            // Your turn stays your turn, since it still waits for your reply, but its reminder
-            // stops.
-            SessionState::YourTurn if !s.read => {
-                s.read = true;
-                tile.timer.stop();
+            // Your turn stays your turn, since it still waits for your reply.
+            SessionState::YourTurn => {
+                if !look(s, &mut tile.timer, now) {
+                    return false;
+                }
             }
             _ => return false,
         }
@@ -738,17 +799,22 @@ impl Rack {
         true
     }
 
-    /// Puts back your own tiles, in order, as `store` loaded them.
-    pub fn with_own_tiles(tiles: impl IntoIterator<Item = (String, Timer)>) -> Self {
+    /// Puts back your own tiles, in order, as `store` loaded them, with whether each is snoozed.
+    pub fn with_own_tiles(tiles: impl IntoIterator<Item = (String, Timer, bool)>) -> Self {
         let mut rack = Rack::new();
-        for (title, timer) in tiles {
+        for (title, timer, snoozed) in tiles {
             let id = rack.new_id();
-            rack.tiles.push(Tile {
+            let tile = Tile {
                 id,
                 body: Body::Own(Own { title }),
                 timer,
                 need: None,
-            });
+            };
+            if snoozed {
+                rack.hidden.push(tile);
+            } else {
+                rack.tiles.push(tile);
+            }
         }
         rack
     }
@@ -816,11 +882,68 @@ impl Rack {
         self.tiles.insert(index, removed.tile);
     }
 
+    /// Takes a tile off the rack until `until`, a reminder for later, runs out, or until you wake
+    /// it from the list of snoozed tiles. It returns whether a tile was snoozed.
+    pub fn snooze(&mut self, id: TileId, until: Timer, now: SystemTime) -> bool {
+        let Some(index) = self.tiles.iter().position(|t| t.id == id) else {
+            return false;
+        };
+        let mut tile = self.tiles.remove(index);
+        tile.timer = until.at(now);
+        tile.need = None;
+        take_in_hand(&mut tile);
+        self.hidden.push(tile);
+        true
+    }
+
+    /// Brings a snoozed tile back before its time, as it stands now, with no timer. It returns
+    /// whether a tile came back.
+    pub fn wake(&mut self, id: TileId, now: SystemTime) -> bool {
+        let Some(index) = self.hidden.iter().position(|t| t.id == id && snoozed(t)) else {
+            return false;
+        };
+        let mut tile = self.hidden.remove(index);
+        tile.timer = Timer::Idle;
+        tile.refresh_need(now);
+        self.show(tile);
+        true
+    }
+
+    /// The snoozed tiles, in the order you snoozed them.
+    pub fn snoozed(&self) -> impl Iterator<Item = &Tile> {
+        self.hidden.iter().filter(|t| snoozed(t))
+    }
+
+    /// Whether a snoozed session needs you, which the rack shows on its count of snoozed tiles
+    /// without bringing the session back.
+    pub fn snoozed_need_you(&self) -> bool {
+        self.snoozed()
+            .filter_map(Tile::session)
+            .any(|s| match s.state {
+                SessionState::NeedsApproval | SessionState::Unread => true,
+                SessionState::YourTurn => !s.read,
+                _ => false,
+            })
+    }
+
+    // A tile coming back from off the rack goes where a new tile of its kind would: a session's
+    // after its parent's family or the last session tile, and your own after your others.
+    fn show(&mut self, tile: Tile) {
+        if tile.is_own() {
+            self.tiles.push(tile);
+            return;
+        }
+        let parent = tile.session().and_then(|s| s.app_parent.clone());
+        let index = self.session_slot(parent.as_deref());
+        self.tiles.insert(index, tile);
+    }
+
     /// Starts a timer of `minutes`, or starts a running one over.
     pub fn start_timer(&mut self, id: TileId, minutes: u32, now: SystemTime) {
         if let Some(tile) = self.tile_mut(id) {
             tile.timer = Timer::start(now, minutes);
             tile.refresh_need(now);
+            take_in_hand(tile);
         }
     }
 
@@ -844,6 +967,7 @@ impl Rack {
         if let Some(tile) = self.tile_mut(id) {
             tile.timer = Timer::tomorrow(now, utc_offset);
             tile.refresh_need(now);
+            take_in_hand(tile);
         }
     }
 
@@ -851,6 +975,7 @@ impl Rack {
         if let Some(tile) = self.tile_mut(id).filter(|t| t.timer.is_set()) {
             tile.timer = Timer::Idle;
             tile.refresh_need(now);
+            take_in_hand(tile);
         }
     }
 
@@ -862,12 +987,24 @@ impl Rack {
         }
     }
 
-    /// Your own tiles, in order, with their titles and timers, which is what `store` saves.
-    pub fn own_tiles(&self) -> impl Iterator<Item = (&str, Timer)> {
-        self.tiles.iter().filter_map(|t| match &t.body {
-            Body::Own(o) => Some((o.title.as_str(), t.timer)),
-            Body::Session(_) => None,
-        })
+    /// Your own tiles, those on the rack in order and then those snoozed, with their titles,
+    /// timers, and whether each is snoozed, which is what `store` saves.
+    pub fn own_tiles(&self) -> impl Iterator<Item = (&str, Timer, bool)> {
+        fn own(t: &Tile) -> Option<&str> {
+            match &t.body {
+                Body::Own(o) => Some(o.title.as_str()),
+                Body::Session(_) => None,
+            }
+        }
+        let shown = self
+            .tiles
+            .iter()
+            .filter_map(move |t| own(t).map(|title| (title, t.timer, false)));
+        let snoozed = self
+            .hidden
+            .iter()
+            .filter_map(move |t| own(t).map(|title| (title, t.timer, true)));
+        shown.chain(snoozed)
     }
 }
 
@@ -1009,8 +1146,13 @@ mod tests {
         for (i, command) in ["a", "b", "b", "c", "d", "e"].iter().enumerate() {
             apply(&mut rack, "a", bash(command), 1 + i as u64);
         }
+        let texts: Vec<&str> = session(&rack, id)
+            .recent
+            .iter()
+            .map(|r| r.text.as_str())
+            .collect();
         assert_eq!(
-            session(&rack, id).recent,
+            texts,
             ["Running b", "Running c", "Running d", "Running e"],
             "the newest four, with a repeat kept once"
         );
@@ -1142,7 +1284,15 @@ mod tests {
             SessionEvent::ApprovalAsked { tool: None },
             2,
         );
-        apply(&mut rack, "a", SessionEvent::ToolFinished, 30);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::ToolFinished {
+                activity: None,
+                failed: false,
+            },
+            30,
+        );
         let s = session(&rack, id);
         assert_eq!(s.state, SessionState::Working);
         assert_eq!(s.summary, None);
@@ -1154,7 +1304,15 @@ mod tests {
     fn a_finished_tool_leaves_a_working_tile_working() {
         let mut rack = Rack::new();
         let id = apply(&mut rack, "a", prompt("Go"), 0);
-        apply(&mut rack, "a", SessionEvent::ToolFinished, 1);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::ToolFinished {
+                activity: None,
+                failed: false,
+            },
+            1,
+        );
         let s = session(&rack, id);
         assert_eq!(s.state, SessionState::Working);
         assert_eq!(s.state_since, at(0));
@@ -1384,7 +1542,15 @@ mod tests {
             session(&rack, id).line.as_deref(),
             Some("Running cargo build")
         );
-        apply(&mut rack, "a", SessionEvent::ToolFinished, 30);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::ToolFinished {
+                activity: None,
+                failed: false,
+            },
+            30,
+        );
         assert_eq!(
             session(&rack, id).line.as_deref(),
             Some(crate::session::THINKING)
@@ -1642,6 +1808,103 @@ mod tests {
         assert!(!session(&rack, a).read);
         apply(&mut rack, "a", SessionEvent::Seen { at: at(4) }, 4);
         assert!(session(&rack, a).read);
+    }
+
+    #[test]
+    fn a_look_at_your_turn_starts_a_reminder_two_minutes_later_unless_you_answer() {
+        let mut rack = Rack::new();
+        let a = apply(&mut rack, "a", stop("Commit it?"), 0);
+        assert!(rack.mark_read(a, at(10)));
+        rack.tick(at(129));
+        assert_eq!(rack.tile(a).unwrap().timer, Timer::Idle);
+        rack.tick(at(130));
+        let timer = rack.tile(a).unwrap().timer;
+        assert_eq!(timer.remaining(at(130)), Some(Duration::from_secs(180)));
+
+        // A look while the reminder runs starts the wait over.
+        assert!(rack.mark_read(a, at(200)));
+        assert_eq!(rack.tile(a).unwrap().timer, Timer::Idle);
+        rack.tick(at(320));
+        assert!(rack.tile(a).unwrap().timer.is_running());
+
+        // An answer before the wait is over leaves no reminder to start.
+        let b = apply(&mut rack, "b", stop("Push it?"), 0);
+        rack.mark_read(b, at(10));
+        apply(&mut rack, "b", prompt("Yes"), 60);
+        rack.tick(at(200));
+        assert!(!rack.tile(b).unwrap().timer.is_set());
+    }
+
+    #[test]
+    fn a_timer_you_set_yourself_outlasts_a_look() {
+        let mut rack = Rack::new();
+        let a = apply(&mut rack, "a", stop("Commit it?"), 0);
+        rack.start_timer(a, 30, at(5));
+        assert!(rack.mark_read(a, at(10)));
+        rack.tick(at(400));
+        let timer = rack.tile(a).unwrap().timer;
+        assert_eq!(
+            timer.remaining(at(400)),
+            Some(Duration::from_secs(5 + 1800 - 400))
+        );
+    }
+
+    #[test]
+    fn a_failed_tool_is_marked_among_the_turns_tools() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(&mut rack, "a", bash("a"), 1);
+        apply(&mut rack, "a", bash("b"), 2);
+        let failed = SessionEvent::ToolFinished {
+            activity: Some("Running a".into()),
+            failed: true,
+        };
+        apply(&mut rack, "a", failed, 3);
+        let marks: Vec<bool> = session(&rack, id).recent.iter().map(|r| r.failed).collect();
+        assert_eq!(marks, [true, false]);
+    }
+
+    #[test]
+    fn a_snoozed_session_waits_for_its_time_even_when_it_needs_you() {
+        let mut rack = Rack::new();
+        let a = apply(&mut rack, "a", prompt("Deploy it"), 0);
+        assert!(rack.snooze(a, Timer::later(at(10), 2), at(10)));
+        assert!(rack.tile(a).is_none());
+        assert_eq!(rack.snoozed().count(), 1);
+
+        // It asks you something meanwhile, which shows on the moon and leaves it snoozed.
+        apply(&mut rack, "a", stop("Is staging free?"), 60);
+        assert!(rack.tile(a).is_none());
+        assert!(rack.snoozed_need_you());
+
+        // Two hours on, it comes back time-up.
+        rack.tick(at(10 + 7_200));
+        assert!(rack.tile(a).unwrap().timer.is_time_up());
+        assert_eq!(rack.snoozed().count(), 0);
+    }
+
+    #[test]
+    fn waking_a_snoozed_tile_brings_it_back_now_among_its_kind() {
+        let mut rack = Rack::new();
+        let a = apply(&mut rack, "a", prompt("Go"), 0);
+        let mine = rack.add_own("Call the bank", at(0));
+        let other = rack.add_own("Renew the domain", at(0));
+        rack.snooze(a, Timer::later(at(1), 4), at(1));
+        rack.snooze(mine, Timer::tomorrow(at(1), 0), at(1));
+        assert_eq!(rack.snoozed().count(), 2);
+
+        assert!(rack.wake(mine, at(5)));
+        let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
+        assert_eq!(order, [other, mine]);
+        assert_eq!(rack.tile(mine).unwrap().timer, Timer::Idle);
+
+        assert!(rack.wake(a, at(6)));
+        assert_eq!(
+            rack.tiles()[0].id,
+            a,
+            "a session goes before your own tiles"
+        );
+        assert!(!rack.wake(a, at(7)), "only a snoozed tile wakes");
     }
 
     #[test]

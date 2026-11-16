@@ -5,14 +5,15 @@ use std::time::{Duration, Instant, SystemTime};
 
 use gpui_kit::component::input::Input;
 use gpui_kit::*;
-use plates_core::{Need, SessionState, Tile, rack::ENDED_CLEARS_AFTER};
+use plates_core::{Need, SessionState, Tile, Timer, rack::ENDED_CLEARS_AFTER};
 
 use crate::{
     markup::{self, Mark},
     menu::MenuKind,
     motion::{PEEK, Side},
     native,
-    rack_view::{POPOVER_GAP, POPOVER_W, RackView, STRIP_W, TOAST_H},
+    rack_view::{FieldFor, POPOVER_GAP, POPOVER_W, RackView, STRIP_W, TOAST_H},
+    swipe::Swiped,
 };
 
 const BG: u32 = 0x131417;
@@ -25,6 +26,10 @@ const BLUE: u32 = 0x74AEFF;
 const AMBER: u32 = 0xF2B441;
 const HOT: u32 = 0xFF7A45;
 pub(crate) const YELLOW: u32 = 0xF4D35E;
+/// A reminder for tomorrow, apart from yellow's timer running now. It's about as bright as the
+/// yellow, so the moon reads at 20px, and redder than the working blue, so the two don't blur
+/// (user, 2026-11-16).
+pub(crate) const VIOLET: u32 = 0xB39DFF;
 const GREEN: u32 = 0x5BCB8A;
 const GRAY: u32 = 0x5E626B;
 /// The text colors of a working tile, a your-turn tile, and an approval.
@@ -40,6 +45,8 @@ const LEAVING: usize = 10_000;
 const BRIGHTEN: Duration = Duration::from_millis(1400);
 /// A new session's tile brightens once it has grown in.
 const ENTER: Duration = crate::rows::ENTER;
+/// How long a starting timer's hourglass takes to turn over before it fills with yellow.
+const FLIP: Duration = Duration::from_millis(500);
 
 /// The font the rack's text uses. The root of the rack's view sets the same family.
 pub(crate) const SANS: &str = "Inter";
@@ -62,10 +69,14 @@ pub(crate) fn white(alpha: f32) -> Hsla {
 }
 
 // A row of the rack, `full` px tall once grown, at `factor` of its height and opacity, with what
-// doesn't fit cut off below.
+// doesn't fit cut off below. A tile swiped sideways is cut off at the window's edges rather than
+// at the panel's padding, since the row reaches out through the panel's 12px padding and 1px
+// border and pads itself back in (user, 2026-11-16).
 fn grown(row: AnyElement, full: f32, factor: f32) -> AnyElement {
     div()
         .flex_none()
+        .mx(px(-13.))
+        .px(px(13.))
         .h(px(full * factor))
         .overflow_hidden()
         .opacity(factor)
@@ -225,6 +236,15 @@ fn ring(color: Hsla, width: f32) -> BoxShadow {
     }
 }
 
+/// How far a timer that started less than `FLIP` ago has turned its hourglass over, from 0 to 1.
+fn flipping(t: &Tile, now: SystemTime) -> Option<f32> {
+    let Timer::Running { started, .. } = t.timer else {
+        return None;
+    };
+    let gone = since(started, now);
+    (gone < FLIP).then(|| gone.as_secs_f32() / FLIP.as_secs_f32())
+}
+
 fn since(t: SystemTime, now: SystemTime) -> Duration {
     now.duration_since(t).unwrap_or_default()
 }
@@ -282,8 +302,9 @@ fn brightened(base: u32, peak: u32, elapsed: Duration, length: Duration) -> Opti
 }
 
 // A tile's marker, or with `pip` its mark on the docked strip. The strip has no room for the
-// timer, so your own tile's pip is outlined in yellow while its timer runs, and turns solid
-// yellow once it's time-up, which needs you where a running timer doesn't (user, 2026-11-15).
+// timer, so your own tile's pip is outlined in yellow while its timer runs, or violet while it's
+// set for tomorrow, and turns solid yellow once it's time-up, which needs you where a running
+// timer doesn't (user, 2026-11-15 and 2026-11-16).
 pub(crate) fn marker(t: &Tile, pip: bool) -> AnyElement {
     let size = if pip { 8. } else { 9. };
     let base = div().flex_none().size(px(size));
@@ -311,7 +332,14 @@ pub(crate) fn marker(t: &Tile, pip: bool) -> AnyElement {
     };
     let dot = match color {
         Some(c) if pip && t.is_own() && t.timer.is_set() => {
-            shape.bg(rgb(c)).shadow(vec![ring(rgb(YELLOW).into(), 1.5)])
+            let outline = if t.timer.is_tomorrow() {
+                VIOLET
+            } else {
+                YELLOW
+            };
+            shape
+                .bg(rgb(c))
+                .shadow(vec![ring(rgb(outline).into(), 1.5)])
         }
         Some(c) => shape.bg(rgb(c)),
         None => shape.shadow(vec![ring(rgb(0x6B6E76).into(), 1.5)]),
@@ -462,9 +490,6 @@ impl RackView {
             .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
                 this.click_tile(id, e.click_count(), window, cx)
             }));
-        if self.drag.is_none() {
-            main = main.cursor_pointer();
-        }
         // Resting the pointer on a session tile's text grows the tile into its hover card, which
         // shows what the tile cuts short (user, 2026-11-15). The × and the timer slot sit beside
         // the text, so a pointer on its way to them opens no card.
@@ -475,6 +500,11 @@ impl RackView {
                 .on_mouse_move(
                     cx.listener(move |this, _: &MouseMoveEvent, _, cx| this.pointer_moved(id, cx)),
                 )
+                .on_hover(cx.listener(move |this, hovered: &bool, _, _| {
+                    if !*hovered {
+                        this.pointer_left(id);
+                    }
+                }))
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(move |this, e: &MouseDownEvent, _, cx| {
@@ -510,7 +540,6 @@ impl RackView {
                     .opacity(0.)
                     .group_hover(group.clone(), |s| s.opacity(1.))
                     .hover(|s| s.bg(white(0.08)))
-                    .cursor_pointer()
                     .child(
                         svg()
                             .path("plates/x.svg")
@@ -538,16 +567,26 @@ impl RackView {
             .size_full()
         });
 
+        // A swipe slides the tile with the fingers, fading it as it goes, and the row it sits in
+        // cuts it off at the row's edges.
+        let shift = self.swipe_offset(Swiped::Tile(id), !live, Instant::now());
         div()
             .id(("tile", id.0))
             .group(group)
             .relative()
+            .left(px(shift))
+            .opacity(1. - 0.7 * (shift.abs() / crate::swipe::OUT).min(1.))
             .h(px(60.))
             .flex()
             .rounded(px(10.))
             .overflow_hidden()
             .bg(rgb(bg))
             .hover(move |s| s.bg(rgb(hover_bg)))
+            .on_scroll(cx.listener(move |this, e: &ScrollEvent, _, _| {
+                if live {
+                    this.swipe_touched(Swiped::Tile(id), e)
+                }
+            }))
             .child(main)
             .child(side)
             .children(hg)
@@ -555,8 +594,8 @@ impl RackView {
             .into_any_element()
     }
 
-    // The timer slot: the hourglass, which starts a 5-minute timer, or the draining ring, which
-    // cancels it, and a right-click for the menu of lengths.
+    // The timer slot: the hourglass, which starts a 5-minute timer, and while one runs, fills
+    // with yellow and cancels it, and a right-click for the menu of lengths.
     fn timer_slot(
         &self,
         i: usize,
@@ -566,45 +605,92 @@ impl RackView {
     ) -> Stateful<Div> {
         let id = t.id;
         let hg_group: SharedString = format!("hg-{i}").into();
+        let held = self.hourglass_held == Some(id);
         let icon = match t.timer.left(now) {
-            // A reminder for tomorrow shows a moon, since a ring that drained over the night
-            // wouldn't visibly move, and hovering it shows the × that cancels it, as on the ring
-            // (user, 2026-11-16).
+            // A reminder for tomorrow shows a moon, since an hourglass that filled over the night
+            // wouldn't visibly move, and hovering it dims the moon, as on a running timer, since
+            // clicking cancels it (user, 2026-11-16).
             None if t.timer.is_tomorrow() => {
                 let layer =
                     |path: SharedString| svg().absolute().top_0().left_0().size(px(20.)).path(path);
-                let mut dim: Hsla = rgb(YELLOW).into();
+                let mut dim: Hsla = rgb(VIOLET).into();
                 dim.a = 0.25;
                 div()
                     .relative()
                     .size(px(20.))
                     .child(
                         layer("plates/moon.svg".into())
-                            .text_color(rgb(YELLOW))
+                            .text_color(rgb(VIOLET))
                             .group_hover(hg_group.clone(), move |s| s.text_color(dim)),
                     )
+                    .into_any_element()
+            }
+            // A running timer fills the hourglass with yellow from the bottom as its time runs
+            // out. The fill rises over the whole icon, since filling only its lower bulb, like
+            // sand, is too small to read at 20px (user, 2026-11-16).
+            // A timer that just started turns its hourglass over first, as you'd turn one over to
+            // start it, and the yellow fill shows once it's upright (user, 2026-11-16).
+            Some(_) if flipping(t, now).is_some() => {
+                let turned = ease_in_out(flipping(t, now).unwrap_or(1.));
+                div()
+                    .relative()
+                    .size(px(20.))
                     .child(
-                        layer("plates/ring-x.svg".into())
-                            .text_color(text(0.))
-                            .group_hover(hg_group.clone(), |s| s.text_color(text(0.55))),
+                        svg()
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .size(px(20.))
+                            .path("plates/hourglass.svg")
+                            .with_transformation(Transformation::rotate(radians(
+                                std::f32::consts::PI * turned,
+                            )))
+                            .text_color(text(0.5)),
                     )
                     .into_any_element()
             }
             Some(left) => {
-                let layer =
-                    |path: SharedString| svg().absolute().top_0().left_0().size(px(20.)).path(path);
+                let glyph = || {
+                    svg()
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        .size(px(20.))
+                        .path("plates/hourglass.svg")
+                };
+                let mut dim: Hsla = rgb(YELLOW).into();
+                dim.a = 0.25;
+                // The hourglass's lines run from 2.25px above the slot's bottom to 17.75px, so a
+                // fill from 0 would show nothing for the timer's first minutes. It starts at 5px,
+                // over the bottom bar and the tip of the lower bulb, so a timer that just started
+                // shows at once, and reaches the top bar's edge as the time runs out
+                // (user, 2026-11-16).
+                let filled = 5. + (17.75 - 5.) * (1. - left).clamp(0., 1.);
+                // Hovering a running timer dims it, since clicking cancels it, except right after a
+                // click started it, while the pointer that clicked still rests there: the dimming
+                // would answer the click that started the timer by taking it back. The hourglass
+                // shows no × on hover, since an × tried there crowded the 20px icon
+                // (user, 2026-11-16).
+                let on_hover = |svg: Svg, hovered: Hsla| {
+                    if held {
+                        svg
+                    } else {
+                        svg.group_hover(hg_group.clone(), move |s| s.text_color(hovered))
+                    }
+                };
                 div()
                     .relative()
                     .size(px(20.))
-                    .child(layer("plates/ring-track.svg".into()).text_color(white(0.14)))
+                    .child(on_hover(glyph().text_color(text(0.5)), text(0.15)))
                     .child(
-                        layer(format!("plates/ring-{:.0}.svg", left * 100.).into())
-                            .text_color(rgb(YELLOW)),
-                    )
-                    .child(
-                        layer("plates/ring-x.svg".into())
-                            .text_color(text(0.))
-                            .group_hover(hg_group.clone(), |s| s.text_color(text(0.55))),
+                        div()
+                            .absolute()
+                            .bottom_0()
+                            .left_0()
+                            .w(px(20.))
+                            .h(px(filled))
+                            .overflow_hidden()
+                            .child(on_hover(glyph().text_color(rgb(YELLOW)), dim)),
                     )
                     .into_any_element()
             }
@@ -625,10 +711,21 @@ impl RackView {
             .justify_center()
             .border_l_1()
             .border_color(white(0.06))
+            // The tile clips its children to its rectangle, not to its rounded corners, so the
+            // slot's hover fill rounds its own right corners to the tile's 10px.
+            .rounded_r(px(10.))
             .hover(|s| s.bg(white(0.06)))
-            .cursor_pointer()
             .child(icon)
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                if !*hovered && this.hourglass_held == Some(id) {
+                    this.hourglass_held = None;
+                    cx.notify();
+                }
+            }))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.click_timer(id, cx)))
+            .on_mouse_pressure(
+                cx.listener(move |this, e: &MousePressureEvent, _, cx| this.force_press(id, e, cx)),
+            )
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, e: &MouseDownEvent, _, cx| {
@@ -639,20 +736,69 @@ impl RackView {
 
     // The inline field, for a new tile in place of the phantom tile, or for renaming your own
     // tile in place of it.
-    fn field_row(&self, t: &Tile, _cx: &mut Context<Self>) -> AnyElement {
+    fn field_row(&self, t: &Tile, cx: &mut Context<Self>) -> AnyElement {
         let marker = div()
             .flex_none()
             .size(px(9.))
             .rounded(px(2.))
             .bg(rgb(if t.timer.is_time_up() { YELLOW } else { GRAY }));
-        Self::field_shell(marker, &self.input)
+        self.field_shell(marker, cx)
     }
 
-    fn field_shell(
-        marker: Div,
-        input: &Entity<gpui_kit::component::input::InputState>,
-    ) -> AnyElement {
+    // The field's hints after its text: for a new tile, the reminder it starts with, which Tab
+    // steps through, then Enter. Both are keys, and clicking either does what its key does
+    // (user, 2026-11-16).
+    fn field_shell(&self, marker: Div, cx: &mut Context<Self>) -> AnyElement {
+        let keycap = |id: &'static str| {
+            div()
+                .id(id)
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .px(px(6.))
+                .py(px(2.))
+                .rounded(px(5.))
+                .bg(rgb(0x25272C))
+                .hover(|s| s.bg(rgb(0x2F3137)))
+                .text_size(px(10.5))
+                .text_color(rgb(TEXT2))
+        };
+        let remind = self
+            .field
+            .as_ref()
+            .filter(|f| f.target == FieldFor::New)
+            .map(|f| {
+                let minutes = crate::rack_view::field_reminder(f.remind);
+                let words = match minutes {
+                    Some(m) if m >= 60 => format!("{}h", m / 60),
+                    Some(m) => format!("{m}m"),
+                    None => "Tab".to_string(),
+                };
+                let (icon, words_color): (Hsla, Hsla) = if minutes.is_some() {
+                    (rgb(YELLOW).into(), rgb(TEXT).into())
+                } else {
+                    (text(0.4), rgb(TEXT2).into())
+                };
+                keycap("field-remind")
+                    .text_color(words_color)
+                    .child(
+                        svg()
+                            .path("plates/hourglass.svg")
+                            .size(px(12.))
+                            .text_color(icon),
+                    )
+                    .child(words)
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.step_reminder(false, cx);
+                    }))
+            });
+        let enter = keycap("field-enter")
+            .child("Enter")
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.click_enter(window, cx)));
         div()
+            // A press here stays with the field, since a press anywhere else on the rack closes it.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .h(px(60.))
             .flex()
             .items_center()
@@ -664,33 +810,24 @@ impl RackView {
             .child(marker)
             .child(
                 div().flex_1().min_w_0().child(
-                    Input::new(input)
+                    Input::new(&self.input)
                         .appearance(false)
                         .px(px(0.))
                         .text_size(px(13.5))
                         .font_weight(FontWeight::SEMIBOLD),
                 ),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .px(px(6.))
-                    .py(px(2.))
-                    .rounded(px(5.))
-                    .bg(rgb(0x25272C))
-                    .text_size(px(10.5))
-                    .text_color(rgb(TEXT2))
-                    .child("Enter"),
-            )
+            .children(remind)
+            .child(enter)
             .into_any_element()
     }
 
     fn last_row(&self, cx: &mut Context<Self>) -> AnyElement {
         if self.is_adding() {
             let marker = div().flex_none().size(px(9.)).rounded(px(2.)).bg(rgb(GRAY));
-            return Self::field_shell(marker, &self.input);
+            return self.field_shell(marker, cx);
         }
-        let mut phantom = div()
+        let phantom = div()
             .id("phantom")
             .group("phantom")
             .h(px(60.))
@@ -715,14 +852,16 @@ impl RackView {
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(text(0.28))
                     .group_hover("phantom", |s| s.text_color(text(0.5)))
-                    .child("Ctrl + Shift + Space"),
+                    // The shortcut as each OS writes it, which native's watch_hotkey registers.
+                    .child(if cfg!(target_os = "macos") {
+                        "⌃⇧Space"
+                    } else {
+                        "Ctrl + Shift + Space"
+                    }),
             )
             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                 this.start_field(crate::rack_view::FieldFor::New, window, cx)
             }));
-        if self.drag.is_none() {
-            phantom = phantom.cursor_pointer();
-        }
         border_width(phantom, 1.5).into_any_element()
     }
 
@@ -730,7 +869,16 @@ impl RackView {
     // out as a tile does.
     fn undo_row(&self, now: Instant, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (title, factor) = self.rows.undo(now)?;
+        // The Undo row swipes away as a tile does, and shrinks out while it slides.
+        let leaving = self.toast.is_none();
+        let shift = self.swipe_offset(Swiped::Undo, leaving, now);
         let row = div()
+            .relative()
+            .left(px(shift))
+            .opacity(1. - 0.7 * (shift.abs() / crate::swipe::OUT).min(1.))
+            .on_scroll(
+                cx.listener(|this, e: &ScrollEvent, _, _| this.swipe_touched(Swiped::Undo, e)),
+            )
             .h(px(TOAST_H))
             .flex()
             .items_center()
@@ -757,7 +905,6 @@ impl RackView {
                     .hover(|s| s.bg(rgb(0x34363C)))
                     .text_color(rgb(0x9CC4FF))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .cursor_pointer()
                     .child("Undo")
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.undo_remove(cx))),
             );
@@ -811,25 +958,94 @@ impl RackView {
         }
         let undo = self.undo_row(at, cx);
         let last = self.last_row(cx);
-        let band = div()
-            .h(px(28.))
+        // While any tile is snoozed, a violet moon with their count sits at the band's right,
+        // above the tiles' timer slots, with an orange dot while a snoozed session needs you,
+        // which leaves it snoozed. Clicking it lists the snoozed tiles (user, 2026-11-16).
+        let snoozed = self.rack.snoozed().count();
+        let moon = (snoozed > 0).then(|| {
+            let needs = self.rack.snoozed_need_you();
+            // The band sits inside the rack's 12px padding, so the badge reaches out of it to sit
+            // MOON_INSET from the rack's side, as it does from the top.
+            div()
+                .id("snoozed")
+                .absolute()
+                .right(px(crate::rack_view::MOON_INSET - 12.))
+                .top(px(crate::rack_view::MOON_INSET))
+                .h(px(crate::rack_view::MOON_H))
+                .px(px(6.))
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .rounded(px(6.))
+                .hover(|s| s.bg(rgb(BORDER)))
+                .child(
+                    svg()
+                        .path("plates/moon.svg")
+                        .size(px(12.))
+                        .text_color(rgb(VIOLET)),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.5))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(VIOLET))
+                        .child(snoozed.to_string()),
+                )
+                .children(needs.then(|| div().size(px(5.)).rounded_full().bg(rgb(HOT))))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _: &MouseDownEvent, _, _| {
+                        this.menu_button_pressed(&MenuKind::Snoozed { count: snoozed })
+                    }),
+                )
+                .on_click(cx.listener(move |this, e: &ClickEvent, _, cx| {
+                    this.menu_button_clicked(MenuKind::Snoozed { count: snoozed }, e.position(), cx)
+                }))
+        });
+        // The grip is a button too, as tall as the moon's badge, and clicking it opens the
+        // rack's menu, which a right-click on the band opens as well (user, 2026-11-16).
+        // Pressing it and moving drags the rack, as anywhere else on it does.
+        let rack_menu = || MenuKind::Rack {
+            login: native::starts_at_login(),
+        };
+        let grip = div()
+            .id("grip")
+            .h(px(crate::rack_view::MOON_H))
+            .px(px(8.))
             .flex()
             .items_center()
-            .justify_center()
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(|this, e: &MouseDownEvent, _, cx| {
-                    let login = native::starts_at_login();
-                    this.open_menu(MenuKind::Rack { login }, e.position, cx)
-                }),
-            )
+            .rounded(px(6.))
+            .hover(|s| s.bg(rgb(BORDER)))
             .child(
                 svg()
                     .path("plates/grip.svg")
                     .w(px(16.))
                     .h(px(10.))
                     .text_color(rgb(GRAY)),
-            );
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _: &MouseDownEvent, _, _| {
+                    this.menu_button_pressed(&rack_menu())
+                }),
+            )
+            .on_click(cx.listener(move |this, e: &ClickEvent, _, cx| {
+                this.menu_button_clicked(rack_menu(), e.position(), cx)
+            }));
+        let band = div()
+            .relative()
+            .h(px(crate::rack_view::BAND_H))
+            .flex()
+            .items_center()
+            .justify_center()
+            .children(moon)
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                    this.open_menu(rack_menu(), e.position, cx)
+                }),
+            )
+            .child(grip);
         let dwell = hold.map(|(side, p)| {
             let bar = div()
                 .absolute()
@@ -861,12 +1077,15 @@ impl RackView {
             .border_color(rgb(BORDER))
             .px(px(12.))
             .pb(px(12.))
+            // The rack shows the arrow, as a desktop app's controls do, and the closed hand only
+            // while you drag it, as feedback that it moves (user, 2026-11-16).
             .cursor(if self.drag.is_some() {
                 CursorStyle::ClosedHand
             } else {
-                CursorStyle::OpenHand
+                CursorStyle::Arrow
             })
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_press))
+            .on_scroll(cx.listener(Self::on_scroll))
             .child(band)
             // Each tile's row and the Undo row carry the 6px below them, so a row that grows or
             // shrinks takes its gap with it.
@@ -894,18 +1113,23 @@ impl RackView {
             .items_center()
             .gap(px(8.))
             .py(px(10.))
-            .children(self.rack.tiles().iter().map(|t| marker(t, true)));
+            .children(self.rack.tiles().iter().map(|t| marker(t, true)))
+            .children(self.rack.snoozed().next().is_some().then(|| {
+                svg()
+                    .path("plates/moon.svg")
+                    .size(px(9.))
+                    .text_color(rgb(VIOLET))
+            }));
         let filler = self.peek.then(|| div().flex_none().w(px(PEEK as f32)));
         let strip = div()
             .id("strip")
             .flex_none()
-            .h(px(crate::rack_view::strip_height(self.rack.tiles().len())))
+            .h(px(crate::rack_view::strip_height(self.strip_pips())))
             .flex()
             .bg(rgb(BG))
             .border_color(rgb(BORDER))
             .border_t_1()
             .border_b_1()
-            .cursor_pointer()
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.set_peek(*hovered, cx)))
             .on_mouse_down(
                 MouseButton::Left,
@@ -973,16 +1197,22 @@ impl RackView {
         .into_any_element()
     }
 
-    /// Whether a tile is brightening or a new tile is sliding in, which needs a frame each
-    /// display refresh until it ends.
+    /// Whether a tile is brightening, a new tile is sliding in, an hourglass is turning over, or
+    /// a swipe is settling, each of which needs a frame each display refresh until it ends.
     pub(crate) fn tiles_animating(&self) -> bool {
         let now = SystemTime::now();
-        self.rack.tiles().iter().any(|t| {
-            t.need.is_some_and(|(_, at)| since(at, now) < BRIGHTEN)
-                || t.session().is_some_and(|s| {
-                    s.state == SessionState::New && since(s.state_since, now) < ENTER + BRIGHTEN
-                })
-        })
+        let swiped = self
+            .swipe
+            .as_ref()
+            .is_some_and(|s| s.settling(Instant::now()));
+        swiped
+            || self.rack.tiles().iter().any(|t| {
+                t.need.is_some_and(|(_, at)| since(at, now) < BRIGHTEN)
+                    || flipping(t, now).is_some()
+                    || t.session().is_some_and(|s| {
+                        s.state == SessionState::New && since(s.state_since, now) < ENTER + BRIGHTEN
+                    })
+            })
     }
 }
 

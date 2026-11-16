@@ -8,8 +8,16 @@ use serde::{Deserialize, Serialize};
 /// The minutes a click on the hourglass starts, and that a session tile starts on its own.
 pub const DEFAULT_MINUTES: u32 = 5;
 
-/// The lengths the hourglass's menu offers, in minutes.
-pub const MENU_MINUTES: [u32; 6] = [5, 10, 15, 20, 30, 60];
+/// The lengths in minutes the hourglass's menu offers to remind you in, which the hover card
+/// offers as chips too.
+pub const MENU_MINUTES: [u32; 5] = [5, 10, 15, 20, 30];
+
+/// The lengths in hours the hourglass's menu offers to remind you in, after the minutes.
+pub const MENU_HOURS: [u32; 1] = [1];
+
+/// The lengths in hours the hourglass's menu offers to snooze a tile for, before Tomorrow
+/// (user, 2026-11-16).
+pub const SNOOZE_HOURS: [u32; 2] = [2, 4];
 
 /// When a reminder for tomorrow runs out: 4:00 local time. Before 4:00, a night that went past
 /// midnight still counts as the day before, so tomorrow is the coming 4:00 (user, 2026-11-16).
@@ -28,8 +36,9 @@ pub enum Timer {
         #[serde(with = "unix_ms")]
         ends: SystemTime,
     },
-    /// A reminder for tomorrow, which runs out at `MORNING`. Unlike a running timer, a session's
-    /// change of state doesn't stop or replace it, since it's for when you're back.
+    /// A reminder for later: tomorrow, which runs out at `MORNING`, or a snooze's hours from
+    /// when you set it. Unlike a running timer, a session's change of state doesn't stop or
+    /// replace it, since it's for when you're back.
     Tomorrow {
         #[serde(with = "unix_ms")]
         ends: SystemTime,
@@ -60,6 +69,21 @@ impl Timer {
         let ends = (today + 1) * DAY + morning - utc_offset;
         Timer::Tomorrow {
             ends: UNIX_EPOCH + Duration::from_secs(ends.max(0) as u64),
+        }
+    }
+
+    /// A reminder for `hours` from `now`, which a snoozed tile waits for.
+    pub fn later(now: SystemTime, hours: u32) -> Self {
+        Timer::Tomorrow {
+            ends: now + Duration::from_secs(u64::from(hours) * 3600),
+        }
+    }
+
+    /// When a reminder for later runs out, for the list of snoozed tiles.
+    pub fn later_ends(&self) -> Option<SystemTime> {
+        match *self {
+            Timer::Tomorrow { ends } => Some(ends),
+            _ => None,
         }
     }
 

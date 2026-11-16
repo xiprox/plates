@@ -2,6 +2,30 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-16: On macOS, the Accessibility API shows the app's session page under the name UI Automation does
+
+**Asked:** can Plates press a wrap-up's choice on macOS, as it does on Windows through UI Automation?
+
+**Expected:** the app's page is the same web code on both, and Chromium gives an element the same name whichever interface asks, so the Accessibility API would show the page and its buttons under the names UI Automation does.
+
+**Found:** a probe, `experiments/areas/hooks/ax-answer/probe.swift`, walked the app's tree after setting `AXManualAccessibility` on it (measured on macOS 26.5.2, Claude desktop app 5.11492.5, 2026-11-16, [results](../../../experiments/areas/hooks/ax-answer/results/2026-11-16-tree.txt)):
+
+- The session the app showed is an `AXWebArea` with the `AXTitle` "<session title> - Claude Code", the name UI Automation gives its document on Windows.
+- Each button has its label in `AXTitle`, and some, such as "Show sidebar", have it in `AXDescription` too, while a button named by its text, such as "Load earlier messages", has an empty `AXDescription`.
+- The probe read 1,514 elements in 286ms, asking for each attribute separately, and Plates' own search, which asks for four attributes in one call per element, walked the session's 1,348 in 63ms.
+- The session had no wrap-up, so no element held "Suggested".
+
+Once Plates had the macOS search, the user clicked a choice on a hover card, and the app's own button for it was pressed (seen by the user on macOS 26.5.2, 2026-11-16).
+That Plates was started from a Claude Code shell, so it ran with the permission of "claude", and which of `AXTitle` and `AXDescription` held the group's and the button's names is unmeasured.
+
+macOS asked for the permission of the program responsible for the probe.
+The probe started from a Claude Code shell showed up under Accessibility as "claude", Claude Code's own program, and ran trusted once that was turned on.
+The same probe wrapped in an app and started with `open` asked for its own permission, and System Settings didn't list it until it was added by hand, which we didn't finish.
+
+**Changed:** Plates presses a wrap-up's choice on macOS through the Accessibility API, and a card's choices on macOS are buttons.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#answering-a-wrap-up) and [02-tiles](../rack/02-tiles.md#the-hover-card).
+
 ## 2026-11-16: A new sub-session's first events come before the app's file names its parent
 
 **Asked:** why does a sub-session started while Plates runs show as a session of its own, and go under its parent's tile only after Plates restarts?

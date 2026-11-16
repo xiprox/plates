@@ -13,12 +13,10 @@ mod menu;
 mod motion;
 mod native;
 mod place;
-// Pressing a wrap-up's choice goes through Windows' UI Automation, which macOS doesn't have, so a
-// card there has no choice to press.
-#[cfg(windows)]
 mod press;
 mod rack_view;
 mod rows;
+mod swipe;
 mod tray;
 mod view;
 

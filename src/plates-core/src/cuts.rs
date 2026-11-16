@@ -205,7 +205,10 @@ mod tests {
             session_id: "s".into(),
             cwd: PathBuf::from("/w"),
             transcript_path: Some(path.to_path_buf()),
-            event: Some(SessionEvent::ToolFinished),
+            event: Some(SessionEvent::ToolFinished {
+                activity: None,
+                failed: false,
+            }),
             status: None,
             app: None,
         }

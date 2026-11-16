@@ -37,7 +37,8 @@ use windows::Win32::{
         Accessibility::{HWINEVENTHOOK, SetWinEventHook},
         Controls::MARGINS,
         Input::KeyboardAndMouse::{
-            GetAsyncKeyState, GetLastInputInfo, LASTINPUTINFO, VK_LBUTTON, VK_RBUTTON,
+            GetAsyncKeyState, GetLastInputInfo, LASTINPUTINFO, MOD_CONTROL, MOD_NOREPEAT,
+            MOD_SHIFT, RegisterHotKey, VK_LBUTTON, VK_RBUTTON, VK_SPACE,
         },
         Shell::{DefSubclassProc, SetWindowSubclass, ShellExecuteW},
         WindowsAndMessaging::{
@@ -46,8 +47,8 @@ use windows::Win32::{
             GetWindowRect, GetWindowThreadProcessId, HWND_TOPMOST, IsWindowVisible, MA_NOACTIVATE,
             SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
             SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-            WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_MOUSEACTIVATE, WM_NCCALCSIZE,
-            WS_EX_NOACTIVATE, WS_EX_TOPMOST,
+            WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_HOTKEY, WM_MOUSEACTIVATE,
+            WM_NCCALCSIZE, WS_EX_NOACTIVATE, WS_EX_TOPMOST,
         },
     },
 };
@@ -108,6 +109,13 @@ unsafe extern "system" fn subclass_proc(
         // draws without a title bar. The frame is invisible but takes clicks, and it would hold
         // a docked rack 8px off the screen edge, so the whole window is the client area.
         WM_NCCALCSIZE if wparam.0 != 0 => return LRESULT(0),
+        // The new-tile shortcut, which `watch_hotkey` registers on this window.
+        WM_HOTKEY if wparam.0 == HOTKEY_ID as usize => {
+            if let Some(tx) = HOTKEY.get() {
+                let _ = tx.try_send(());
+            }
+            return LRESULT(0);
+        }
         _ => {}
     }
     unsafe { DefSubclassProc(h, msg, wparam, lparam) }
@@ -374,6 +382,21 @@ static FOREGROUND: OnceLock<async_channel::Sender<()>> = OnceLock::new();
 /// Sends on the returned channel each time another program's window comes to the foreground,
 /// which is when a game raises itself over the rack. It must be called on the thread that runs
 /// the window's message loop, since Windows delivers the event through that loop.
+static HOTKEY: OnceLock<async_channel::Sender<()>> = OnceLock::new();
+const HOTKEY_ID: i32 = 1;
+
+/// Registers Ctrl + Shift + Space, the shortcut for a new tile, for the whole system, on the
+/// rack's window, whose subclass hands each press to the receiver this returns. It returns `None`
+/// when Windows refuses it, as when another program holds the shortcut.
+/// (documented, https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey)
+pub fn watch_hotkey(h: isize) -> Option<async_channel::Receiver<()>> {
+    let (tx, rx) = async_channel::unbounded();
+    HOTKEY.set(tx).ok()?;
+    let modifiers = MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT;
+    unsafe { RegisterHotKey(Some(hwnd(h)), HOTKEY_ID, modifiers, u32::from(VK_SPACE.0)) }.ok()?;
+    Some(rx)
+}
+
 pub fn watch_foreground() -> Option<async_channel::Receiver<()>> {
     let (tx, rx) = async_channel::unbounded();
     FOREGROUND.set(tx).ok()?;
@@ -474,6 +497,20 @@ const RUN_KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
 fn run_command() -> Option<String> {
     let exe = std::env::current_exe().ok()?;
     Some(format!("\"{}\"", exe.display()))
+}
+
+/// Whether you read the time on a 24-hour clock, as Windows shows it to you: your time format,
+/// such as "HH:mm:ss" or "h:mm:ss tt", has the 24-hour "H".
+/// (documented, https://learn.microsoft.com/en-us/windows/win32/intl/locale-stimeformat)
+pub fn uses_24_hour_clock() -> bool {
+    use windows::Win32::Globalization::{GetLocaleInfoEx, LOCALE_STIMEFORMAT};
+    let mut format = [0u16; 80];
+    // A null locale name is the user's own locale.
+    let len = unsafe { GetLocaleInfoEx(PCWSTR::null(), LOCALE_STIMEFORMAT, Some(&mut format)) };
+    if len <= 0 {
+        return true;
+    }
+    String::from_utf16_lossy(&format[..len as usize]).contains('H')
 }
 
 /// How far the local time is ahead of UTC, in seconds, by Windows' time zone setting, with

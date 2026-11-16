@@ -1,0 +1,45 @@
+probe.swift tree 60, macOS 26.5.2, Claude desktop app 5.11492.5, 2026-11-16.
+The probe ran from a Claude Code shell, with the Accessibility permission of the row named
+"claude" in System Settings. Excerpt: the path from the app to a session's page, and the page's
+first named elements. The session's title and every message's text are replaced with <...>, and
+the 1,518 lines of the full run aren't kept because they hold the user's sessions.
+
+trusted: true
+AXManualAccessibility set: 0 in 30ms
+0 AXApplication/ title=Claude desc=
+ 1 AXWindow/AXStandardWindow title=Claude desc=
+  2 AXGroup/ title=Claude desc= value=
+   3 AXGroup/ title= desc= value=
+    4 AXGroup/ title= desc= value=
+     5 AXGroup/ title= desc= value=
+      6 AXGroup/ title= desc= value=
+       7 AXGroup/ title= desc= value=
+        8 AXScrollArea/ title= desc=
+         9 AXWebArea/ title= desc= value=
+          10 AXGroup/AXEmptyGroup title= desc= value=
+       7 AXGroup/ title= desc= value=
+        8 AXGroup/ title= desc= value=
+         9 AXScrollArea/ title= desc=
+          10 AXWebArea/ title=<session title> - Claude Code desc= value=
+              14 AXHeading/ title=Claude Code desc=
+               15 AXGroup/AXLandmarkComplementary title=Sidebar desc=Sidebar value=
+                16 AXButton/ title=Show sidebar desc=Show sidebar value=
+                 17 AXGroup/AXLandmarkRegion title=Primary pane desc=Primary pane value=
+                             29 AXToolbar/ title=Session tools desc=Session tools value=
+                               31 AXHeading/ title=<session title> desc=<session title>
+                                 33 AXGroup/AXApplicationGroup title=Chat messages desc=Chat messages value=
+                                   35 AXButton/ title=Load earlier messages desc= value=
+                                    36 AXGroup/AXDocumentArticle title=Message 104 desc=Message 104 value=
+                                      38 AXHeading/ title=Claude responded: <...> desc=
+                                      38 AXButton/ title=Show message actions for Claude responded: <...> desc=Show message actions for Claude responded: <...> value=
+                             29 AXWebArea/ title=<artifact title> desc= value=
+visited 1514 in 286ms
+
+No element's title, description, or value held "Suggested", since the session the app showed had
+no wrap-up.
+
+Plates' own search (press/mac.rs, one AXUIElementCopyMultipleAttributeValues call per element),
+run once as a temporary test against the same app:
+page found true after 15 in 2.874916ms
+button found true after 64 in 3.547333ms
+group found false after 1348 in 62.580584ms

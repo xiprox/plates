@@ -29,6 +29,9 @@ struct Saved {
 struct SavedTile {
     title: String,
     timer: Timer,
+    /// A file without it, such as one an older Plates wrote, loads every tile on the rack.
+    #[serde(default)]
+    snoozed: bool,
 }
 
 /// What loading found: the rack, and where a file that didn't parse was moved to.
@@ -46,9 +49,10 @@ pub fn save(rack: &Rack, path: &Path) -> io::Result<()> {
         version: VERSION,
         own_tiles: rack
             .own_tiles()
-            .map(|(title, timer)| SavedTile {
+            .map(|(title, timer, snoozed)| SavedTile {
                 title: title.to_string(),
                 timer,
+                snoozed,
             })
             .collect(),
     };
@@ -77,7 +81,12 @@ pub fn load(path: &Path) -> io::Result<Loaded> {
     };
     match serde_json::from_slice::<Saved>(&bytes) {
         Ok(saved) if saved.version == VERSION => Ok(Loaded {
-            rack: Rack::with_own_tiles(saved.own_tiles.into_iter().map(|t| (t.title, t.timer))),
+            rack: Rack::with_own_tiles(
+                saved
+                    .own_tiles
+                    .into_iter()
+                    .map(|t| (t.title, t.timer, t.snoozed)),
+            ),
             broken: None,
         }),
         _ => {
@@ -259,6 +268,8 @@ mod tests {
         rack.start_timer(domain, 5, at(0));
         rack.tick(at(400_000));
         rack.add_own("Waiting on review", at(0));
+        let later = rack.add_own("Call the bank", at(0));
+        rack.snooze(later, Timer::later(at(400_000), 2), at(400_000));
 
         save(&rack, &path).unwrap();
         let loaded = load(&path).unwrap();
@@ -267,6 +278,11 @@ mod tests {
         let back: Vec<_> = loaded.rack.own_tiles().collect();
         assert_eq!(back, saved);
         assert_eq!(loaded.rack.tiles().len(), 3, "session tiles aren't saved");
+        assert_eq!(
+            loaded.rack.snoozed().count(),
+            1,
+            "a snoozed tile stays snoozed"
+        );
     }
 
     #[test]

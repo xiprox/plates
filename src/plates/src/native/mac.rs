@@ -12,14 +12,20 @@
 // versions, so every call sits in an unsafe block.
 #![allow(unused_unsafe)]
 
-use std::{ffi::c_char, path::PathBuf, time::Duration};
-
-use objc2::{MainThreadMarker, rc::Retained};
-use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSEvent, NSFloatingWindowLevel, NSScreen, NSView,
-    NSWindow, NSWindowCollectionBehavior,
+use std::{
+    ffi::{c_char, c_ulong, c_void},
+    path::PathBuf,
+    sync::OnceLock,
+    time::Duration,
 };
-use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+use objc2::{MainThreadMarker, rc::Retained, runtime::NSObjectProtocol, sel};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationOptions, NSApplicationActivationPolicy, NSEvent,
+    NSFloatingWindowLevel, NSRunningApplication, NSScreen, NSView, NSWindow,
+    NSWindowCollectionBehavior, NSWorkspace, NSWorkspaceOpenConfiguration,
+};
+use objc2_foundation::{NSBundle, NSPoint, NSRect, NSSize, NSString, NSURL};
 
 use crate::motion::{Edges, Rect};
 
@@ -207,6 +213,93 @@ pub fn set_foreground(h: isize) -> bool {
 /// put back.
 pub fn keep_on_top(_h: isize) {}
 
+static HOTKEY: OnceLock<async_channel::Sender<()>> = OnceLock::new();
+
+#[repr(C)]
+struct EventTypeSpec {
+    class: u32,
+    kind: u32,
+}
+
+#[repr(C)]
+struct EventHotKeyId {
+    signature: u32,
+    id: u32,
+}
+
+// Carbon's hot keys are the system-wide shortcuts macOS gives an app without asking for
+// Accessibility or Input Monitoring, which watching every key press with NSEvent would need.
+// (documented, https://developer.apple.com/documentation/carbon/1514524-registereventhotkey)
+// The declarations follow the global-hotkey crate's, 0.10.0, src/platform_impl/macos/ffi.rs.
+#[link(name = "Carbon", kind = "framework")]
+unsafe extern "C" {
+    fn GetApplicationEventTarget() -> *mut c_void;
+    fn InstallEventHandler(
+        target: *mut c_void,
+        handler: Option<unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> i32>,
+        count: c_ulong,
+        types: *const EventTypeSpec,
+        user_data: *mut c_void,
+        out: *mut *mut c_void,
+    ) -> i32;
+    fn RegisterEventHotKey(
+        key_code: u32,
+        modifiers: u32,
+        id: EventHotKeyId,
+        target: *mut c_void,
+        options: u32,
+        out: *mut *mut c_void,
+    ) -> i32;
+}
+
+/// Registers ⌃⇧Space, the shortcut for a new tile, for the whole system, and hands each press to
+/// the receiver it returns. It returns `None` when macOS refuses it, as when another app holds the
+/// shortcut.
+pub fn watch_hotkey(_h: isize) -> Option<async_channel::Receiver<()>> {
+    // 'keyb' and 5 are kEventClassKeyboard and kEventHotKeyPressed, 0x31 is Space's key code,
+    // and 0x1000 and 0x200 are controlKey and shiftKey.
+    const KEYBOARD: u32 = u32::from_be_bytes(*b"keyb");
+    const HOT_KEY_PRESSED: u32 = 5;
+    const SPACE: u32 = 0x31;
+    const CONTROL_SHIFT: u32 = 0x1000 | 0x200;
+    let (tx, rx) = async_channel::unbounded();
+    HOTKEY.set(tx).ok()?;
+    let pressed = EventTypeSpec {
+        class: KEYBOARD,
+        kind: HOT_KEY_PRESSED,
+    };
+    let id = EventHotKeyId {
+        signature: u32::from_be_bytes(*b"plts"),
+        id: 1,
+    };
+    let (mut handler, mut hotkey) = (std::ptr::null_mut(), std::ptr::null_mut());
+    unsafe {
+        let target = GetApplicationEventTarget();
+        if InstallEventHandler(
+            target,
+            Some(on_hotkey),
+            1,
+            &pressed,
+            std::ptr::null_mut(),
+            &mut handler,
+        ) != 0
+        {
+            return None;
+        }
+        if RegisterEventHotKey(SPACE, CONTROL_SHIFT, id, target, 0, &mut hotkey) != 0 {
+            return None;
+        }
+    }
+    Some(rx)
+}
+
+unsafe extern "C" fn on_hotkey(_: *mut c_void, _: *mut c_void, _: *mut c_void) -> i32 {
+    if let Some(tx) = HOTKEY.get() {
+        let _ = tx.try_send(());
+    }
+    0
+}
+
 /// macOS has no foreground change to watch for, since the floating level keeps the rack above
 /// other apps' windows.
 pub fn watch_foreground() -> Option<async_channel::Receiver<()>> {
@@ -332,9 +425,74 @@ pub fn utc_offset() -> i64 {
     tm.tm_gmtoff
 }
 
-/// Opens a link with the app macOS has for its scheme, through `open`.
+/// Whether you read the time on a 24-hour clock, as macOS shows it to you: the pattern your
+/// locale, with its 24-hour setting, gives for an hour alone has no AM or PM, as "HH" has none
+/// and "h a" does. (measured on macOS 26.5.2, 2026-11-16: "h a" for en_US)
+pub fn uses_24_hour_clock() -> bool {
+    use objc2_foundation::{NSDateFormatter, NSLocale, NSString};
+    let locale = unsafe { NSLocale::currentLocale() };
+    let pattern = unsafe {
+        NSDateFormatter::dateFormatFromTemplate_options_locale(
+            &NSString::from_str("j"),
+            0,
+            Some(&locale),
+        )
+    };
+    pattern.is_none_or(|p| !p.to_string().contains('a'))
+}
+
+/// Whether Plates is the active app.
+pub fn is_active() -> bool {
+    NSApplication::sharedApplication(mtm()).isActive()
+}
+
+/// Asks macOS to make Plates the active app, which `open_url` needs before it can hand the
+/// keyboard to the app it opens.
+pub fn activate_self() {
+    #[allow(deprecated)]
+    NSApplication::sharedApplication(mtm()).activateIgnoringOtherApps(true);
+}
+
+/// Opens a link with the app macOS has for its scheme, and hands that app the keyboard.
+///
+/// The rack is a panel that takes the keyboard on a click without making Plates the active app,
+/// and a link opened that way showed the session in the Claude app while the rack kept the
+/// keyboard. macOS activates an app at another's request once the active app yields to it
+/// (documented, `activateFromApplication:options:` in AppKit's NSRunningApplication.h), so the
+/// caller makes Plates active with `activate_self`, and this yields to the link's app and asks
+/// for it to be activated from Plates, which handed the Claude app the keyboard within 100ms
+/// (measured on macOS 26.5.2, 2026-11-16, record/areas/rack/log.md).
 pub fn open_url(url: &str) {
-    if let Err(e) = std::process::Command::new("/usr/bin/open").arg(url).spawn() {
-        eprintln!("Couldn't open {url}: {e}");
+    let Some(link) = NSURL::URLWithString(&NSString::from_str(url)) else {
+        eprintln!("Couldn't open {url}: it isn't a URL");
+        return;
+    };
+    let workspace = NSWorkspace::sharedWorkspace();
+    let target = workspace
+        .URLForApplicationToOpenURL(&link)
+        .and_then(|app| NSBundle::bundleWithURL(&app))
+        .and_then(|bundle| bundle.bundleIdentifier())
+        .and_then(|id| {
+            NSRunningApplication::runningApplicationsWithBundleIdentifier(&id).firstObject()
+        });
+    let me = NSApplication::sharedApplication(mtm());
+    // Yielding and activating from another app came with macOS 14, and before it an app could
+    // activate another without either.
+    let cooperative = me.respondsToSelector(sel!(yieldActivationToApplication:));
+    if let (Some(target), true) = (&target, cooperative) {
+        me.yieldActivationToApplication(target);
+    }
+    let config = NSWorkspaceOpenConfiguration::configuration();
+    config.setActivates(true);
+    workspace.openURL_configuration_completionHandler(&link, &config, None);
+    if let Some(target) = &target {
+        if cooperative {
+            target.activateFromApplication_options(
+                &NSRunningApplication::currentApplication(),
+                NSApplicationActivationOptions::empty(),
+            );
+        } else {
+            target.activateWithOptions(NSApplicationActivationOptions::empty());
+        }
     }
 }

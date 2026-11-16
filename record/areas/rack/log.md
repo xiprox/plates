@@ -2,6 +2,37 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-16: On a Mac, a tile's click hands the keyboard to the Claude app once Plates makes itself active and yields to it
+
+**Asked:** after clicking a session tile, why does typing go to the rack rather than the Claude app showing the session?
+
+**Expected:** the link's app taking the keyboard as macOS opens the link, since opening a link usually brings its app to the front.
+
+**Found:** the rack is a GPUI `PopUp` window, which GPUI builds as an `NSPanel` with the `NonactivatingPanel` style (read in gpui-pre-macos 0.3.12, `src/window.rs`, `MacWindow::open`), so a click makes it the key window without making Plates the active app.
+A link opened through the `open` command, and then through `NSWorkspace` with `activates` set, showed the session in the Claude app while the rack kept the keyboard (seen by the user on macOS 26.5.2, 2026-11-16).
+AppKit's header says an app activated at another's request should have that app yield to it first, which only the active app can do.
+With Plates making itself active through `activateIgnoringOtherApps`, waiting for `isActive`, yielding to the Claude app, opening the link, and calling `activateFromApplication:options:`, Plates was active before the link opened, macOS accepted the request, the Claude app was frontmost within 100ms, and the user's typing went to it (measured on macOS 26.5.2, Claude desktop app 5.11492.5, 2026-11-16, [results](results/2026-11-16-focus-handoff.txt)).
+
+**Changed:** a tile's click on macOS hands the keyboard to the Claude app this way, and before macOS 14, which brought yielding, Plates asks for the app to be activated without yielding, which is unverified.
+A click elsewhere on the rack still leaves the keyboard with it.
+
+**Affects:** [01-window](01-window.md#focus) and [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session).
+
+## 2026-11-16: On a Mac, the shortcut's first press opened the field and closed it at once
+
+**Asked:** why did ⌃⇧Space, pressed while another app was in front, bring the rack forward and open the inline name field, only for the field to close before you could type, and work on a second press?
+
+**Expected:** something taking the rack's activation away right after the hotkey gave it.
+
+**Found:** the user saw the field close at once on the first press and stay open on the second (seen on macOS 26.5.2, 2026-11-16).
+The rack closed the field whenever GPUI reported a change of the window's activation while the window wasn't active, so the window reported such a change after the field opened and before Plates became active.
+Which report that was is unverified, and logging each activation change through a first press would settle it.
+
+**Changed:** losing activation closes the field only once the rack's window has been active since the field opened.
+The user then pressed the shortcut with another app in front, and the field stayed open on the first press (seen on macOS 26.5.2, 2026-11-16).
+
+**Affects:** nothing in [02-tiles](02-tiles.md), which says what the hotkey does and not how the field closes.
+
 ## 2026-11-16: On a Mac, the rack shrinks to half size on a 1x screen beside a 2x primary
 
 **Asked:** why did the rack squeeze its tiles on the user's 1x external monitor, and why did a rack docked there come back too small to find?
