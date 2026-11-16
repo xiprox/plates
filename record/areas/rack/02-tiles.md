@@ -20,8 +20,10 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 - Session tiles come first, then your own tiles, with no divider or gap between the groups (user, 2026-11-15).
 - On Windows, a sub-session, a session that another session started in the Claude desktop app, sits under its parent's tile, indented 26px, with a line that comes down from under the parent's marker and turns into the tile (user, 2026-11-15).
   The app's sidebar draws a session's sub-sessions the same way (user's screenshot, 2026-11-15).
-  A sub-session's tile keeps its right edge flush with the other tiles', so it's 26px narrower.
-  A sub-session's own sub-sessions sit at the same indent, so the rack nests one level deep.
+  A sub-session's tile keeps its right edge flush with the other tiles', so it's 26px narrower for each level it's indented.
+  A sub-session's own sub-sessions sit under it, 26px further in, with their line coming down from under its marker, as the app's sidebar nests them (user, 2026-11-16).
+  The rack nests two levels deep, so a session that a second-level sub-session started sits at the second level too, drawn as that sub-session's sibling, and no tile is more than 52px narrower than one at the top level (user, 2026-11-16).
+  When another sub-session of the same parent sits further down, a sub-session's line also runs on past its tile, and past its own sub-sessions, to meet that sub-session's line, so a family's lines have no breaks (user, 2026-11-16).
   [01-core](../core/01-core.md#tiles) says where a sub-session's tile goes.
   A sub-session's tile is indented only while its parent's tile is above it with nothing but indented tiles between them, so one that sits anywhere else, such as after you dismiss its parent, keeps its place without the indent.
 - A session tile's marker is a circle, and your own tile's is a square.

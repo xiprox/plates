@@ -2,6 +2,21 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-16: On Windows, a border on a box with no width draws no line
+
+**Asked:** why did a family's line still have a gap between two sub-sessions after each tile drew it on down, through the gap below it, to the next?
+
+**Expected:** an absolutely placed box with a left border and a height, but no width, would draw a 1px line down its left edge.
+
+**Found:** a capture of the rack showed each sub-session's └ but no line running from the first down to the second (measured on Windows 11 25H2, 2026-11-16, [results/2026-11-16-zero-width-border.png](results/2026-11-16-zero-width-border.png)).
+The same line drawn as a box 1px wide, filled with the line's color, showed and met the next sub-session's line ([results/2026-11-16-filled-line.png](results/2026-11-16-filled-line.png)).
+Each picture is cropped from a copy of the screen over the rack window's rectangle, taken through .NET's `Graphics.CopyFromScreen`, and enlarged to 4 times its size.
+We haven't read GPUI's source to find why it draws no border on a box with no width.
+
+**Changed:** a line that runs on past a tile, through the 6px gap below it, is a filled 1px box, and so is the short line that branches from it into the tile.
+
+**Affects:** nothing in [02-tiles](02-tiles.md), which says what the lines show and not how they're drawn.
+
 ## 2026-11-16: On a Mac, hovering the docked strip made it flicker between peeking and not
 
 **Asked:** what is wrong with the docked strip on macOS?

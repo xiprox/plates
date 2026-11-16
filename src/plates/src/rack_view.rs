@@ -58,7 +58,7 @@ pub fn rack_height(tiles: usize, toast: bool) -> f32 {
 
 /// The rack's height while rows grow and shrink, with each row counted by how far it has grown.
 pub fn rack_height_for(tile_rows: f32, undo_row: f32) -> f32 {
-    BAND_H + 74. + 66. * tile_rows + (TOAST_H + 6.) * undo_row
+    BAND_H + 74. + crate::view::ROW_H * tile_rows + (TOAST_H + 6.) * undo_row
 }
 
 /// The docked strip's height for `pips` marks, one per tile and a moon while any is snoozed.

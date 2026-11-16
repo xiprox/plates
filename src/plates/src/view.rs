@@ -88,53 +88,114 @@ fn grown(row: AnyElement, full: f32, factor: f32) -> AnyElement {
 /// the other tiles' (user, 2026-11-15).
 const NEST: f32 = 26.;
 
-// Which of the rack's tiles to draw as sub-sessions under their parent: a session tile whose
-// parent is the tile above it, or is a sub-session drawn under that tile, so a family reads as one
-// group, one level deep. A sub-session whose parent's tile is gone, or sits elsewhere, keeps its
-// place without an indent.
-fn nesting(tiles: &[Tile]) -> Vec<bool> {
-    let mut family: Vec<&str> = Vec::new();
+/// A tile's height, which the phantom tile and the field for a new tile share.
+const TILE_H: f32 = 60.;
+
+/// A tile's row once grown: the tile and the 6px gap below it.
+pub(crate) const ROW_H: f32 = TILE_H + 6.;
+
+/// How many levels deep the rack nests sub-sessions, as the Claude desktop app's sidebar nests a
+/// sub-session's own sub-sessions under it. A session started further down sits at the last level,
+/// so no tile is narrower than two indents (user, 2026-11-16).
+const MAX_DEPTH: usize = 2;
+
+// How deep to draw each of the rack's tiles: 0 for a tile that heads a family or has none, and
+// one level below its parent's for a sub-session whose parent is earlier in the same run of
+// nested tiles, up to MAX_DEPTH, so a family reads as one group. A sub-session whose parent's tile
+// is gone, or sits elsewhere, keeps its place at 0.
+fn nesting(tiles: &[Tile]) -> Vec<usize> {
+    // The app IDs of the run's tiles so far, each with its depth.
+    let mut family: Vec<(&str, usize)> = Vec::new();
     tiles
         .iter()
         .map(|t| {
             let Some(s) = t.session() else {
                 family.clear();
-                return false;
+                return 0;
             };
-            let nested = s.app_parent.as_deref().is_some_and(|p| family.contains(&p));
-            if !nested {
+            let depth = s
+                .app_parent
+                .as_deref()
+                .and_then(|p| family.iter().find(|(id, _)| *id == p))
+                .map_or(0, |(_, d)| (d + 1).min(MAX_DEPTH));
+            if depth == 0 {
                 family.clear();
             }
-            family.extend(s.app_id.as_deref());
-            nested
+            family.extend(s.app_id.as_deref().map(|id| (id, depth)));
+            depth
         })
         .collect()
 }
 
-// A sub-session's tile, indented, with a line that comes down from under its parent's marker and
-// turns into the tile, as the Claude desktop app's sidebar draws a session's side sessions.
-fn nested_row(tile: AnyElement) -> AnyElement {
-    // The parent's marker is centered 16.5px in from its tile's left edge: 12px of padding and
-    // half of the 9px marker.
-    let branch = div()
-        .absolute()
-        .left(px(16.))
-        .top_0()
-        .w(px(NEST - 19.))
-        .h(px(30.))
-        .border_l_1()
-        .border_b_1()
-        .rounded_bl(px(5.))
-        .border_color(white(0.16));
+// For each row, drawn at `depths`, and each level from 1 to the row's depth, whether that level's
+// line runs on past the row: whether a later row sits at that level before any row sits above
+// it. At the row's own level that makes its line a ├ rather than a └, and at a level above, a line
+// passing beside the row on its way to a later sibling of the row's ancestor.
+fn runs_on(depths: &[usize]) -> Vec<Vec<bool>> {
+    depths
+        .iter()
+        .enumerate()
+        .map(|(i, &depth)| {
+            (1..=depth)
+                .map(|level| depths[i + 1..].iter().find(|&&d| d <= level) == Some(&level))
+                .collect()
+        })
+        .collect()
+}
+
+// A sub-session's tile, indented a NEST for each level, with a line that comes down from under
+// its parent's marker and turns into the tile, as the Claude desktop app's sidebar draws a
+// session's side sessions. Where a level's line runs on, it goes straight down the row, through
+// the gap below the tile, to meet the next tile's line at that level, so a family's lines have no
+// breaks (user, 2026-11-16).
+fn nested_row(tile: AnyElement, runs_on: &[bool]) -> AnyElement {
+    let depth = runs_on.len();
+    let color = white(0.16);
+    let mut lines: Vec<Div> = Vec::new();
+    for (k, &on) in runs_on.iter().enumerate() {
+        // A tile's marker is centered 16.5px in from its left edge: 12px of padding and half of
+        // the 9px marker. So level k + 1's line runs down at 16px in from the left edge of a tile
+        // at level k, which sits k NESTs in, and meets the tile at y 29.
+        let x = k as f32 * NEST + 16.;
+        let own = k + 1 == depth;
+        if on {
+            // A border on a box with no width draws nothing, so these lines are filled 1px boxes
+            // (record/areas/rack/log.md, 2026-11-16). The row is ROW_H tall, the tile and the gap
+            // below it, so the line reaches the next row.
+            let down = div().w(px(1.)).h(px(ROW_H)).left(px(x)).top_0();
+            lines.push(down.absolute().bg(color));
+            if own {
+                let across = div()
+                    .w(px(NEST - 20.))
+                    .h(px(1.))
+                    .left(px(x + 1.))
+                    .top(px(29.));
+                lines.push(across.absolute().bg(color));
+            }
+        } else if own {
+            lines.push(
+                div()
+                    .absolute()
+                    .left(px(x))
+                    .top_0()
+                    .w(px(NEST - 19.))
+                    .h(px(30.))
+                    .border_l_1()
+                    .border_b_1()
+                    .rounded_bl(px(5.))
+                    .border_color(color),
+            );
+        }
+    }
     div()
         .flex()
         .child(
             div()
                 .flex_none()
                 .relative()
-                .w(px(NEST))
-                .h(px(60.))
-                .child(branch),
+                .w(px(depth as f32 * NEST))
+                .h(px(TILE_H))
+                .children(lines),
         )
         .child(div().flex_1().min_w_0().child(tile))
         .into_any_element()
@@ -580,7 +641,7 @@ impl RackView {
             .relative()
             .left(px(shift))
             .opacity(1. - 0.7 * (shift.abs() / crate::swipe::OUT).min(1.))
-            .h(px(60.))
+            .h(px(TILE_H))
             .flex()
             .rounded(px(10.))
             .overflow_hidden()
@@ -812,7 +873,7 @@ impl RackView {
         div()
             // A press here stays with the field, since a press anywhere else on the rack closes it.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .h(px(60.))
+            .h(px(TILE_H))
             .flex()
             .items_center()
             .gap(px(10.))
@@ -843,7 +904,7 @@ impl RackView {
         let phantom = div()
             .id("phantom")
             .group("phantom")
-            .h(px(60.))
+            .h(px(TILE_H))
             .flex()
             .items_center()
             .justify_center()
@@ -940,35 +1001,50 @@ impl RackView {
         self.spots.borrow_mut().clear();
         let present = self.rack.tiles();
         let leaving = self.rows.leaving();
-        let nested = nesting(present);
-        // A sub-session shrinking out keeps its indent while its parent is still on the rack.
-        let parent_shown = |t: &Tile| {
-            t.session()
-                .and_then(|s| s.app_parent.as_deref())
-                .is_some_and(|p| {
-                    present
-                        .iter()
-                        .any(|o| o.session().and_then(|s| s.app_id.as_deref()) == Some(p))
+        let depths = nesting(present);
+        // A sub-session shrinking out keeps its indent, one level below its parent's, while its
+        // parent is still on the rack.
+        let leaving_depth = |t: &Tile| {
+            let parent = t.session().and_then(|s| s.app_parent.as_deref());
+            present
+                .iter()
+                .zip(&depths)
+                .find(|(o, _)| {
+                    parent.is_some() && o.session().and_then(|s| s.app_id.as_deref()) == parent
                 })
+                .map_or(0, |(_, d)| (d + 1).min(MAX_DEPTH))
         };
-        let row = |el: AnyElement, nest: bool| if nest { nested_row(el) } else { el };
-        let mut tiles: Vec<AnyElement> = Vec::new();
+        // Each row in the order it's drawn, with its depth and how far it has grown.
+        let mut rows: Vec<(AnyElement, usize, f32)> = Vec::new();
         for (i, t) in present.iter().enumerate() {
             for (k, l) in leaving.iter().enumerate() {
                 if l.before == Some(t.id) {
                     let el = self.tile(LEAVING + k, &l.tile, now, cx);
-                    tiles.push(grown(row(el, parent_shown(&l.tile)), 66., l.factor(at)));
+                    rows.push((el, leaving_depth(&l.tile), l.factor(at)));
                 }
             }
             let el = self.tile(i, t, now, cx);
-            tiles.push(grown(row(el, nested[i]), 66., self.rows.factor(t.id, at)));
+            rows.push((el, depths[i], self.rows.factor(t.id, at)));
         }
         for (k, l) in leaving.iter().enumerate() {
             if l.before.is_none_or(|b| present.iter().all(|t| t.id != b)) {
                 let el = self.tile(LEAVING + k, &l.tile, now, cx);
-                tiles.push(grown(row(el, parent_shown(&l.tile)), 66., l.factor(at)));
+                rows.push((el, leaving_depth(&l.tile), l.factor(at)));
             }
         }
+        let lines = runs_on(&rows.iter().map(|(_, depth, _)| *depth).collect::<Vec<_>>());
+        let tiles: Vec<AnyElement> = rows
+            .into_iter()
+            .zip(lines)
+            .map(|((el, depth, factor), lines)| {
+                let el = if depth > 0 {
+                    nested_row(el, &lines)
+                } else {
+                    el
+                };
+                grown(el, ROW_H, factor)
+            })
+            .collect();
         let undo = self.undo_row(at, cx);
         let last = self.last_row(cx);
         // While any tile is snoozed, a violet moon with their count sits at the band's right,
@@ -1303,5 +1379,54 @@ impl Render for RackView {
             // (read in gpui-pre 0.3.12, src/style.rs, `TextStyle::default`)
             .line_height(relative(1.21))
             .child(content)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Only these, since the glob of GPUI's names above holds a `test` macro of its own.
+    use super::{nesting, runs_on};
+    use plates_core::{Rack, SessionEvent, desktop::AppSession};
+    use std::{path::Path, time::SystemTime};
+
+    #[test]
+    fn a_family_nests_two_levels_deep_and_each_levels_line_runs_on_to_the_next_tile_at_it() {
+        let mut rack = Rack::new();
+        let add = |rack: &mut Rack, id: &str, parent: Option<&str>| {
+            let started = SessionEvent::Started {
+                title: None,
+                resumed: false,
+            };
+            rack.apply(id, Path::new("/w"), started, SystemTime::UNIX_EPOCH);
+            let app = AppSession {
+                id: Some(format!("local_{id}")),
+                parent: parent.map(|p| format!("local_{p}")),
+                ..AppSession::default()
+            };
+            rack.set_app_session(id, &app);
+            rack.place_under_parent(id);
+        };
+        add(&mut rack, "stage", None);
+        add(&mut rack, "idle", Some("stage"));
+        add(&mut rack, "crash", Some("idle"));
+        add(&mut rack, "deeper", Some("crash"));
+        add(&mut rack, "second", Some("stage"));
+        add(&mut rack, "other", None);
+
+        // The great-grandchild sits at the last level, beside its parent.
+        let depths = nesting(rack.tiles());
+        assert_eq!(depths, [0, 1, 2, 2, 1, 0]);
+        // Stage's line passes beside its grandchildren on its way to its second sub-session.
+        assert_eq!(
+            runs_on(&depths),
+            [
+                vec![],
+                vec![true],
+                vec![true, true],
+                vec![true, false],
+                vec![false],
+                vec![]
+            ]
+        );
     }
 }
