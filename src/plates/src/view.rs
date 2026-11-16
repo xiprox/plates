@@ -1143,7 +1143,6 @@ impl RackView {
             .border_color(rgb(BORDER))
             .border_t_1()
             .border_b_1()
-            .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.set_peek(*hovered, cx)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _: &MouseDownEvent, _, _| this.note_press()),
@@ -1202,7 +1201,14 @@ impl RackView {
         let gap = popover
             .is_some()
             .then(|| div().flex_none().w(px(POPOVER_GAP)));
-        let row = div().size_full().flex().items_start();
+        // The peek follows the pointer over the whole window, the list included, so moving from
+        // the strip onto the list keeps it open.
+        let row = div()
+            .id("strip-window")
+            .size_full()
+            .flex()
+            .items_start()
+            .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.set_peek(*hovered, cx)));
         match side {
             Side::Right => row.children(popover).children(gap).child(strip),
             Side::Left => row.child(strip).children(gap).children(popover),

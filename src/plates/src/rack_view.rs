@@ -445,6 +445,11 @@ impl RackView {
 
     fn tick(&mut self, cx: &mut Context<Self>) {
         let now = SystemTime::now();
+        // GPUI reports the pointer leaving the window only on a change, so a pointer that left
+        // after a report `set_peek` ignored would leave the strip peeking. The tick closes it.
+        if self.peek && !native::window_rect(self.hwnd).contains(native::cursor_pos()) {
+            self.set_peek(false, cx);
+        }
         if self.rack.tick(now) {
             self.save();
             self.after_change(cx);
@@ -1006,6 +1011,14 @@ impl RackView {
     }
 
     pub(crate) fn set_peek(&mut self, on: bool, cx: &mut Context<Self>) {
+        // Peeking widens the window inward, which moves it under a pointer that stays still. On
+        // macOS, GPUI learns where the pointer is in a window only when the mouse moves, so it
+        // reported the strip unhovered at once, the peek closed, and the strip flickered between
+        // the two (seen on macOS 26.5.2, 2026-11-16, record/areas/rack/log.md). So the peek
+        // closes only once the OS says the pointer has left the window.
+        if !on && native::window_rect(self.hwnd).contains(native::cursor_pos()) {
+            return;
+        }
         if self.docked.is_some() && self.tween.is_none() && self.peek != on {
             self.peek = on;
             cx.notify();

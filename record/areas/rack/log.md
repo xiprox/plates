@@ -2,6 +2,22 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-16: On a Mac, hovering the docked strip made it flicker between peeking and not
+
+**Asked:** what is wrong with the docked strip on macOS?
+
+**Expected:** hovering the strip peeks it 6px out of the edge and opens the list of tiles that need you on its inner side, as [01-window](01-window.md#docking) describes.
+
+**Found:** in the user's screen recording, the strip, hovered and held still, jumped about 200px inward with the list drawn as a thin line beside it, then back to the edge, several times a second (seen on macOS 26.5.2, 2026-11-16).
+The recording isn't kept, since it shows the user's sessions.
+Drawing the docked window with the peek on, from `plates showcase` with a temporary change that docked the rack and turned the peek on, showed the list on the inner side and the strip at the edge, 216px wide in all, so the layout was right.
+The peek widens the window inward, which moves the window under a pointer that stays still, and GPUI on macOS updates where the pointer is in a window only when the mouse moves, so the strip's hover ended without the mouse moving, the peek closed, and the strip came back under the pointer (unverified, since we haven't read where GPUI on macOS updates the pointer's position).
+
+**Changed:** the whole docked window, the list included, holds the hover, and the peek closes only once the OS's pointer position is outside the window, with the rack's once-a-second tick closing a peek that GPUI left open.
+Whether the flicker is gone is unverified until the user hovers the strip again.
+
+**Affects:** nothing in [01-window](01-window.md), which says what the peek does.
+
 ## 2026-11-16: GPUI draws the rack into a picture offscreen, with no permission to record the screen
 
 **Asked:** how can we take a picture of Plates for the README that shows made-up tiles and nothing of the desktop behind them?
