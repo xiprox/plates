@@ -163,7 +163,7 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
 - When the timer runs out, the tile is time-up, and that becomes its status:
   - your own tile's square turns yellow, and the tile takes a yellow tint
   - a session tile takes a tint of its own status color, amber for your turn and orange for an approval, and its dot keeps showing Claude's state
-  - the timer slot goes back to the hourglass, which starts another 5 minutes when you click it, and clicking anywhere else on the tile clears time-up
+  - the timer slot's hourglass stays full of yellow, where a running timer's fill ends, so the tile's yellow reads as the timer having run out, and clicking it turns it over to start another 5 minutes, so hovering it doesn't dim it as it does a running timer (user, 2026-11-16), while clicking anywhere else on the tile clears time-up
 - A timer runs on the wall clock, whether or not anyone is at the desk.
 - The timer slot's icon, divider, and hover highlight are translucent white, so they take on a tile's tint without adding a color of their own (user, 2026-11-15).
 

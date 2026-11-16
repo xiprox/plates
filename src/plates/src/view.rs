@@ -694,6 +694,15 @@ impl RackView {
                     )
                     .into_any_element()
             }
+            // A reminder that has come due leaves the hourglass full of yellow, where a running
+            // timer's fill ends, so the tile's yellow reads as the timer having run out. A click
+            // turns it over to start another 5 minutes rather than cancel, so hovering doesn't
+            // dim it as it does a running timer (user, 2026-11-16).
+            None if t.timer.is_time_up() => svg()
+                .path("plates/hourglass.svg")
+                .size(px(20.))
+                .text_color(rgb(YELLOW))
+                .into_any_element(),
             None => svg()
                 .path("plates/hourglass.svg")
                 .size(px(20.))
