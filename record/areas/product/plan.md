@@ -60,6 +60,8 @@ If GPUI can't give the rack its window on macOS, we weigh the options then.
 A Release workflow that builds Windows and macOS, packs each with Velopack, and attaches the installers to a GitHub release, as [decision 003](../../decisions/003-releases-with-release-please-and-velopack.md) and [releasing](../build/releasing.md) describe.
 Done when a GitHub release holds both platforms' installers, built by the workflow.
 
+Done on 2026-11-16, with [v0.1.0](https://github.com/xiprox/plates/releases/tag/v0.1.0).
+
 ## Later
 
 Plates looking for its own updates while it runs, and the questions [01-window](../rack/01-window.md#left-open) leaves open.
