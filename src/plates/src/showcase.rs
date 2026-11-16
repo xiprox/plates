@@ -211,6 +211,36 @@ pub fn rack(now: SystemTime) -> (Rack, TileId) {
         .concat(),
     );
 
+    // Two finished sessions and an errand you dismissed wait in the archive.
+    let finished: Vec<TileId> = [
+        (
+            "datagrip",
+            "DataGrip MCP access",
+            "Can you reach the DataGrip MCP?",
+        ),
+        ("issue", "GitHub issue 470", "What's this issue about?"),
+    ]
+    .into_iter()
+    .map(|(id, title, prompt)| {
+        session(
+            id,
+            "web",
+            title,
+            None,
+            [
+                at(200, start(prompt)),
+                at(190, ended("Answered.", None, &[], "Done.")),
+            ]
+            .concat(),
+        )
+    })
+    .collect();
+    for tile in finished {
+        rack.remove(tile, ago(150));
+    }
+    let hub = rack.add_own("Order a USB-C hub", ago(300));
+    rack.remove(hub, ago(240));
+
     // Your own tiles wait on something else: one for a PR's checks, with its timer running, and
     // one for a reply on Slack, whose reminder has come due.
     let checks = rack.add_own("Merge PR after checks pass", ago(12));
@@ -242,14 +272,15 @@ mod canvas {
     pub const HEIGHT: f32 = 750.;
     /// The gap between the two racks.
     pub const GAP: f32 = 64.;
-    /// The canvas's color at its top left and its bottom right, between the blue of a working
-    /// session's marker and the violet of the moon.
-    pub const FROM: [f32; 3] = [0x4F as f32, 0x6E as f32, 0xF0 as f32];
-    pub const TO: [f32; 3] = [0x8C as f32, 0x6A as f32, 0xEE as f32];
+    /// The canvas's color at its top and its bottom, a warm stone gray that darkens a little
+    /// downward, as a surface under a light from above would, so the dark rack stands out on
+    /// GitHub's light and dark themes alike (user, 2026-11-16).
+    pub const FROM: [f32; 3] = [0xD2 as f32, 0xCE as f32, 0xC6 as f32];
+    pub const TO: [f32; 3] = [0xBC as f32, 0xB7 as f32, 0xAE as f32];
     /// The shadow's blur, how far down it falls, and how dark it gets.
     pub const BLUR: f32 = 18.;
     pub const DROP: f32 = 16.;
-    pub const DARK: f32 = 0.45;
+    pub const DARK: f32 = 0.34;
 }
 
 /// Lays the rack on the canvas twice, and over the second the card, `card.1` logical pixels right
@@ -263,7 +294,7 @@ pub fn compose(rack: &Picture, card: Option<(&Picture, f32, f32)>) -> Picture {
     let mut pixels = vec![[0f32; 3]; width * height];
     for y in 0..height {
         for x in 0..width {
-            let t = (x as f32 / width as f32 + y as f32 / height as f32) / 2.;
+            let t = 0.8 * y as f32 / height as f32 + 0.2 * x as f32 / width as f32;
             pixels[y * width + x] = [0, 1, 2].map(|c| FROM[c] + (TO[c] - FROM[c]) * t);
         }
     }

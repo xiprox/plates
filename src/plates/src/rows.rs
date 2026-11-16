@@ -189,7 +189,7 @@ mod tests {
 
         let a = rack.tiles()[0].id;
         let b = rack.tiles()[1].id;
-        let removed = rack.remove(a).unwrap();
+        let removed = rack.remove(a, SystemTime::UNIX_EPOCH).unwrap();
         let later = t0 + ENTER;
         rows.track(rack.tiles(), Some("A"), true, later);
         assert_eq!(rows.leaving().len(), 1);

@@ -18,8 +18,11 @@ use crate::{
 
 pub const MENU_W: f32 = 156.;
 
-/// The list of snoozed tiles is wider than the other menus, for their titles.
-const SNOOZED_W: f32 = 260.;
+/// The lists of snoozed and archived tiles are wider than the other menus, for their titles.
+const LIST_W: f32 = 260.;
+
+/// How many rows the archive's list shows before it scrolls.
+const ARCHIVE_ROWS: usize = 8;
 
 /// How long a menu takes to fade in.
 const FADE: Duration = Duration::from_millis(120);
@@ -38,6 +41,9 @@ pub enum MenuKind {
     Tile(TileId, bool),
     /// The snoozed tiles, from the moon in the grip band, with how many there were as it opened.
     Snoozed { count: usize },
+    /// The tiles you removed, from the archive's box in the grip band, with how many there were
+    /// as it opened.
+    Archived { count: usize },
 }
 
 impl MenuKind {
@@ -52,14 +58,23 @@ impl MenuKind {
             MenuKind::Tile(..) => 46.,
             // A 6px pad top and bottom, a 23px heading, a 32px row per tile, and a 1px border.
             MenuKind::Snoozed { count } => 37. + 32. * count as f32,
+            // The same with a 27px heading, which holds the Clear all button, and rows up to
+            // `ARCHIVE_ROWS`, past which they scroll.
+            MenuKind::Archived { count } => 41. + 32. * count.min(ARCHIVE_ROWS) as f32,
         }
     }
 
     pub fn width(self) -> f32 {
         match self {
-            MenuKind::Snoozed { .. } => SNOOZED_W,
+            MenuKind::Snoozed { .. } | MenuKind::Archived { .. } => LIST_W,
             _ => MENU_W,
         }
+    }
+
+    /// Whether the menu is one of the grip band's lists, which opens under its button at the
+    /// rack's right rather than at the pointer.
+    pub fn is_band_list(self) -> bool {
+        matches!(self, MenuKind::Snoozed { .. } | MenuKind::Archived { .. })
     }
 }
 
@@ -71,11 +86,12 @@ pub struct MenuView {
     /// opened it doesn't close it.
     armed: bool,
     opened: Instant,
-    /// The snoozed tiles as they stood when the rack opened the list of them. The menu can't read
-    /// the rack while drawing, since GPUI draws a new window once before open_window returns, and
-    /// the rack is still handling the click then, so the read panics and Plates aborts. (read in
-    /// gpui-pre 0.3.12, src/app.rs, App::open_window)
-    snoozed: Vec<Tile>,
+    /// The snoozed or archived tiles as they stood when the rack opened the list of them, with
+    /// when each archived one was removed. The menu can't read the rack while drawing, since GPUI
+    /// draws a new window once before open_window returns, and the rack is still handling the
+    /// click then, so the read panics and Plates aborts. (read in gpui-pre 0.3.12, src/app.rs,
+    /// App::open_window)
+    listed: Vec<(Tile, Option<SystemTime>)>,
 }
 
 impl MenuView {
@@ -83,7 +99,7 @@ impl MenuView {
         rack: WeakEntity<RackView>,
         kind: MenuKind,
         bounds: Rect,
-        snoozed: Vec<Tile>,
+        listed: Vec<(Tile, Option<SystemTime>)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -104,7 +120,7 @@ impl MenuView {
             hwnd,
             armed: false,
             opened: Instant::now(),
-            snoozed,
+            listed,
         }
     }
 
@@ -195,9 +211,9 @@ impl MenuView {
         let offset = native::utc_offset();
         let hours24 = native::uses_24_hour_clock();
         let rows: Vec<_> = self
-            .snoozed
+            .listed
             .iter()
-            .map(|t| (t.id, marker(t, false), t.title(), t.timer.later_ends()))
+            .map(|(t, _)| (t.id, marker(t, false), t.title(), t.timer.later_ends()))
             .collect();
         for (id, mark, title, ends) in rows {
             let when = ends
@@ -238,6 +254,92 @@ impl MenuView {
             );
         }
         items
+    }
+
+    // The tiles you removed, newest first, each with its marker as it stands now and how long ago
+    // you removed it, and a click brings one back. Clear all forgets them (user, 2026-11-16).
+    fn archived_items(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let now = SystemTime::now();
+        let clear = div()
+            .id("clear")
+            .px(px(7.))
+            .py(px(2.))
+            .rounded(px(5.))
+            .text_size(px(11.))
+            .text_color(rgb(MUTED))
+            .hover(|s| s.bg(rgb(BORDER)).text_color(rgb(TEXT)))
+            .child("Clear all")
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.rack.update(cx, |rack, cx| rack.clear_archive(cx)).ok();
+                this.close(window, cx);
+            }));
+        let heading = div()
+            .h(px(27.))
+            .pl(px(10.))
+            .pr(px(3.))
+            .pb(px(4.))
+            .flex()
+            .items_end()
+            .justify_between()
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(MUTED))
+                    .child("ARCHIVE"),
+            )
+            .child(clear);
+        let rows: Vec<_> = self
+            .listed
+            .iter()
+            .map(|(t, at)| (t.id, marker(t, false), t.title(), *at))
+            .collect();
+        let rows = rows.into_iter().map(|(id, mark, title, at)| {
+            let when = at.map(|at| ago(at, now)).unwrap_or_default();
+            div()
+                .id(("archived", id.0))
+                .flex_none()
+                .h(px(32.))
+                .px(px(10.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .rounded(px(6.))
+                .hover(|s| s.bg(rgb(BORDER)))
+                .child(mark)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(13.))
+                        .text_color(rgb(TEXT))
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(11.5))
+                        .text_color(rgb(MUTED))
+                        .child(when),
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.rack.update(cx, |rack, cx| rack.unarchive(id, cx)).ok();
+                    window.remove_window();
+                }))
+        });
+        vec![
+            heading.into_any_element(),
+            div()
+                .id("archive-rows")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .children(rows)
+                .into_any_element(),
+        ]
     }
 
     /// What picking a length does: starts the tile's timer for `minutes` and closes the menu.
@@ -322,6 +424,7 @@ impl Render for MenuView {
             MenuKind::Rack { login } => self.rack_items(login, cx),
             MenuKind::Tile(tile, read) => self.tile_items(tile, read, cx),
             MenuKind::Snoozed { .. } => self.snoozed_items(cx),
+            MenuKind::Archived { .. } => self.archived_items(cx),
         };
         let shown = (self.opened.elapsed().as_secs_f32() / FADE.as_secs_f32()).min(1.);
         div()
@@ -337,6 +440,18 @@ impl Render for MenuView {
             .border_1()
             .border_color(rgb(0x34363C))
             .children(items)
+    }
+}
+
+// How long ago you removed a tile: "just now", "12m ago", "3h ago", "yesterday", or "4d ago".
+fn ago(at: SystemTime, now: SystemTime) -> String {
+    let minutes = now.duration_since(at).unwrap_or_default().as_secs() / 60;
+    match minutes {
+        0 => "just now".to_string(),
+        1..60 => format!("{minutes}m ago"),
+        60..1440 => format!("{}h ago", minutes / 60),
+        1440..2880 => "yesterday".to_string(),
+        _ => format!("{}d ago", minutes / 1440),
     }
 }
 
@@ -368,8 +483,19 @@ fn back_at(ends: SystemTime, now: SystemTime, utc_offset: i64, hours24: bool) ->
 mod tests {
     // Only what the test needs, since the module's glob import of GPUI brings a `test` attribute
     // of its own, which shadows the standard one.
-    use super::back_at;
+    use super::{ago, back_at};
     use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn ago_counts_minutes_hours_and_days() {
+        let now = UNIX_EPOCH + Duration::from_secs(10 * 86_400);
+        let before = |s: u64| now - Duration::from_secs(s);
+        assert_eq!(ago(before(30), now), "just now");
+        assert_eq!(ago(before(12 * 60), now), "12m ago");
+        assert_eq!(ago(before(3 * 3600 + 59), now), "3h ago");
+        assert_eq!(ago(before(30 * 3600), now), "yesterday");
+        assert_eq!(ago(before(4 * 86_400), now), "4d ago");
+    }
 
     #[test]
     fn a_return_time_follows_the_clock_you_read() {

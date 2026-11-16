@@ -42,6 +42,13 @@ fn icon(name: &str) -> Option<String> {
                 r#"<polygon points="7,4 17,4 12,12" fill-opacity="0.45"/><g {STROKE} stroke-width="1.6"><polygon points="7,4 17,4 12,12 17,20 7,20 12,12"/><line x1="6" y1="3.5" x2="18" y2="3.5"/><line x1="6" y1="20.5" x2="18" y2="20.5"/></g>"#
             ),
         ),
+        // A box with its lid, for the archive of tiles you removed.
+        "archive.svg" => svg(
+            "0 0 24 24",
+            format!(
+                r#"<g {STROKE} stroke-width="1.7"><rect x="3.5" y="4.5" width="17" height="4.5" rx="1.2"/><path d="M5 9v9.3a1.2 1.2 0 0 0 1.2 1.2h11.6a1.2 1.2 0 0 0 1.2-1.2V9"/><path d="M10 13h4"/></g>"#
+            ),
+        ),
         "x.svg" => svg(
             "0 0 24 24",
             format!(r#"<path d="M7 7l10 10M17 7L7 17" {STROKE} stroke-width="1.8"/>"#),

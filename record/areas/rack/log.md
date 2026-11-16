@@ -31,7 +31,7 @@ GPUI blends each color by its alpha onto a texture that starts transparent, so t
 
 **Changed:** `plates showcase` opens the rack on the made-up tiles of `src/plates/src/showcase.rs`, writing none of Plates' data files and leaving the tray, the menu bar, and the shortcut to a Plates that runs, and its working dots hold still.
 With `--capture <file.png>`, it waits 1s for the tiles to settle, opens the landing page session's card, which stays open without the pointer on it, waits 1s more, and draws both windows.
-`showcase::compose` lays the rack twice on a 1,200 by 750 canvas, a blue-to-violet gradient, and the card over the second rack where its window sat beside the rack's on screen, with a soft shadow under each, and saves it at 2x, 2,400 by 1,500 (user, 2026-11-16).
+`showcase::compose` lays the rack twice on a 1,200 by 750 canvas, a warm stone gray that darkens a little downward, and the card over the second rack where its window sat beside the rack's on screen, with a soft shadow under each, and saves it at 2x, 2,400 by 1,500 (user, 2026-11-16).
 To take the README's picture again, run `cargo run -p plates --features capture -- showcase --capture .github/readme/rack.png`.
 On Windows, the `capture` feature turns on only the core's half of GPUI's test support, so `render_to_image` there returns GPUI's "not implemented" error (read in gpui-pre 0.3.12, `src/platform.rs`), which is unverified on Windows.
 

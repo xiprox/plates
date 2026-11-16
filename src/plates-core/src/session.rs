@@ -338,6 +338,8 @@ pub struct Session {
     /// Where the reminder after you look at a session at your turn stands.
     pub remind: Remind,
     pub ended_at: Option<SystemTime>,
+    /// When you dismissed the session, while it waits off the rack and shows in the archive.
+    pub dismissed_at: Option<SystemTime>,
 }
 
 /// One of the turn's tools in words, such as "Reading plan.md", and whether it failed.
@@ -393,6 +395,7 @@ impl Session {
             question: false,
             remind: Remind::Off,
             ended_at: None,
+            dismissed_at: None,
         }
     }
 

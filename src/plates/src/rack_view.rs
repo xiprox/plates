@@ -1359,7 +1359,7 @@ impl RackView {
         let menu_w = kind.width();
         let (w, h) = (menu_w as f64 * s, menu_h as f64 * s);
         let right = pointer.0 - 12. * s;
-        let x = if let MenuKind::Snoozed { .. } = kind {
+        let x = if kind.is_band_list() {
             // Its right edge lines up with the moon's badge, inside the panel's 1px border.
             (r.right - f64::from(1. + MOON_INSET) * s - w)
                 .clamp(area.left, (area.right - w).max(area.left))
@@ -1371,7 +1371,9 @@ impl RackView {
         // The list of snoozed tiles opens 4px under the moon's badge, below the panel's 1px border,
         // so the list leaves the badge whole (user, 2026-11-16).
         let below = match kind {
-            MenuKind::Snoozed { .. } => r.top + f64::from(1. + MOON_INSET + MOON_H + 4.) * s,
+            MenuKind::Snoozed { .. } | MenuKind::Archived { .. } => {
+                r.top + f64::from(1. + MOON_INSET + MOON_H + 4.) * s
+            }
             _ => pointer.1 + 6. * s,
         };
         let y = if below + h <= area.bottom {
@@ -1397,12 +1399,18 @@ impl RackView {
             inactive_frame_interval: None,
             ..Default::default()
         };
-        let snoozed = match kind {
-            MenuKind::Snoozed { .. } => self.rack.snoozed().cloned().collect(),
+        let listed = match kind {
+            MenuKind::Snoozed { .. } => self.rack.snoozed().map(|t| (t.clone(), None)).collect(),
+            MenuKind::Archived { .. } => self
+                .rack
+                .archived()
+                .into_iter()
+                .map(|(t, at)| (t.clone(), Some(at)))
+                .collect(),
             _ => Vec::new(),
         };
         match cx.open_window(options, |window, cx| {
-            cx.new(|cx| MenuView::new(rack, kind, bounds, snoozed, window, cx))
+            cx.new(|cx| MenuView::new(rack, kind, bounds, listed, window, cx))
         }) {
             Ok(window) => self.menu = Some(Menu { window, kind }),
             Err(e) => eprintln!("Couldn't open a menu: {e}"),
@@ -1500,6 +1508,23 @@ impl RackView {
         }
     }
 
+    /// Brings a tile back from the archive's list, after the others of its kind (user,
+    /// 2026-11-16).
+    pub(crate) fn unarchive(&mut self, id: TileId, cx: &mut Context<Self>) {
+        self.menu = None;
+        if self.rack.unarchive(id, SystemTime::now()) {
+            self.save();
+            self.after_change(cx);
+        }
+    }
+
+    /// Forgets every tile in the archive, from its list's Clear all.
+    pub(crate) fn clear_archive(&mut self, cx: &mut Context<Self>) {
+        self.rack.clear_archive();
+        self.save();
+        self.after_change(cx);
+    }
+
     pub(crate) fn remove_tile(&mut self, id: TileId, cx: &mut Context<Self>) {
         if self.suppress_click {
             return;
@@ -1523,7 +1548,7 @@ impl RackView {
             Some(_) => Some(format!("Dismissed \u{201c}{title}\u{201d}")),
         };
         let own = tile.is_own();
-        let Some(removed) = self.rack.remove(id) else {
+        let Some(removed) = self.rack.remove(id, SystemTime::now()) else {
             return;
         };
         if let Some(title) = label {

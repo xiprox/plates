@@ -14,6 +14,6 @@ pub mod store;
 pub mod timer;
 pub mod transcript;
 
-pub use rack::{Body, Need, Own, Rack, Removed, Tile, TileId};
+pub use rack::{Body, Need, Own, OwnPlace, Rack, Removed, Tile, TileId};
 pub use session::{Session, SessionEvent, SessionState, Tool, WrapUp};
 pub use timer::Timer;

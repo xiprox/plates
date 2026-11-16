@@ -3,7 +3,7 @@
 ```text
 Purpose:     What each tile in the rack shows, and how you act on it.
 Depends on:  01-window (01-window.md), and 01-claude-code-hooks (../hooks/01-claude-code-hooks.md) for where a session's state comes from.
-Decides:     The tiles' layout and states, marking a turn read or unread, the hover card, the timer and snoozing, how a tile asks for attention, adding, renaming, and removing tiles, the hotkey, what Plates saves, and the tiles' colors and type.
+Decides:     The tiles' layout and states, marking a turn read or unread, the hover card, the timer and snoozing, the archive, how a tile asks for attention, adding, renaming, and removing tiles, the hotkey, what Plates saves, and the tiles' colors and type.
 ```
 
 A tile is one 60px row of the rack: a session tile for each Claude Code session, and your own tiles for anything else you want kept in view.
@@ -119,7 +119,7 @@ From the top, the card shows:
 - A click anywhere on the rack outside the field closes it without adding or renaming the tile, as Esc does (user, 2026-11-16).
 - Double-clicking your own tile turns its title into the same inline field, to rename it.
 - An × appears on your own tile when you hover it, as on an ended session's tile (user, 2026-11-15).
-  Clicking the × removes the tile and shows an Undo button for 5s, and there's no archive (user, 2026-11-15).
+  Clicking the × removes the tile to [the archive](#the-archive) and shows an Undo button for 5s (user, 2026-11-15 and 2026-11-16).
 
 ## Swiping a tile away
 
@@ -186,26 +186,27 @@ Snoozing a tile takes it off the rack until a time, for a session you can't act 
 - Violet is a snooze's color, apart from yellow's timer running now (user, 2026-11-16).
   A tile that Plates 0.1.0 set for tomorrow, without snoozing it, shows a violet moon in its timer slot, "Reminder tomorrow" in the hover card, and a violet outline on the docked strip.
   Hovering the moon dims it, and clicking it cancels the reminder.
-- The tiles you dismiss with × aren't listed, since they come back on their own once they need you.
+- The moon's list leaves out the tiles you remove or dismiss with × or a swipe, which [the archive](#the-archive) lists.
 
-## Attention
+## The archive
 
-- Nothing flashes or pulses, and the only motion that repeats is a working session's breathing dot (user, 2026-11-15).
-- When a tile starts needing you, or needs you for a new reason, such as its timer running out on your turn, its background brightens once in its status color over 1.4s, then settles back.
-- Every time-up tile brightens again at your first input after you've been away, since one that ran out while you were away, such as a timer set for tomorrow, brightened with nobody there (user, 2026-11-16).
-  On Windows, Plates counts you away after 30 minutes without input, by the time of the last input that `GetLastInputInfo` reports (documented, [GetLastInputInfo](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo), as of 2026-11-16).
-  It also counts you away after a gap of 30 minutes or more on the wall clock between two of its once-a-second ticks, which it takes as the PC having slept (unverified).
-  We haven't measured either, and leaving a time-up tile on the rack while the PC sits idle for 30 minutes, then while it sleeps for 30 minutes, would settle both.
-  On macOS, how Plates learns you were away is unverified until the plan's step 7.
-- A tile needs you when it's an approval, your turn, unread, or time-up.
-  An unread tile needs your attention but no response, so it starts no timer.
-- Plates plays no sounds and has no quiet mode ([01-aims](../product/01-aims.md#non-goals)).
+The archive holds your own tiles you remove and the sessions you dismiss, with × or a swipe, until you bring them back or clear it (user, 2026-11-16).
+While it holds any, its badge sits in the grip band: an archive-box icon and the count, in the muted color, left of the moon, or in the moon's place while no tile is snoozed.
+
+- An ended session's tile you clear goes for good, with no Undo.
+- Your own tile waits there without its timer, and an Undo in its 5s puts it back with the timer it had.
+- A dismissed session's events keep its marker current, and it leaves the archive when it comes back on its own, as [Session tiles](#session-tiles) says, or when it ends, which drops it for good.
+- Clicking the badge opens a list of the tiles, newest first, where the moon's list opens, and the list scrolls past 8 rows.
+  Each row shows the tile's marker as it stands now and how long ago you removed or dismissed it: "just now" under a minute, then "12m ago", "3h ago", "yesterday" from 24 to 48 hours, and "4d ago".
+- Clicking a row brings the tile back to the rack as it stands now, in the place [Snoozing](#snoozing) gives a tile that comes back, and clicking the badge again closes the list.
+- Clear all, in the list's heading, forgets them: your own tiles go for good, and the dismissed sessions leave the list but stay dismissed until they come back on their own.
+- The archive keeps the newest 50 of your own tiles you removed.
 
 ## Saving
 
-Plates saves your own tiles, each with its timer, as JSON in its data folder, `%APPDATA%\Plates\` on Windows and `~/Library/Application Support/Plates/` on macOS, and loads them when it starts.
+Plates saves your own tiles, each with its timer, and those in the archive, each with when you removed it, as JSON in its data folder, `%APPDATA%\Plates\` on Windows and `~/Library/Application Support/Plates/` on macOS, and loads them when it starts.
 In the same folder, it saves where the rack last came to rest, as [01-window](01-window.md#launching-and-quitting) describes.
-It also saves the session tiles, shown and dismissed, so a session that finished before Plates restarted, and so sends no more events, keeps its tile (user, 2026-11-15).
+It also saves the session tiles, shown and dismissed, with when you dismissed each, so a session that finished before Plates restarted, and so sends no more events, keeps its tile (user, 2026-11-15).
 Each keeps its state, summary line, and timer, and the last turn's message, wrap-up, and background tasks, which its card shows.
 When it starts, Plates brings each restored tile up to date with any turn that ended or began while it was closed, from the session's transcript ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries)).
 

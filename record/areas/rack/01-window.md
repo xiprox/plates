@@ -20,7 +20,8 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   A game in exclusive full screen bypasses the Desktop Window Manager, and no other window shows over it (unverified).
 - On macOS, it shows on every Space and over full-screen apps.
 - It has no title.
-  A 38px band at its top holds a centered, horizontal grip of six dots, and the band is as tall as the 22px badge of the moon of [02-tiles](02-tiles.md#snoozing) with 8px above and below it, so the moon sits level with the grip and as far from the rack's side as from its top (user, 2026-11-16).
+  A 38px band at its top holds a centered, horizontal grip of six dots, and at its right the badges of [the archive](02-tiles.md#the-archive) and [the moon](02-tiles.md#snoozing), the moon rightmost, each shown while it has a count (user, 2026-11-16).
+  The band is as tall as the 22px badges with 8px above and below them, so the badges sit level with the grip, and the rightmost sits as far from the rack's side as from its top.
 - It has 12px of padding on the left, right, and bottom, and its tiles sit 6px apart.
 - Its background is `#131417`, with a 1px `#2A2C31` border.
 - It casts a drop shadow, which on Windows the Desktop Window Manager (DWM) draws outside the window ([rack log](log.md#2026-11-15-dwm-draws-the-racks-drop-shadow-once-the-windows-frame-reaches-1px-into-its-client-area)), and what draws it on macOS is unverified until the plan's step 7.

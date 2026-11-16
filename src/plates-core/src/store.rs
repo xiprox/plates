@@ -11,7 +11,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    rack::Rack,
+    rack::{OwnPlace, Rack},
     session::{BackgroundTask, Session, SessionState, WrapUp},
     timer::Timer,
 };
@@ -32,6 +32,10 @@ struct SavedTile {
     /// A file without it, such as one an older Plates wrote, loads every tile on the rack.
     #[serde(default)]
     snoozed: bool,
+    /// When you removed the tile to the archive, in milliseconds since 1970, or none for a tile
+    /// on the rack or snoozed. A file without it, such as one an older Plates wrote, has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    archived: Option<u64>,
 }
 
 /// What loading found: the rack, and where a file that didn't parse was moved to.
@@ -49,10 +53,14 @@ pub fn save(rack: &Rack, path: &Path) -> io::Result<()> {
         version: VERSION,
         own_tiles: rack
             .own_tiles()
-            .map(|(title, timer, snoozed)| SavedTile {
+            .map(|(title, timer, place)| SavedTile {
                 title: title.to_string(),
                 timer,
-                snoozed,
+                snoozed: place == OwnPlace::Snoozed,
+                archived: match place {
+                    OwnPlace::Archived(at) => Some(ms(at)),
+                    _ => None,
+                },
             })
             .collect(),
     };
@@ -81,12 +89,14 @@ pub fn load(path: &Path) -> io::Result<Loaded> {
     };
     match serde_json::from_slice::<Saved>(&bytes) {
         Ok(saved) if saved.version == VERSION => Ok(Loaded {
-            rack: Rack::with_own_tiles(
-                saved
-                    .own_tiles
-                    .into_iter()
-                    .map(|t| (t.title, t.timer, t.snoozed)),
-            ),
+            rack: Rack::with_own_tiles(saved.own_tiles.into_iter().map(|t| {
+                let place = match (t.archived, t.snoozed) {
+                    (Some(at), _) => OwnPlace::Archived(time(at)),
+                    (None, true) => OwnPlace::Snoozed,
+                    (None, false) => OwnPlace::Shown,
+                };
+                (t.title, t.timer, place)
+            })),
             broken: None,
         }),
         _ => {
@@ -138,6 +148,11 @@ struct SavedSession {
     ended_at: Option<u64>,
     timer: Timer,
     dismissed: bool,
+    /// When you dismissed the session, which puts it in the archive, in milliseconds since 1970.
+    /// A file without it, such as one an older Plates wrote, leaves a dismissed session out of the
+    /// archive.
+    #[serde(default)]
+    dismissed_at: Option<u64>,
 }
 
 fn ms(t: SystemTime) -> u64 {
@@ -176,6 +191,7 @@ pub fn save_sessions(rack: &Rack, path: &Path) -> io::Result<()> {
                 ended_at: s.ended_at.map(ms),
                 timer: tile.timer,
                 dismissed,
+                dismissed_at: s.dismissed_at.map(ms),
             })
         })
         .collect();
@@ -225,6 +241,7 @@ pub fn load_sessions(rack: &mut Rack, path: &Path, now: SystemTime) -> io::Resul
         session.asks = s.asks;
         session.read = s.read;
         session.ended_at = s.ended_at.map(time);
+        session.dismissed_at = s.dismissed_at.filter(|_| s.dismissed).map(time);
         session.refresh_line(now);
         rack.restore_session(session, s.timer, s.dismissed, now);
     }
@@ -270,6 +287,8 @@ mod tests {
         rack.add_own("Waiting on review", at(0));
         let later = rack.add_own("Call the bank", at(0));
         rack.snooze(later, Timer::later(at(400_000), 2), at(400_000));
+        let gone = rack.add_own("Order the cables", at(0));
+        rack.remove(gone, at(450_000));
 
         save(&rack, &path).unwrap();
         let loaded = load(&path).unwrap();
@@ -282,6 +301,11 @@ mod tests {
             loaded.rack.snoozed().count(),
             1,
             "a snoozed tile stays snoozed"
+        );
+        assert_eq!(
+            loaded.rack.archived().len(),
+            1,
+            "a removed tile stays in the archive"
         );
     }
 
@@ -308,12 +332,18 @@ mod tests {
             },
             at(0),
         );
-        rack.remove(b);
+        rack.remove(b, at(1_500));
         rack.add_own("Check release CI", at(0));
         save_sessions(&rack, &path).unwrap();
 
         let mut back = Rack::new();
         assert_eq!(load_sessions(&mut back, &path, at(2_000)).unwrap(), None);
+        let archived: Vec<_> = back.archived().into_iter().map(|(_, at)| at).collect();
+        assert_eq!(
+            archived,
+            vec![at(1_500)],
+            "a dismissed session stays in the archive"
+        );
         let shown: Vec<_> = back.session_tiles().filter(|(_, d)| !d).collect();
         assert_eq!(shown.len(), 1);
         let s = shown[0].0.session().unwrap();

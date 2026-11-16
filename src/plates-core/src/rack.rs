@@ -144,13 +144,42 @@ pub struct Removed {
     pub index_in_group: usize,
 }
 
+/// How many of your own removed tiles the archive keeps, dropping the oldest past it.
+pub const ARCHIVE_KEEPS: usize = 50;
+
+/// Where one of your own tiles is, as `store` saves it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OwnPlace {
+    Shown,
+    Snoozed,
+    /// Removed, at that time, and kept in the archive.
+    Archived(SystemTime),
+}
+
+/// One of your own tiles you removed, kept for the archive, and when you removed it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Archived {
+    tile: Tile,
+    at: SystemTime,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Rack {
     tiles: Vec<Tile>,
     /// The tiles of sessions you dismissed, kept up to date off the rack until one needs you
     /// again or you send it a new prompt, and the tiles you snoozed, which wait for their time.
     hidden: Vec<Tile>,
+    /// Your own tiles you removed, newest first, until you bring one back or clear the archive.
+    /// The sessions you dismissed are in the archive too, from `hidden`.
+    archive: Vec<Archived>,
     next_id: u64,
+}
+
+/// A dismissed session that leaves `hidden` for the rack leaves the archive with it.
+fn returned(tile: &mut Tile) {
+    if let Body::Session(s) = &mut tile.body {
+        s.dismissed_at = None;
+    }
 }
 
 /// Where `apply` found a session's tile.
@@ -435,6 +464,7 @@ impl Rack {
             // you snoozed it as one you can't act on yet (user, 2026-11-16).
             Place::Hidden(i) if (new_prompt || needs_you) && !snoozed(&self.hidden[i]) => {
                 let mut tile = self.hidden.remove(i);
+                returned(&mut tile);
                 tile.refresh_need(now);
                 let parent = tile.session().and_then(|s| s.app_parent.clone());
                 let index = self.session_slot(parent.as_deref());
@@ -500,6 +530,7 @@ impl Rack {
             let timer = self.hidden[i].timer.at(now);
             if timer.is_time_up() {
                 let mut tile = self.hidden.remove(i);
+                returned(&mut tile);
                 tile.timer = timer;
                 tile.refresh_need(now);
                 self.show(tile);
@@ -799,10 +830,10 @@ impl Rack {
         true
     }
 
-    /// Puts back your own tiles, in order, as `store` loaded them, with whether each is snoozed.
-    pub fn with_own_tiles(tiles: impl IntoIterator<Item = (String, Timer, bool)>) -> Self {
+    /// Puts back your own tiles, in order, as `store` loaded them, with where each was.
+    pub fn with_own_tiles(tiles: impl IntoIterator<Item = (String, Timer, OwnPlace)>) -> Self {
         let mut rack = Rack::new();
-        for (title, timer, snoozed) in tiles {
+        for (title, timer, place) in tiles {
             let id = rack.new_id();
             let tile = Tile {
                 id,
@@ -810,12 +841,13 @@ impl Rack {
                 timer,
                 need: None,
             };
-            if snoozed {
-                rack.hidden.push(tile);
-            } else {
-                rack.tiles.push(tile);
+            match place {
+                OwnPlace::Shown => rack.tiles.push(tile),
+                OwnPlace::Snoozed => rack.hidden.push(tile),
+                OwnPlace::Archived(at) => rack.archive.push(Archived { tile, at }),
             }
         }
+        rack.archive.sort_by_key(|a| std::cmp::Reverse(a.at));
         rack
     }
 
@@ -833,7 +865,7 @@ impl Rack {
     /// Takes a tile off the rack, for an Undo to put back. Your own tile and an ended session's
     /// go, and a session that hasn't ended is dismissed: it's read, its timer stops, and it waits
     /// off the rack until it needs you or you send it a new prompt.
-    pub fn remove(&mut self, id: TileId) -> Option<Removed> {
+    pub fn remove(&mut self, id: TileId, now: SystemTime) -> Option<Removed> {
         let index = self.tiles.iter().position(|t| t.id == id)?;
         let own = self.tiles[index].is_own();
         let index_in_group = self.tiles[..index]
@@ -841,15 +873,33 @@ impl Rack {
             .filter(|t| t.is_own() == own)
             .count();
         let mut tile = self.tiles.remove(index);
-        if let Body::Session(s) = &mut tile.body
-            && s.state != SessionState::Ended
-        {
-            if s.state == SessionState::Unread {
-                s.state = SessionState::Done;
+        match &mut tile.body {
+            Body::Session(s) if s.state != SessionState::Ended => {
+                if s.state == SessionState::Unread {
+                    s.state = SessionState::Done;
+                }
+                s.dismissed_at = Some(now);
+                tile.timer.stop();
+                tile.need = None;
+                self.hidden.push(tile.clone());
             }
-            tile.timer.stop();
-            tile.need = None;
-            self.hidden.push(tile.clone());
+            // An ended session's tile has nothing left to bring back, so it goes for good.
+            Body::Session(_) => {}
+            // Your own tile waits in the archive without its timer, while an Undo puts it back
+            // with the timer as it was.
+            Body::Own(_) => {
+                let mut kept = tile.clone();
+                kept.timer = Timer::Idle;
+                kept.need = None;
+                self.archive.insert(
+                    0,
+                    Archived {
+                        tile: kept,
+                        at: now,
+                    },
+                );
+                self.archive.truncate(ARCHIVE_KEEPS);
+            }
         }
         Some(Removed {
             tile,
@@ -861,7 +911,7 @@ impl Rack {
     // session comes back as it stands now, since its events kept it up to date, and not at all
     // if it came back or ended meanwhile.
     pub fn restore(&mut self, removed: Removed) {
-        let tile = match removed.tile.session() {
+        let mut tile = match removed.tile.session() {
             Some(s) if s.state != SessionState::Ended => {
                 match self.hidden.iter().position(|t| t.id == removed.tile.id) {
                     Some(i) => self.hidden.remove(i),
@@ -870,6 +920,9 @@ impl Rack {
             }
             _ => removed.tile,
         };
+        // An Undo takes the tile back out of the archive it went into.
+        self.archive.retain(|a| a.tile.id != tile.id);
+        returned(&mut tile);
         let removed = Removed { tile, ..removed };
         let own = removed.tile.is_own();
         let sessions = self.tiles.iter().filter(|t| !t.is_own()).count();
@@ -907,6 +960,52 @@ impl Rack {
         tile.refresh_need(now);
         self.show(tile);
         true
+    }
+
+    /// What you removed, newest first, with when: your own tiles, and the sessions you dismissed
+    /// that haven't come back on their own.
+    pub fn archived(&self) -> Vec<(&Tile, SystemTime)> {
+        let dismissed = self.hidden.iter().filter_map(|t| {
+            let at = t.session()?.dismissed_at?;
+            Some((t, at))
+        });
+        let mut all: Vec<_> = self
+            .archive
+            .iter()
+            .map(|a| (&a.tile, a.at))
+            .chain(dismissed)
+            .collect();
+        all.sort_by_key(|a| std::cmp::Reverse(a.1));
+        all
+    }
+
+    /// Brings a tile in the archive back to the rack, as it stands now, after the others of its
+    /// kind. It returns whether a tile came back.
+    pub fn unarchive(&mut self, id: TileId, now: SystemTime) -> bool {
+        let mut tile = if let Some(i) = self.archive.iter().position(|a| a.tile.id == id) {
+            self.archive.remove(i).tile
+        } else if let Some(i) = self
+            .hidden
+            .iter()
+            .position(|t| t.id == id && t.session().is_some_and(|s| s.dismissed_at.is_some()))
+        {
+            self.hidden.remove(i)
+        } else {
+            return false;
+        };
+        returned(&mut tile);
+        tile.refresh_need(now);
+        self.show(tile);
+        true
+    }
+
+    /// Empties the archive: your own tiles in it go for good, and the sessions you dismissed
+    /// leave it, though each still comes back when it needs you.
+    pub fn clear_archive(&mut self) {
+        self.archive.clear();
+        for tile in &mut self.hidden {
+            returned(tile);
+        }
     }
 
     /// The snoozed tiles, in the order you snoozed them.
@@ -987,9 +1086,9 @@ impl Rack {
         }
     }
 
-    /// Your own tiles, those on the rack in order and then those snoozed, with their titles,
-    /// timers, and whether each is snoozed, which is what `store` saves.
-    pub fn own_tiles(&self) -> impl Iterator<Item = (&str, Timer, bool)> {
+    /// Your own tiles, those on the rack in order, then those snoozed, then those in the archive,
+    /// with their titles, timers, and where each is, which is what `store` saves.
+    pub fn own_tiles(&self) -> impl Iterator<Item = (&str, Timer, OwnPlace)> {
         fn own(t: &Tile) -> Option<&str> {
             match &t.body {
                 Body::Own(o) => Some(o.title.as_str()),
@@ -999,12 +1098,15 @@ impl Rack {
         let shown = self
             .tiles
             .iter()
-            .filter_map(move |t| own(t).map(|title| (title, t.timer, false)));
+            .filter_map(move |t| own(t).map(|title| (title, t.timer, OwnPlace::Shown)));
         let snoozed = self
             .hidden
             .iter()
-            .filter_map(move |t| own(t).map(|title| (title, t.timer, true)));
-        shown.chain(snoozed)
+            .filter_map(move |t| own(t).map(|title| (title, t.timer, OwnPlace::Snoozed)));
+        let archived = self.archive.iter().filter_map(move |a| {
+            own(&a.tile).map(|title| (title, a.tile.timer, OwnPlace::Archived(a.at)))
+        });
+        shown.chain(snoozed).chain(archived)
     }
 }
 
@@ -1085,7 +1187,7 @@ mod tests {
 
         // A dismissed sub-session that needs you comes back under its parent, ahead of its own
         // sub-session, which then follows it again.
-        rack.remove(probe);
+        rack.remove(probe, at(0));
         apply(&mut rack, "probe", stop("Found it."), 5);
         let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
         assert_eq!(order, [plates, probe, deeper, second, other, orphan]);
@@ -1487,7 +1589,7 @@ mod tests {
         let a = rack.add_own("A", at(0));
         let b = rack.add_own("B", at(0));
         let c = rack.add_own("C", at(0));
-        let removed = rack.remove(b).unwrap();
+        let removed = rack.remove(b, at(0)).unwrap();
         assert_eq!(removed.index_in_group, 1);
         rack.restore(removed);
         let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
@@ -1500,7 +1602,7 @@ mod tests {
         let s1 = apply(&mut rack, "s1", started(), 0);
         let o1 = rack.add_own("O1", at(0));
         let o2 = rack.add_own("O2", at(0));
-        let removed = rack.remove(o1).unwrap();
+        let removed = rack.remove(o1, at(0)).unwrap();
         let s2 = apply(&mut rack, "s2", started(), 1);
         rack.restore(removed);
         let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
@@ -1696,7 +1798,7 @@ mod tests {
         let a = apply(&mut rack, "a", prompt("Go"), 0);
         apply(&mut rack, "a", wrapped(false), 1);
         apply(&mut rack, "a", stop("Pushed."), 2);
-        assert!(rack.remove(a).is_some());
+        assert!(rack.remove(a, at(0)).is_some());
         assert!(rack.tile(a).is_none());
         assert!(rack.knows("a"));
 
@@ -1736,7 +1838,7 @@ mod tests {
         assert!(rack.tile(id).unwrap().timer.is_tomorrow());
 
         // Dismissed, the session comes back when the reminder runs out.
-        rack.remove(id);
+        rack.remove(id, at(0));
         assert!(rack.tile(id).is_none());
         assert!(rack.tick(ends + Duration::from_secs(1)));
         let tile = rack.tile(id).unwrap();
@@ -1912,19 +2014,108 @@ mod tests {
         let mut rack = Rack::new();
         let a = apply(&mut rack, "a", stop("Done."), 0);
         let b = apply(&mut rack, "b", stop("Done."), 0);
-        rack.remove(a);
-        rack.remove(b);
+        rack.remove(a, at(0));
+        rack.remove(b, at(0));
         apply(&mut rack, "a", prompt("More"), 1);
         assert_eq!(session(&rack, a).state, SessionState::Working);
         apply(&mut rack, "b", SessionEvent::Ended, 2);
         assert!(!rack.knows("b"), "a dismissed session that ends is gone");
     }
 
+    fn archived(rack: &Rack) -> Vec<(String, SystemTime)> {
+        rack.archived()
+            .into_iter()
+            .map(|(t, at)| (t.title(), at))
+            .collect()
+    }
+
+    #[test]
+    fn removing_your_own_tile_keeps_it_in_the_archive_without_its_timer() {
+        let mut rack = Rack::new();
+        let a = rack.add_own("A", at(0));
+        let b = rack.add_own("B", at(0));
+        rack.start_timer(a, 5, at(0));
+        rack.remove(a, at(10));
+        rack.remove(b, at(20));
+        assert_eq!(
+            archived(&rack),
+            vec![("B".to_string(), at(20)), ("A".to_string(), at(10))],
+            "newest first"
+        );
+        assert!(rack.unarchive(a, at(30)));
+        let back = rack.tile(a).unwrap();
+        assert_eq!(back.timer, Timer::Idle);
+        assert_eq!(archived(&rack), vec![("B".to_string(), at(20))]);
+    }
+
+    #[test]
+    fn an_undo_takes_your_tile_back_out_of_the_archive() {
+        let mut rack = Rack::new();
+        let a = rack.add_own("A", at(0));
+        rack.start_timer(a, 5, at(0));
+        let removed = rack.remove(a, at(10)).unwrap();
+        rack.restore(removed);
+        assert!(rack.archived().is_empty());
+        assert!(
+            rack.tile(a).unwrap().timer.is_running(),
+            "the Undo keeps its timer"
+        );
+    }
+
+    #[test]
+    fn a_dismissed_session_leaves_the_archive_once_it_comes_back() {
+        let mut rack = Rack::new();
+        let a = apply(&mut rack, "a", stop("Done."), 0);
+        rack.remove(a, at(5));
+        assert_eq!(archived(&rack).len(), 1);
+        apply(&mut rack, "a", prompt("More"), 6);
+        assert!(rack.tile(a).is_some());
+        assert!(rack.archived().is_empty());
+    }
+
+    #[test]
+    fn an_ended_session_cleared_from_the_rack_skips_the_archive() {
+        let mut rack = Rack::new();
+        let a = apply(&mut rack, "a", SessionEvent::Ended, 0);
+        rack.remove(a, at(5));
+        assert!(rack.archived().is_empty());
+    }
+
+    #[test]
+    fn clearing_the_archive_keeps_a_dismissed_session_coming_back_when_it_needs_you() {
+        let mut rack = Rack::new();
+        let own = rack.add_own("A", at(0));
+        let a = apply(&mut rack, "a", prompt("Go"), 0);
+        rack.remove(own, at(1));
+        rack.remove(a, at(2));
+        rack.clear_archive();
+        assert!(rack.archived().is_empty());
+        assert!(
+            !rack.unarchive(own, at(3)),
+            "your own tile is gone for good"
+        );
+        apply(&mut rack, "a", wrapped(true), 4);
+        apply(&mut rack, "a", stop("Commit it?"), 5);
+        assert!(rack.tile(a).is_some());
+    }
+
+    #[test]
+    fn the_archive_keeps_your_newest_removed_tiles() {
+        let mut rack = Rack::new();
+        for i in 0..ARCHIVE_KEEPS as u64 + 5 {
+            let id = rack.add_own(&format!("T{i}"), at(0));
+            rack.remove(id, at(i));
+        }
+        let kept = archived(&rack);
+        assert_eq!(kept.len(), ARCHIVE_KEEPS);
+        assert_eq!(kept[0].0, format!("T{}", ARCHIVE_KEEPS + 4));
+    }
+
     #[test]
     fn an_undo_brings_a_dismissed_session_back_as_it_stands_now() {
         let mut rack = Rack::new();
         let a = apply(&mut rack, "a", prompt("Go"), 0);
-        let removed = rack.remove(a).unwrap();
+        let removed = rack.remove(a, at(0)).unwrap();
         rack.set_status("a", "Reading the receiver.", at(1));
         rack.restore(removed);
         assert_eq!(
@@ -1932,7 +2123,7 @@ mod tests {
             Some("Reading the receiver.")
         );
         let ended = apply(&mut rack, "b", SessionEvent::Ended, 2);
-        let removed = rack.remove(ended).unwrap();
+        let removed = rack.remove(ended, at(0)).unwrap();
         assert!(!rack.knows("b"), "an ended session's tile goes for good");
         rack.restore(removed);
         assert!(rack.tile(ended).is_some());

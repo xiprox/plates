@@ -977,13 +977,8 @@ impl RackView {
         let snoozed = self.rack.snoozed().count();
         let moon = (snoozed > 0).then(|| {
             let needs = self.rack.snoozed_need_you();
-            // The band sits inside the rack's 12px padding, so the badge reaches out of it to sit
-            // MOON_INSET from the rack's side, as it does from the top.
             div()
                 .id("snoozed")
-                .absolute()
-                .right(px(crate::rack_view::MOON_INSET - 12.))
-                .top(px(crate::rack_view::MOON_INSET))
                 .h(px(crate::rack_view::MOON_H))
                 .px(px(6.))
                 .flex()
@@ -1015,6 +1010,57 @@ impl RackView {
                     this.menu_button_clicked(MenuKind::Snoozed { count: snoozed }, e.position(), cx)
                 }))
         });
+        // While you've removed any tile, a box with their count sits left of the moon, in gray,
+        // since nothing in it needs you. Clicking it lists them, to bring one back or clear them
+        // all (user, 2026-11-16).
+        let archived = self.rack.archived().len();
+        let archive = (archived > 0).then(|| {
+            div()
+                .id("archived")
+                .h(px(crate::rack_view::MOON_H))
+                .px(px(6.))
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .rounded(px(6.))
+                .hover(|s| s.bg(rgb(BORDER)))
+                .child(
+                    svg()
+                        .path("plates/archive.svg")
+                        .size(px(13.))
+                        .text_color(rgb(MUTED)),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.5))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(MUTED))
+                        .child(archived.to_string()),
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _: &MouseDownEvent, _, _| {
+                        this.menu_button_pressed(&MenuKind::Archived { count: archived })
+                    }),
+                )
+                .on_click(cx.listener(move |this, e: &ClickEvent, _, cx| {
+                    this.menu_button_clicked(
+                        MenuKind::Archived { count: archived },
+                        e.position(),
+                        cx,
+                    )
+                }))
+        });
+        // The band sits inside the rack's 12px padding, so the badges reach out of it to sit
+        // MOON_INSET from the rack's side, as they do from the top.
+        let badges = div()
+            .absolute()
+            .right(px(crate::rack_view::MOON_INSET - 12.))
+            .top(px(crate::rack_view::MOON_INSET))
+            .flex()
+            .gap(px(2.))
+            .children(archive)
+            .children(moon);
         // The grip is a button too, as tall as the moon's badge, and clicking it opens the
         // rack's menu, which a right-click on the band opens as well (user, 2026-11-16).
         // Pressing it and moving drags the rack, as anywhere else on it does.
@@ -1051,7 +1097,7 @@ impl RackView {
             .flex()
             .items_center()
             .justify_center()
-            .children(moon)
+            .child(badges)
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, e: &MouseDownEvent, _, cx| {
