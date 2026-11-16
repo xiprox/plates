@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/xiprox/plates/compare/v0.2.0...v0.3.0) (2026-11-16)
+
+
+### Features
+
+* keep the tiles you remove in an archive you can bring them back from ([e91c597](https://github.com/xiprox/plates/commit/e91c597958ac5ccb4684ab6ae0ff2da413d7cc25))
+
+
+### Bug Fixes
+
+* stop the docked strip flickering when you hover it on macOS ([5a60544](https://github.com/xiprox/plates/commit/5a60544076e3724059e77ebd822d9892f5ca3a71))
+
 ## [0.2.0](https://github.com/xiprox/plates/compare/v0.1.0...v0.2.0) (2026-11-16)
 
 
