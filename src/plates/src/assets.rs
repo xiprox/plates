@@ -24,6 +24,9 @@ impl AssetSource for Assets {
 
 const STROKE: &str = r#"fill="none" stroke="black" stroke-linecap="round" stroke-linejoin="round""#;
 
+/// A bell's outline: its body flaring to the rim, the clapper under it, and the loop on top.
+const BELL: &str = r#"<path d="M6 17c1.2-1.4 1.5-3.3 1.5-6.5a4.5 4.5 0 0 1 9 0c0 3.2.3 5.1 1.5 6.5z"/><path d="M10.2 19.8a2 2 0 0 0 3.6 0"/><path d="M12 4v2"/>"#;
+
 fn icon(name: &str) -> Option<String> {
     let svg = |view: &str, body: String| {
         format!(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view}">{body}</svg>"#)
@@ -65,6 +68,20 @@ fn icon(name: &str) -> Option<String> {
         "moon.svg" => svg(
             "0 0 24 24",
             r#"<path d="M20 11.64A8.5 8.5 0 1 1 9.5 1.14a6.6 6.6 0 0 0 10.5 10.5z"/>"#.into(),
+        ),
+        // A bell for the tone a timer rings as it runs out, and the same bell struck through
+        // while the tone is off.
+        "bell.svg" => svg(
+            "0 0 24 24",
+            format!(r#"<g {STROKE} stroke-width="1.7">{BELL}</g>"#),
+        ),
+        // The strike cuts a gap through the bell's outline on either side of it, so the two
+        // don't run together at 14px.
+        "bell-off.svg" => svg(
+            "0 0 24 24",
+            format!(
+                r#"<mask id="gap"><rect width="24" height="24" fill="white"/><path d="M4.5 4.5l15 15" stroke="black" stroke-width="5"/></mask><g {STROKE} stroke-width="1.7"><g mask="url(#gap)">{BELL}</g><path d="M4.5 4.5l15 15"/></g>"#
+            ),
         ),
         "plus.svg" => svg(
             "0 0 24 24",

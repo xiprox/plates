@@ -19,13 +19,13 @@ use std::{
     time::Duration,
 };
 
-use objc2::{MainThreadMarker, rc::Retained, runtime::NSObjectProtocol, sel};
+use objc2::{AllocAnyThread, MainThreadMarker, rc::Retained, runtime::NSObjectProtocol, sel};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationOptions, NSApplicationActivationPolicy, NSEvent,
-    NSFloatingWindowLevel, NSRunningApplication, NSScreen, NSView, NSWindow,
+    NSFloatingWindowLevel, NSRunningApplication, NSScreen, NSSound, NSView, NSWindow,
     NSWindowCollectionBehavior, NSWorkspace, NSWorkspaceOpenConfiguration,
 };
-use objc2_foundation::{NSBundle, NSPoint, NSRect, NSSize, NSString, NSURL};
+use objc2_foundation::{NSBundle, NSData, NSPoint, NSRect, NSSize, NSString, NSURL};
 
 use crate::motion::{Edges, Rect};
 
@@ -495,4 +495,22 @@ pub fn open_url(url: &str) {
             target.activateWithOptions(NSApplicationActivationOptions::empty());
         }
     }
+}
+
+thread_local! {
+    /// The sound playing, kept until the next one replaces it, so it isn't freed mid-play.
+    static PLAYING: std::cell::RefCell<Option<Retained<NSSound>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Plays a WAV file held in memory, and returns while it plays.
+pub fn play_sound(wav: &'static [u8]) {
+    let data = NSData::with_bytes(wav);
+    let Some(sound) = NSSound::initWithData(NSSound::alloc(), &data) else {
+        eprintln!("Couldn't read the tone.");
+        return;
+    };
+    if !sound.play() {
+        eprintln!("Couldn't play the tone.");
+    }
+    PLAYING.with(|p| *p.borrow_mut() = Some(sound));
 }

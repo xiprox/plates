@@ -515,6 +515,15 @@ impl Rack {
         index
     }
 
+    /// Whether a timer on the rack ran out after `after` and by `by`, which the app rings a tone
+    /// for. A snoozed tile that came back counts, since its timer ran out as it came back.
+    pub fn ran_out_between(&self, after: SystemTime, by: SystemTime) -> bool {
+        self.tiles.iter().any(|t| match t.timer {
+            Timer::TimeUp { since } => after < since && since <= by,
+            _ => false,
+        })
+    }
+
     /// Turns timers that have run out into time-up, and clears ended sessions' tiles 30 minutes
     /// after they ended. It returns whether anything changed.
     ///
@@ -2439,6 +2448,30 @@ mod tests {
         apply(&mut rack, "a", wrapped(true), 4);
         apply(&mut rack, "a", stop("Commit it?"), 5);
         assert!(rack.tile(a).is_some());
+    }
+
+    #[test]
+    fn a_timer_that_ran_out_counts_once_between_ticks() {
+        let mut rack = Rack::new();
+        let a = rack.add_own("A", at(0));
+        let b = rack.add_own("B", at(0));
+        rack.start_timer(a, 1, at(0));
+        rack.snooze(b, Timer::later(at(0), 1), at(0));
+        rack.tick(at(59));
+        assert!(!rack.ran_out_between(at(58), at(59)));
+        rack.tick(at(60));
+        assert!(rack.ran_out_between(at(59), at(60)));
+        rack.tick(at(61));
+        assert!(
+            !rack.ran_out_between(at(60), at(61)),
+            "it ran out before this tick"
+        );
+        rack.tick(at(3_600));
+        assert!(
+            rack.ran_out_between(at(3_599), at(3_600)),
+            "a snoozed tile that came back counts"
+        );
+        assert!(rack.tile(b).is_some());
     }
 
     #[test]

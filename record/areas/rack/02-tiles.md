@@ -3,7 +3,7 @@
 ```text
 Purpose:     What each tile in the rack shows, and how you act on it.
 Depends on:  01-window (01-window.md), and 01-claude-code-hooks (../hooks/01-claude-code-hooks.md) for where a session's state comes from.
-Decides:     The tiles' layout and states, marking a turn read or unread, the hover card, the timer and snoozing, the archive, how a tile asks for attention, adding, renaming, and removing tiles, the hotkey, what Plates saves, and the tiles' colors and type.
+Decides:     The tiles' layout and states, marking a turn read or unread, the hover card, the timer, its tone, and snoozing, the archive, how a tile asks for attention, adding, renaming, and removing tiles, the hotkey, what Plates saves, and the tiles' colors and type.
 ```
 
 A tile is one 60px row of the rack: a session tile for each Claude Code session, and your own tiles for anything else you want kept in view.
@@ -171,6 +171,14 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
   - a session tile takes a tint of its own status color, amber for your turn and orange for an approval, and its dot keeps showing Claude's state
   - the timer slot's hourglass stays full of yellow, where a running timer's fill ends, so the tile's yellow reads as the timer having run out, and clicking it turns it over to start another 5 minutes, so hovering it doesn't dim it as it does a running timer (user, 2026-11-16), while clicking anywhere else on the tile clears time-up
 - A timer runs on the wall clock, whether or not anyone is at the desk.
+- When a timer runs out, Plates rings a soft tone, once however many run out together, for every timer, yours or one a session started on its own, and for a snoozed tile coming back (user, 2026-11-17).
+  It rings only for a timer that ran out in the last 5s, so a timer that ran out while the computer slept, or while Plates was closed, rings nothing, and the tile brightens again once you're back instead.
+  The tone is one soft note, A5, 400ms long at 28% of full scale, which Plates builds rather than ships as a file, and macOS plays it with `NSSound` and Windows with `PlaySoundW`.
+  We haven't heard it on Windows.
+- The bell at the left of the rack's grip band turns the tone on and off, and is struck through while it's off (user, 2026-11-17).
+  Turning the tone on swings the bell on its loop for 600ms, as iOS' bell does when you flip the ring switch to ring, and plays the tone, so you hear what you turned on.
+  Turning it off strikes the bell through without a swing, since a swing is the bell ringing (user, 2026-11-17).
+  The tone's on until you turn it off.
 - The timer slot's icon, divider, and hover highlight are translucent white, so they take on a tile's tint without adding a color of their own (user, 2026-11-15).
 
 ### Snoozing
@@ -214,7 +222,7 @@ While it holds any, its badge sits in the grip band: an archive-box icon and the
 ## Saving
 
 Plates saves your own tiles, each with its timer, and those in the archive, each with when you removed it, as JSON in its data folder, `%APPDATA%\Plates\` on Windows and `~/Library/Application Support/Plates/` on macOS, and loads them when it starts.
-In the same folder, it saves where the rack last came to rest, as [01-window](01-window.md#launching-and-quitting) describes.
+In the same folder, it saves where the rack last came to rest, as [01-window](01-window.md#launching-and-quitting) describes, and in `settings.json` whether [the timer's tone](#the-timer) is on.
 It also saves the session tiles, shown and dismissed, with when you dismissed each, so a session that finished before Plates restarted, and so sends no more events, keeps its tile (user, 2026-11-15).
 Each keeps its state, summary line, and timer, and the last turn's message, wrap-up, and background tasks, which its card shows.
 When it starts, Plates brings each restored tile up to date with any turn that ended or began while it was closed, from the session's transcript ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries)).

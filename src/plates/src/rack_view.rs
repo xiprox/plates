@@ -25,7 +25,9 @@ use crate::{
     native,
     place::{self, Place},
     rows::Rows,
+    settings::{self, Settings},
     swipe::{Release, Swipe, Swiped},
+    tone,
     tray::{self, Tray},
 };
 
@@ -40,6 +42,9 @@ const TOAST_FOR: Duration = Duration::from_secs(5);
 const AWAY: Duration = Duration::from_secs(30 * 60);
 /// How recent an input counts as you being back.
 const BACK: Duration = Duration::from_secs(5);
+/// How long after a timer runs out the tick still rings the tone for it. A timer that ran out
+/// longer ago, as while the computer slept, brightens its tile again once you're back instead.
+const RING_LATE: Duration = Duration::from_secs(5);
 
 /// The moon's badge in the grip band, which lists the snoozed tiles: its height, and how far it
 /// sits inside the rack's border, from the top and from the right alike (user, 2026-11-16).
@@ -216,6 +221,11 @@ pub struct RackView {
     /// leaves the tray, the menu bar, and the shortcut to a Plates that runs, and keeps a card it
     /// opens open without the pointer on it.
     pub(crate) showcase: bool,
+    /// Whether a timer that runs out rings the tone, which `settings.json` keeps.
+    pub(crate) sound: bool,
+    settings_file: PathBuf,
+    /// When the bell in the grip band last turned the tone on, which starts its shake.
+    pub(crate) bell_turned: Option<Instant>,
     _subs: Vec<Subscription>,
     _tasks: Vec<Task<()>>,
 }
@@ -379,6 +389,8 @@ impl RackView {
         let r = native::window_rect(hwnd);
         let place_file = data_file.with_file_name("place.json");
         let sessions_file = data_file.with_file_name("sessions.json");
+        let settings_file = data_file.with_file_name("settings.json");
+        let sound = settings::load(&settings_file).sound;
         let mut view = RackView {
             hwnd,
             rack,
@@ -422,6 +434,9 @@ impl RackView {
             swipe: None,
             forced: None,
             showcase,
+            sound,
+            settings_file,
+            bell_turned: None,
             _subs: subs,
             _tasks: vec![
                 take_over,
@@ -453,6 +468,12 @@ impl RackView {
         if self.rack.tick(now) {
             self.save();
             self.after_change(cx);
+        }
+        // A timer that ran out since the last tick rings the tone, once however many ran out
+        // (user, 2026-11-17).
+        let after = self.last_tick.max(now - RING_LATE);
+        if self.sound && !self.showcase && self.rack.ran_out_between(after, now) {
+            tone::play();
         }
         // A tile brightens once as its time runs out, which nobody sees if you're away, so the
         // first input after you were away brightens every time-up tile again.
@@ -1541,6 +1562,29 @@ impl RackView {
             self.save();
             self.after_change(cx);
         }
+    }
+
+    /// Turns the tone for a timer that runs out on or off, from the bell in the grip band. Turning
+    /// it on shakes the bell and plays the tone, so you hear what it'll sound like
+    /// (user, 2026-11-17).
+    pub(crate) fn toggle_sound(&mut self, cx: &mut Context<Self>) {
+        if self.suppress_click {
+            return;
+        }
+        self.sound = !self.sound;
+        // The bell rings only as the tone turns on, since a shake is the bell ringing, and going
+        // silent rings nothing (user, 2026-11-17).
+        if self.sound {
+            self.bell_turned = Some(Instant::now());
+            tone::play();
+        }
+        if !self.showcase {
+            let settings = Settings { sound: self.sound };
+            if let Err(e) = settings::save(settings, &self.settings_file) {
+                eprintln!("Couldn't save {}: {e}", self.settings_file.display());
+            }
+        }
+        cx.notify();
     }
 
     /// Forgets one tile in the archive, from the × on its row in the list, which stays open.

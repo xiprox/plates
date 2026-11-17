@@ -24,6 +24,7 @@ use windows::Win32::{
             MONITORINFO, MonitorFromPoint,
         },
     },
+    Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT},
     System::{
         Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx},
         Registry::{
@@ -563,5 +564,16 @@ pub fn open_url(url: &str) {
         });
     if let Err(e) = spawned {
         eprintln!("Couldn't start a thread to open a link: {e}");
+    }
+}
+
+/// Plays a WAV file held in memory, and returns while it plays. With `SND_MEMORY`, `PlaySoundW`
+/// reads the sound from the pointer it's given rather than a file name, so the file must live
+/// until it has played, which a `'static` one does.
+/// (documented, https://learn.microsoft.com/windows/win32/api/playsoundapi/nf-playsoundapi-playsound)
+pub fn play_sound(wav: &'static [u8]) {
+    let flags = SND_MEMORY | SND_ASYNC | SND_NODEFAULT;
+    if !unsafe { PlaySoundW(PCWSTR(wav.as_ptr().cast()), None, flags) }.as_bool() {
+        eprintln!("Couldn't play the tone.");
     }
 }

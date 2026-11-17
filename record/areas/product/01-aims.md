@@ -16,7 +16,8 @@ When two choices are otherwise even, Plates takes the calmer one, because it's m
   One small rack, Plates' floating window, stays on top of every other window and shows a tile for each session and one for each thing you add yourself, called your own tiles.
   You read it without opening anything.
 - **A tile asks for attention once, then waits.**
-  A tile that starts needing you brightens once, and nothing flashes, pulses, or plays a sound ([02-tiles](../rack/02-tiles.md#attention)).
+  A tile that starts needing you brightens once, and nothing flashes or pulses ([02-tiles](../rack/02-tiles.md#session-tiles)).
+  The one sound is a soft tone as a timer runs out, which a bell on the rack turns off ([02-tiles](../rack/02-tiles.md#the-timer), user, 2026-11-17).
 - **The rack never gets in the way.**
   You throw it aside or dock it to a side edge, and clicking it never takes your keyboard focus ([01-window](../rack/01-window.md)).
 - **Adding a tile takes a hotkey, a name, and Enter.**
@@ -26,7 +27,7 @@ When two choices are otherwise even, Plates takes the calmer one, because it's m
 ## Non-goals
 
 - Syncing tiles or sessions between the PC and the Mac: each machine has its own rack (user, 2026-11-15).
-- Sounds, OS notifications, and a quiet mode (user, 2026-11-15).
+- Sounds other than the timer's tone, OS notifications, and a quiet mode (user, 2026-11-15 and 2026-11-17).
 - Renaming sessions, since the new name wouldn't reach the Claude app (user, 2026-11-15).
 - A clock on your own tiles beyond the timer you start (user, 2026-11-15).
 - Jumping to a session in a terminal window, since our sessions run in the Claude desktop app (user, 2026-11-15).

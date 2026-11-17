@@ -84,6 +84,24 @@ fn grown(row: AnyElement, full: f32, factor: f32) -> AnyElement {
         .into_any_element()
 }
 
+/// The bell's size in the grip band.
+const BELL_SIZE: f32 = 14.;
+/// How long the bell swings after it turns.
+const SWING: Duration = Duration::from_millis(600);
+
+// The bell's angle, in radians, `SWING` into its turn: three and a half swings either way, up to
+// 18°, each smaller than the last, and still at the end.
+fn bell_angle(turned: Option<Instant>) -> f32 {
+    let Some(at) = turned else {
+        return 0.;
+    };
+    let t = at.elapsed().as_secs_f32() / SWING.as_secs_f32();
+    if t >= 1. {
+        return 0.;
+    }
+    18f32.to_radians() * (1. - t).powi(2) * (std::f32::consts::TAU * 3.5 * t).sin()
+}
+
 /// How far a sub-session's tile sits in from its parent's, while its right edge stays flush with
 /// the other tiles' (user, 2026-11-15).
 const NEST: f32 = 26.;
@@ -1141,6 +1159,45 @@ impl RackView {
                     )
                 }))
         });
+        // A bell at the band's left turns the tone a timer rings as it runs out on and off, struck
+        // through while it's off, and swings on its loop as it turns the tone on, as iOS' bell
+        // does when you flip the ring switch to ring (user, 2026-11-17). It sits as far from the rack's side and top as
+        // the badges at the right do.
+        let bell = {
+            let angle = bell_angle(self.bell_turned);
+            // GPUI turns an icon about its center, so moving it by how far the turn carries the
+            // center around the loop, half the icon's height above it, turns it about the loop.
+            // (read in gpui-pre 0.3.12, src/elements/svg.rs, Transformation::into_matrix, and
+            // src/scene.rs, TransformationMatrix::rotate)
+            let half = BELL_SIZE / 2.;
+            let swing = point(px(-half * angle.sin()), px(half * (angle.cos() - 1.)));
+            let (icon, color) = if self.sound {
+                ("plates/bell.svg", MUTED)
+            } else {
+                ("plates/bell-off.svg", GRAY)
+            };
+            div()
+                .id("sound")
+                .absolute()
+                .left(px(crate::rack_view::MOON_INSET - 12.))
+                .top(px(crate::rack_view::MOON_INSET))
+                .h(px(crate::rack_view::MOON_H))
+                .px(px(5.))
+                .flex()
+                .items_center()
+                .rounded(px(6.))
+                .hover(|s| s.bg(rgb(BORDER)))
+                .child(
+                    svg()
+                        .path(icon)
+                        .size(px(BELL_SIZE))
+                        .text_color(rgb(color))
+                        .with_transformation(
+                            Transformation::rotate(radians(angle)).with_translation(swing),
+                        ),
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_sound(cx)))
+        };
         // The band sits inside the rack's 12px padding, so the badges reach out of it to sit
         // MOON_INSET from the rack's side, as they do from the top.
         let badges = div()
@@ -1187,6 +1244,7 @@ impl RackView {
             .flex()
             .items_center()
             .justify_center()
+            .child(bell)
             .child(badges)
             .on_mouse_down(
                 MouseButton::Right,
@@ -1352,10 +1410,14 @@ impl RackView {
         .into_any_element()
     }
 
-    /// Whether a tile is brightening, a new tile is sliding in, an hourglass is turning over, or
-    /// a swipe is settling, each of which needs a frame each display refresh until it ends.
+    /// Whether a tile is brightening, a new tile is sliding in, an hourglass is turning over, a
+    /// swipe is settling, or the bell is swinging, each of which needs a frame each display
+    /// refresh until it ends.
     pub(crate) fn tiles_animating(&self) -> bool {
         let now = SystemTime::now();
+        if self.bell_turned.is_some_and(|at| at.elapsed() < SWING) {
+            return true;
+        }
         let swiped = self
             .swipe
             .as_ref()

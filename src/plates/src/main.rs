@@ -16,8 +16,10 @@ mod place;
 mod press;
 mod rack_view;
 mod rows;
+mod settings;
 mod showcase;
 mod swipe;
+mod tone;
 mod tray;
 mod view;
 
