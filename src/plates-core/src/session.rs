@@ -12,12 +12,6 @@ use serde_json::Value;
 /// How many of the turn's newest tools a session keeps, for the hover card.
 pub const RECENT_TOOLS: usize = 4;
 
-/// How long after you look at a session at your turn its reminder waits to start, and how long
-/// that reminder then runs, for a session you opened and then left for another before answering
-/// (user, 2026-11-16).
-pub const LOOK_WAIT: Duration = Duration::from_secs(120);
-pub const LOOK_REMINDER_MINUTES: u32 = 3;
-
 /// How long a working tile shows Claude's newest text before what Claude does next, so the text
 /// can be read even when a tool follows it at once.
 pub const STATUS_HOLDS: Duration = Duration::from_secs(4);
@@ -344,8 +338,9 @@ pub struct Session {
     /// Whether what the session waits on in `NeedsApproval` is a question for you, from Claude's
     /// `AskUserQuestion` tool or an MCP server, rather than a tool to approve.
     pub question: bool,
-    /// Where the reminder after you look at a session at your turn stands.
-    pub remind: Remind,
+    /// Whether you set or canceled the tile's timer yourself during this state, which a look then
+    /// leaves alone.
+    pub own_timer: bool,
     pub ended_at: Option<SystemTime>,
     /// When you dismissed the session, while it waits off the rack and shows in the archive.
     pub dismissed_at: Option<SystemTime>,
@@ -356,21 +351,6 @@ pub struct Session {
 pub struct Recent {
     pub text: String,
     pub failed: bool,
-}
-
-/// The reminder that starts `LOOK_WAIT` after you look at a session at your turn, unless you've
-/// answered it, or set or canceled its timer yourself, by then.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Remind {
-    /// None waits: the session isn't at your turn, or you haven't looked.
-    #[default]
-    Off,
-    /// It starts at this time.
-    At(SystemTime),
-    /// It's the timer running now, which a look starts over.
-    Started,
-    /// You set or canceled the tile's timer yourself during this state, so none starts.
-    Mine,
 }
 
 impl Session {
@@ -402,7 +382,7 @@ impl Session {
             line: None,
             pending_tool: None,
             question: false,
-            remind: Remind::Off,
+            own_timer: false,
             ended_at: None,
             dismissed_at: None,
         }

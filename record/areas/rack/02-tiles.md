@@ -162,9 +162,8 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
   The hourglass shows no × on hover: the dimming already says a click cancels, and an × we tried there crowded the 20px icon.
   After a click on the hourglass starts a timer, the yellow stays bright until the pointer leaves the hourglass, since dimming at once would look as if the click had canceled the timer it started (user, 2026-11-16).
 - A session tile starts a 5-minute timer on its own when it moves to your turn or needs approval, and the timer stops when the session moves to working or ends.
-- Reading a turn at your turn stops its timer, and if the session is still at your turn 2 minutes after you last looked at it, a 3-minute reminder starts, for a session you opened and left for another before answering (user, 2026-11-16).
-  Each look, a click on the tile or opening the session in the app, starts the 2 minutes over, and stops the reminder if it runs.
-  A timer you set or canceled yourself during the turn is yours, and no look stops it or starts a reminder over it.
+- Reading a turn at your turn, by clicking its tile or opening the session in the app, stops its timer, and no timer starts again until the session's next turn, since opening a session is enough to read it (user, 2026-11-17).
+  A timer you set or canceled yourself during the turn is yours, and no look stops it.
   Approvals and questions keep their timer when you look, so they need no reminder of their own.
 - When the timer runs out, the tile is time-up, and that becomes its status:
   - your own tile's square turns yellow, and the tile takes a yellow tint

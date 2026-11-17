@@ -9,31 +9,26 @@ use std::{
 use crate::{
     desktop::AppSession,
     session::{
-        COMPACTED, LOOK_REMINDER_MINUTES, LOOK_WAIT, RECENT_TOOLS, Recent, Remind, Session,
-        SessionEvent, SessionState, first_line, prompt_title,
+        COMPACTED, RECENT_TOOLS, Recent, Session, SessionEvent, SessionState, first_line,
+        prompt_title,
     },
     timer::{DEFAULT_MINUTES, Timer},
 };
 
-/// A look at a session at your turn, from a click on its tile or from opening it in the app, at
-/// `at`. The first look reads the turn and stops its timer, and each look waits `LOOK_WAIT`
-/// before the reminder starts, so a look while that reminder runs starts the wait over. A timer
-/// you set or canceled yourself during the turn is yours, and no look touches it. It returns
-/// whether the tile changed.
-fn look(s: &mut Session, timer: &mut Timer, at: SystemTime) -> bool {
-    let first = !s.read;
-    s.read = true;
-    if s.remind == Remind::Mine {
-        return first;
+/// A look at a session at your turn, from a click on its tile or from opening it in the app. The
+/// first look reads the turn and stops its timer, and nothing starts a timer again until the
+/// session's next turn, since a look is enough to read it (user, 2026-11-17). A timer you set or
+/// canceled yourself during the turn is yours, and no look touches it. It returns whether the tile
+/// changed.
+fn look(s: &mut Session, timer: &mut Timer) -> bool {
+    if s.read {
+        return false;
     }
-    let started = s.remind == Remind::Started;
-    if first || started {
+    s.read = true;
+    if !s.own_timer {
         timer.stop();
     }
-    if !timer.is_tomorrow() {
-        s.remind = Remind::At(at + LOOK_WAIT);
-    }
-    first || started
+    true
 }
 
 /// Whether a tile off the rack is snoozed: it waits for a reminder for later, rather than for its
@@ -47,11 +42,11 @@ fn dismissed(tile: &Tile) -> bool {
     tile.session().is_some_and(|s| s.dismissed_at.is_some())
 }
 
-/// Notes that you set or canceled a session tile's timer yourself, which no reminder after a
-/// look overrides until the session's next state.
+/// Notes that you set or canceled a session tile's timer yourself, which no look stops until the
+/// session's next state.
 fn take_in_hand(tile: &mut Tile) {
     if let Body::Session(s) = &mut tile.body {
-        s.remind = Remind::Mine;
+        s.own_timer = true;
     }
 }
 
@@ -256,7 +251,7 @@ impl Rack {
             s.state = to;
             s.state_since = now;
             s.read = false;
-            s.remind = Remind::Off;
+            s.own_timer = false;
             // A reminder for tomorrow is for when you're back, so the session's turns leave it.
             if timer.is_tomorrow() {
                 return;
@@ -391,7 +386,7 @@ impl Rack {
             SessionEvent::Seen { at } if at >= s.state_since => match s.state {
                 SessionState::Unread => set_state(s, &mut tile.timer, SessionState::Done),
                 SessionState::YourTurn => {
-                    look(s, &mut tile.timer, at);
+                    look(s, &mut tile.timer);
                 }
                 _ => {}
             },
@@ -559,18 +554,6 @@ impl Rack {
         }
         for tile in &mut self.tiles {
             let (timer, need) = (tile.timer, tile.need);
-            // A session still at your turn when the wait after your look is over gets its
-            // reminder, counted from the end of the wait.
-            if let Body::Session(s) = &mut tile.body
-                && s.state == SessionState::YourTurn
-                && let Remind::At(due) = s.remind
-                && now >= due
-            {
-                s.remind = Remind::Started;
-                if !tile.timer.is_set() {
-                    tile.timer = Timer::start(due, LOOK_REMINDER_MINUTES);
-                }
-            }
             tile.timer = tile.timer.at(now);
             tile.refresh_need(now);
             changed |= tile.timer != timer || tile.need != need;
@@ -925,7 +908,7 @@ impl Rack {
             }
             // Your turn stays your turn, since it still waits for your reply.
             SessionState::YourTurn => {
-                if !look(s, &mut tile.timer, now) {
+                if !look(s, &mut tile.timer) {
                     return false;
                 }
             }
@@ -2264,28 +2247,18 @@ mod tests {
     }
 
     #[test]
-    fn a_look_at_your_turn_starts_a_reminder_two_minutes_later_unless_you_answer() {
+    fn a_turn_you_looked_at_stays_read_without_a_timer_however_long_it_waits() {
         let mut rack = Rack::new();
         let a = apply(&mut rack, "a", stop("Commit it?"), 0);
         assert!(rack.mark_read(a, at(10)));
-        rack.tick(at(129));
-        assert_eq!(rack.tile(a).unwrap().timer, Timer::Idle);
-        rack.tick(at(130));
-        let timer = rack.tile(a).unwrap().timer;
-        assert_eq!(timer.remaining(at(130)), Some(Duration::from_secs(180)));
-
-        // A look while the reminder runs starts the wait over.
-        assert!(rack.mark_read(a, at(200)));
-        assert_eq!(rack.tile(a).unwrap().timer, Timer::Idle);
-        rack.tick(at(320));
-        assert!(rack.tile(a).unwrap().timer.is_running());
-
-        // An answer before the wait is over leaves no reminder to start.
-        let b = apply(&mut rack, "b", stop("Push it?"), 0);
-        rack.mark_read(b, at(10));
-        apply(&mut rack, "b", prompt("Yes"), 60);
-        rack.tick(at(200));
-        assert!(!rack.tile(b).unwrap().timer.is_set());
+        rack.tick(at(3600));
+        let t = rack.tile(a).unwrap();
+        assert_eq!(t.timer, Timer::Idle);
+        assert_eq!(t.need, None);
+        assert!(
+            !rack.mark_read(a, at(3601)),
+            "a second look changes nothing"
+        );
     }
 
     #[test]
