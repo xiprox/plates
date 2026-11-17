@@ -2,6 +2,56 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-17: The timer's tone is a felt-mallet strike on a glass bar, and three measures tracked what the user heard
+
+**Asked:** why did the timer's first tone, an 880 Hz sine 400ms long, sound "compressed" and "low bits" to the user, and "suffocate" at the end, and what would it need to sound like one of macOS' own alert sounds?
+
+**Expected:** a softer start and a longer ring would fix it.
+
+**Found:** measured on macOS 26.5.2, 2026-11-17, against nine of macOS' alert sounds ([results](results/2026-11-17-tone-against-macos-sounds.txt), and the spectrograms beside it).
+The results file lists every variant below and how it differs from the shipped one.
+
+- The expected fix didn't work for the user: a1-ring, the first tone with a 10ms eased rise, stretched to 1.4s with a slower fade, and a2 and a3, which added a room's echoes and then a slowly beating second voice to it, still felt "compressed" and "almost like low bits" (user, 2026-11-17).
+  a1-ring's last 100ms sat at -49 dBFS, with the note visible at the cut in its spectrogram.
+- No single measure set a1-ring apart from macOS' sounds.
+  Crest, the peak over the average, puts a1-ring's 14.4 dB inside the nine sounds' 13.9 dB (Keys) to 28.8 dB (Note).
+  The level of the last 250ms doesn't either: Glass's and Complete's sit at -97.5 and -86.3 dBFS, but Input's at -36.1 dBFS.
+  Energy above 6 kHz in the first 5ms of the onset doesn't either: Glass, Note, and Chord carry it within 2 dB of their whole level or above it, and Complete, Tink, Input, and Keys 36 to 48 dB under.
+  a1-ring carries it 52.6 dB under, 4 dB past Complete, and k3 48.1 dB under, beside Complete.
+- What differed is how the sound is made.
+  We built a struck bar from its modes, the tones a bar rings with at once: for glass, 1, 2.756, and 5.404 times the note, to which we added a weak octave at 2.
+  Each mode fades faster the higher it rings, as Glass's, Note's, and Complete's overtones do in their spectrograms (read by eye).
+  We rendered it at 48 kHz in 24-bit stereo, as Glass, Ping, Tink, Pop, and Purr are, where the first tone was 44.1 kHz, 16-bit without dither, and mono.
+  Struck hard at A6 (g1), it measured within 0.1 dB of Complete's peak and average level, and the user found it "much much better".
+  We can't say which of these changes mattered, the fade among them.
+  The user then found a two-note figure (w1) demanding, and chose one strike at A5.
+
+Three measures then tracked what the user said of each variant:
+
+- Sharpness: the user found g1 "sharp", and across our variants the energy in 2.5-6 kHz, where the ear is most sensitive, tracked that: g1 carried it 12.2 dB under its whole level, and k3 35.9 dB under.
+  macOS' sounds span 6.3 dB (Note) to 40.6 dB (Pop) under, so the measure ranks our variants, not theirs.
+  A felt mallet an octave lower made about 17 of the 24 dB between g1 and k3: n1 carries it 28.9 dB under, and w1 30.5 dB under.
+  Our variants changed the mallet and the octave together, so they don't say which mattered; rendering n1's felt at A6 would.
+  At A6, the bar's modes at 2 and 2.756 times the note fall inside 2.5-6 kHz, and at A5 below it (unverified: arithmetic from the mode ratios, and g1's own modes aren't kept).
+  Keeping the felt on the bar 4.5ms rather than 1.0ms took the energy above 6 kHz in the first 20ms from -59.3 to -83.4 dBFS, 4 dB of it from k3's lower level.
+- Hang: the user heard the felt's ring "waving at you".
+  Its level stopped falling at -52 dBFS from 1.1s to 1.5s (f3).
+  Each mode rings as a pair of tones, mixed differently into the two channels for stereo width, as Glass has (stereo correlation 0.34, g1 0.42).
+  The upper modes' pairs are 0.7, 0.9, and 1.4 Hz apart, and in f3 the note's pair, 0.45 Hz apart, drifted back into step.
+  With the note's pair in tune, the ring falls at least 6.4 dB in every 300ms.
+  s1 also shortened each mode's fade by 38%, so the note falls to 1/e in 248ms.
+- Loudness: the user asked for a still softer tone.
+  A softer felt, on the bar 4.5ms, and 4 dB less level took s1's -22.9 LUFS to k3's -26.8 LUFS, near Glass's -25.8 LUFS, and the user chose k3.
+
+On macOS 26.5.2, `NSSound`'s `initWithData` returned a sound for Plates' 24-bit file and `play` returned true.
+On Windows, Plates hands the 24-bit file to `PlaySoundW`, and plays a 16-bit copy if that returns false (read in plates, src/plates/src/tone.rs, `play`).
+We haven't run either on Windows, and the [PlaySound documentation](https://learn.microsoft.com/previous-versions/dd743680(v=vs.85)) doesn't say whether, with `SND_ASYNC`, a format it can't play returns false, so the fallback is unverified.
+A timer running out on Windows 11 would settle it: a tone with no `Couldn't play the tone.` on stderr means the 24-bit file played, the message means Plates fell back to the 16-bit copy, and silence with no message means `PlaySoundW` returned true for a file it couldn't play.
+
+**Changed:** [tone.rs](../../../src/plates/src/tone.rs) builds k3 from the bar's modes, as the prototype in `experiments/areas/rack/tone/` renders it, and the difference between them, sample by sample, is -83.1 dBFS, 51.2 dB under the tone.
+
+**Affects:** [02-tiles](02-tiles.md#the-timer), which describes the tone.
+
 ## 2026-11-16: On Windows, a border on a box with no width draws no line
 
 **Asked:** why did a family's line still have a gap between two sub-sessions after each tile drew it on down, through the gap below it, to the next?
