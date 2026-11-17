@@ -32,7 +32,7 @@ None of it is GPUI code, as [decision 001](../../decisions/001-rust-and-gpui.md)
   A dismissed sub-session that comes back goes there too, and a restored sub-session's tile moves after its parent's family before the rack first shows it, so no tile moves under the cursor.
   When the Claude desktop app detaches a sub-session from its parent, the sub-session's tile, with its own sub-sessions, moves from the parent's family to just past it, so the parent's other sub-sessions stay under the parent (user, 2026-11-16).
   A detached tile that sat anywhere else stays where it is.
-  An Undo puts a tile back in its own group, at the place it had there.
+  An Undo puts a tile back in its own group, at the place it had there, and the sub-sessions dismissed with it right after it.
 - A dismissed session's tile leaves `Rack::tiles` for a list the model keeps apart, where its events still apply, so the tile is current when it comes back, as [02-tiles](../rack/02-tiles.md#session-tiles) says it does.
 - A session tile's title comes from the sources [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries) lists, in its order.
   For a session Plates first sees after you typed its first prompt, the app reads that prompt from the transcript and sets it over any prompt the first event carried.

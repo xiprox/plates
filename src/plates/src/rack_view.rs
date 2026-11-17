@@ -12,7 +12,7 @@ use std::{
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::*;
 use plates_core::{
-    Rack, Removed, SessionState, TileId, desktop,
+    Rack, Removed, SessionState, Tile, TileId, desktop,
     hooks::{self, HookMessage},
     store,
     timer::{DEFAULT_MINUTES, MENU_HOURS, MENU_MINUTES, Timer},
@@ -702,7 +702,11 @@ impl RackView {
     /// pointer.
     pub(crate) fn swipe_touched(&mut self, target: Swiped, e: &ScrollEvent) {
         if e.touch_phase == TouchPhase::Started && self.field.is_none() {
-            self.swipe = Some(Swipe::new(target));
+            let family = match target {
+                Swiped::Tile(id) => self.rack.family(id),
+                Swiped::Undo => Vec::new(),
+            };
+            self.swipe = Some(Swipe::new(target, family));
         }
     }
 
@@ -755,9 +759,30 @@ impl RackView {
     /// How far a tile sits sideways from its place, in logical px, while a swipe moves it. A
     /// `leaving` tile is one shrinking out of the rack, which a swipe that dismissed it moves.
     pub(crate) fn swipe_offset(&self, target: Swiped, leaving: bool, now: Instant) -> f32 {
+        let moves = |s: &Swipe| match target {
+            Swiped::Tile(id) => s.target == target || s.family.contains(&id),
+            Swiped::Undo => s.target == target,
+        };
         match &self.swipe {
-            Some(s) if s.target == target && s.dismissed() == leaving => s.offset(now),
+            Some(s) if moves(s) && s.dismissed() == leaving => s.offset(now),
             _ => 0.,
+        }
+    }
+
+    /// How far the lines beside a sub-session's tile move with a swipe: with the tile, when the
+    /// swipe moves the sub-session because it moves an ancestor, whose lines move too.
+    pub(crate) fn branch_offset(&self, id: TileId, leaving: bool, now: Instant) -> f32 {
+        match &self.swipe {
+            Some(s) if s.family.contains(&id) && s.dismissed() == leaving => s.offset(now),
+            _ => 0.,
+        }
+    }
+
+    /// The tile a swipe moves, if it moves one.
+    pub(crate) fn swiped_tile(&self) -> Option<TileId> {
+        match self.swipe.as_ref()?.target {
+            Swiped::Tile(id) => Some(id),
+            Swiped::Undo => None,
         }
     }
 
@@ -1536,22 +1561,19 @@ impl RackView {
     // comes here directly, since a click left over from a drag of the rack has nothing to do with
     // it.
     fn take_off(&mut self, id: TileId, cx: &mut Context<Self>) {
-        let Some(tile) = self.rack.tile(id) else {
-            return;
-        };
-        // Your own tile and a dismissed session go to the archive and can come back with Undo, and
-        // an ended session's tile, which has nothing left to show, goes without one.
-        let title = tile.title();
-        let ended = tile.session().map(|s| s.state) == Some(SessionState::Ended);
-        let label = (!ended).then(|| format!("Archived \u{201c}{title}\u{201d}"));
-        let own = tile.is_own();
         let Some(removed) = self.rack.remove(id, SystemTime::now()) else {
             return;
         };
-        if let Some(title) = label {
+        // Your own tile and a dismissed session go to the archive and can come back with Undo, and
+        // an ended session's tile, which has nothing left to show, goes without one, unless a
+        // sub-session that went with it can come back.
+        let own = removed.tile.is_own();
+        let back = |t: &Tile| t.session().is_none_or(|s| s.state != SessionState::Ended);
+        if back(&removed.tile) || removed.family.iter().any(back) {
+            let title = removed.tile.title();
             self.toast = Some(Toast {
+                title: format!("Archived \u{201c}{title}\u{201d}"),
                 removed,
-                title,
                 until: Instant::now() + TOAST_FOR,
             });
         }

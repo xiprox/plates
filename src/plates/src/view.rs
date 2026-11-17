@@ -147,8 +147,10 @@ fn runs_on(depths: &[usize]) -> Vec<Vec<bool>> {
 // its parent's marker and turns into the tile, as the Claude desktop app's sidebar draws a
 // session's side sessions. Where a level's line runs on, it goes straight down the row, through
 // the gap below the tile, to meet the next tile's line at that level, so a family's lines have no
-// breaks (user, 2026-11-16).
-fn nested_row(tile: AnyElement, runs_on: &[bool]) -> AnyElement {
+// breaks (user, 2026-11-16). A swipe that moves the tile with an ancestor moves the lines from
+// that ancestor's marker and the ones below it with them: the levels past `fixed`, `shift` px
+// sideways.
+fn nested_row(tile: AnyElement, runs_on: &[bool], shift: f32, fixed: usize) -> AnyElement {
     let depth = runs_on.len();
     let color = white(0.16);
     let mut lines: Vec<Div> = Vec::new();
@@ -156,7 +158,7 @@ fn nested_row(tile: AnyElement, runs_on: &[bool]) -> AnyElement {
         // A tile's marker is centered 16.5px in from its left edge: 12px of padding and half of
         // the 9px marker. So level k + 1's line runs down at 16px in from the left edge of a tile
         // at level k, which sits k NESTs in, and meets the tile at y 29.
-        let x = k as f32 * NEST + 16.;
+        let x = k as f32 * NEST + 16. + if k >= fixed { shift } else { 0. };
         let own = k + 1 == depth;
         if on {
             // A border on a box with no width draws nothing, so these lines are filled 1px boxes
@@ -1003,42 +1005,54 @@ impl RackView {
         let leaving = self.rows.leaving();
         let depths = nesting(present);
         // A sub-session shrinking out keeps its indent, one level below its parent's, while its
-        // parent is still on the rack.
-        let leaving_depth = |t: &Tile| {
-            let parent = t.session().and_then(|s| s.app_parent.as_deref());
-            present
-                .iter()
-                .zip(&depths)
-                .find(|(o, _)| {
-                    parent.is_some() && o.session().and_then(|s| s.app_id.as_deref()) == parent
+        // parent is still on the rack or shrinks out with it.
+        fn app_id(t: &Tile) -> Option<&str> {
+            t.session().and_then(|s| s.app_id.as_deref())
+        }
+        let mut leaving_depths: Vec<usize> = Vec::new();
+        for l in leaving {
+            let parent = l.tile.session().and_then(|s| s.app_parent.as_deref());
+            let depth = parent
+                .and_then(|p| {
+                    present
+                        .iter()
+                        .zip(&depths)
+                        .chain(leaving.iter().map(|l| &l.tile).zip(&leaving_depths))
+                        .find(|(o, _)| app_id(o) == Some(p))
                 })
-                .map_or(0, |(_, d)| (d + 1).min(MAX_DEPTH))
-        };
-        // Each row in the order it's drawn, with its depth and how far it has grown.
-        let mut rows: Vec<(AnyElement, usize, f32)> = Vec::new();
+                .map_or(0, |(_, d)| (d + 1).min(MAX_DEPTH));
+            leaving_depths.push(depth);
+        }
+        // Each row in the order it's drawn, with its tile's id, whether it's shrinking out, its
+        // depth, and how far it has grown.
+        let mut rows: Vec<(AnyElement, plates_core::TileId, bool, usize, f32)> = Vec::new();
         for (i, t) in present.iter().enumerate() {
             for (k, l) in leaving.iter().enumerate() {
                 if l.before == Some(t.id) {
                     let el = self.tile(LEAVING + k, &l.tile, now, cx);
-                    rows.push((el, leaving_depth(&l.tile), l.factor(at)));
+                    rows.push((el, l.tile.id, true, leaving_depths[k], l.factor(at)));
                 }
             }
             let el = self.tile(i, t, now, cx);
-            rows.push((el, depths[i], self.rows.factor(t.id, at)));
+            rows.push((el, t.id, false, depths[i], self.rows.factor(t.id, at)));
         }
         for (k, l) in leaving.iter().enumerate() {
             if l.before.is_none_or(|b| present.iter().all(|t| t.id != b)) {
                 let el = self.tile(LEAVING + k, &l.tile, now, cx);
-                rows.push((el, leaving_depth(&l.tile), l.factor(at)));
+                rows.push((el, l.tile.id, true, leaving_depths[k], l.factor(at)));
             }
         }
-        let lines = runs_on(&rows.iter().map(|(_, depth, _)| *depth).collect::<Vec<_>>());
+        let lines = runs_on(&rows.iter().map(|r| r.3).collect::<Vec<_>>());
+        // The lines from above the swiped tile's own level stay put while it slides.
+        let swiped = self.swiped_tile();
+        let fixed = rows.iter().find(|r| Some(r.1) == swiped).map_or(0, |r| r.3);
         let tiles: Vec<AnyElement> = rows
             .into_iter()
             .zip(lines)
-            .map(|((el, depth, factor), lines)| {
+            .map(|((el, id, leaving, depth, factor), lines)| {
                 let el = if depth > 0 {
-                    nested_row(el, &lines)
+                    let shift = self.branch_offset(id, leaving, at);
+                    nested_row(el, &lines, shift, fixed)
                 } else {
                     el
                 };

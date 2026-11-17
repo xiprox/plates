@@ -25,7 +25,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   The rack nests two levels deep, so a session that a second-level sub-session started sits at the second level too, drawn as that sub-session's sibling, and no tile is more than 52px narrower than one at the top level (user, 2026-11-16).
   When another sub-session of the same parent sits further down, a sub-session's line also runs on past its tile, and past its own sub-sessions, to meet that sub-session's line, so a family's lines have no breaks (user, 2026-11-16).
   [01-core](../core/01-core.md#tiles) says where a sub-session's tile goes.
-  A sub-session's tile is indented only while its parent's tile is above it with nothing but indented tiles between them, so one that sits anywhere else, such as after you dismiss its parent, keeps its place without the indent.
+  A sub-session's tile is indented only while its parent's tile is above it with nothing but indented tiles between them, so one that sits anywhere else, such as one that came back on its own while its parent stays dismissed, keeps its place without the indent.
 - A session tile's marker is a circle, and your own tile's is a square.
 - A title wraps to two lines when the tile has no summary line, and truncates after the second.
 - Hovering a tile lays 3.5% white over its background, so a tinted tile keeps its tint.
@@ -62,6 +62,9 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   A dismissed session stays off the rack while it works, compacts, or is opened, and comes back once it needs you again, with an approval, a question, an unread turn, or an MCP server's request, or once you send it a new prompt (user, 2026-11-15).
   It comes back after the last session tile, or for a sub-session where [01-core](../core/01-core.md#tiles) says.
   A dismissed session that ends doesn't come back.
+- Dismissing a session takes the sub-sessions indented under its tile along, and they shrink out with it, keeping their indent (user, 2026-11-17).
+  The Undo brings them all back, so a session that ended shows the Undo too while a sub-session that went with it hasn't ended.
+  Each sub-session comes back on its own once it needs you, as any dismissed session does.
 
 ## The hover card
 
@@ -131,6 +134,7 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
 
 - Once your fingers have moved 8px, a swipe that moved more sideways than up or down slides the tile, and any other swipe leaves it alone until your fingers lift.
 - The tile slides with your fingers, fading to 79% opacity at 96px and 30% at 320px, and the window's edges cut it off, since its row reaches out through the rack's padding and border (user, 2026-11-16).
+- A session's tile slides with the sub-sessions indented under it, and with the lines from its marker down to theirs, since dismissing it takes them along.
 - The Undo row a removed tile leaves swipes away the same way, which keeps the removal, as waiting out its 5s does (user, 2026-11-16).
 - When you lift your fingers, the tile slides out over 180ms if it slid 96px or more either way, about a third of its width.
   It also slides out if it slid at least 20px and, in the 60ms before the lift, your fingers carried it on that way at 600px/s or faster.
@@ -198,6 +202,7 @@ While it holds any, its badge sits in the grip band: an archive-box icon and the
 - An ended session's tile you clear goes for good, with no Undo.
 - Your own tile waits there without its timer, and an Undo in its 5s puts it back with the timer it had.
 - A dismissed session's events keep its marker current, and it leaves the archive when it comes back on its own, as [Session tiles](#session-tiles) says, or when it ends, which drops it for good.
+- A dismissed sub-session has no row of its own while its parent is dismissed too, and comes back with the parent's row, under it.
 - Clicking the badge opens a list of the tiles, newest first, where the moon's list opens, and the list scrolls past 8 rows.
   Each row shows the tile's marker as it stands now and how long ago you removed or dismissed it: "just now" under a minute, then "12m ago", "3h ago", "yesterday" from 24 to 48 hours, and "4d ago".
 - Clicking a row brings the tile back to the rack as it stands now, in the place [Snoozing](#snoozing) gives a tile that comes back, and clicking the badge again closes the list.

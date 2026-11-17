@@ -142,6 +142,8 @@ impl Tile {
 pub struct Removed {
     pub tile: Tile,
     pub index_in_group: usize,
+    /// The sub-sessions dismissed with a session, in their order under it.
+    pub family: Vec<Tile>,
 }
 
 /// How many of your own removed tiles the archive keeps, dropping the oldest past it.
@@ -770,15 +772,26 @@ impl Rack {
             })
     }
 
-    // The index just past the family of the shown session whose app ID is `parent`: its tile,
-    // and the tiles right after it whose parent is in the family, such as a sub-session's own
-    // sub-sessions.
+    // The index just past the family of the shown session whose app ID is `parent`.
     fn after_family(&self, parent: &str) -> Option<usize> {
         let start = self
             .tiles
             .iter()
             .position(|t| t.session().and_then(|s| s.app_id.as_deref()) == Some(parent))?;
-        let mut family = vec![parent];
+        Some(self.family_end(start))
+    }
+
+    // The index just past the family of the tile at `start`: its tile, and the tiles right after
+    // it whose parent is in the family, such as a sub-session's own sub-sessions. These are the
+    // tiles the rack draws nested under it.
+    fn family_end(&self, start: usize) -> usize {
+        let Some(head) = self.tiles[start]
+            .session()
+            .and_then(|s| s.app_id.as_deref())
+        else {
+            return start + 1;
+        };
+        let mut family = vec![head];
         let mut end = start + 1;
         while let Some(s) = self.tiles.get(end).and_then(|t| t.session()) {
             match s.app_parent.as_deref() {
@@ -789,7 +802,16 @@ impl Rack {
                 _ => break,
             }
         }
-        Some(end)
+        end
+    }
+
+    /// The sub-sessions nested under a shown session's tile, which dismissing it takes along.
+    pub fn family(&self, id: TileId) -> Vec<TileId> {
+        let Some(start) = self.tiles.iter().position(|t| t.id == id) else {
+            return Vec::new();
+        };
+        let end = self.family_end(start);
+        self.tiles[start + 1..end].iter().map(|t| t.id).collect()
     }
 
     /// Moves a shown sub-session's tile to just after its parent's family. The app calls it for
@@ -824,11 +846,7 @@ impl Rack {
         if self.after_family(parent) != Some(start) {
             return;
         }
-        let end = self.tiles[start]
-            .session()
-            .and_then(|s| s.app_id.clone())
-            .and_then(|id| self.after_family(&id))
-            .unwrap_or(start + 1);
+        let end = self.family_end(start);
         let block: Vec<Tile> = self.tiles.drain(start..end).collect();
         let at = self.after_family(parent).unwrap_or(start);
         self.tiles.splice(at..at, block);
@@ -958,7 +976,8 @@ impl Rack {
 
     /// Takes a tile off the rack, for an Undo to put back. Your own tile and an ended session's
     /// go, and a session that hasn't ended is dismissed: it's read, its timer stops, and it waits
-    /// off the rack until it needs you or you send it a new prompt.
+    /// off the rack until it needs you or you send it a new prompt. A session's sub-sessions,
+    /// nested under its tile, go with it (user, 2026-11-17).
     pub fn remove(&mut self, id: TileId, now: SystemTime) -> Option<Removed> {
         let index = self.tiles.iter().position(|t| t.id == id)?;
         let own = self.tiles[index].is_own();
@@ -966,7 +985,27 @@ impl Rack {
             .iter()
             .filter(|t| t.is_own() == own)
             .count();
+        let end = self.family_end(index);
+        let family: Vec<Tile> = self.tiles.drain(index + 1..end).collect();
         let mut tile = self.tiles.remove(index);
+        self.put_away(&mut tile, now);
+        let family = family
+            .into_iter()
+            .map(|mut t| {
+                self.put_away(&mut t, now);
+                t
+            })
+            .collect();
+        Some(Removed {
+            tile,
+            index_in_group,
+            family,
+        })
+    }
+
+    // Puts a tile taken off the rack where it waits: a session that hasn't ended among the
+    // dismissed, and your own tile in the archive.
+    fn put_away(&mut self, tile: &mut Tile, now: SystemTime) {
         match &mut tile.body {
             Body::Session(s) if s.state != SessionState::Ended => {
                 if s.state == SessionState::Unread {
@@ -995,38 +1034,53 @@ impl Rack {
                 self.archive.truncate(ARCHIVE_KEEPS);
             }
         }
-        Some(Removed {
-            tile,
-            index_in_group,
-        })
     }
 
-    // Session tiles always come before your own, so a group's tiles sit together. A dismissed
-    // session comes back as it stands now, since its events kept it up to date, and not at all
-    // if it came back or ended meanwhile.
+    // Session tiles always come before your own, so a group's tiles sit together, and a
+    // session's sub-sessions come back under it.
     pub fn restore(&mut self, removed: Removed) {
-        let mut tile = match removed.tile.session() {
-            Some(s) if s.state != SessionState::Ended => {
-                match self.hidden.iter().position(|t| t.id == removed.tile.id) {
-                    Some(i) => self.hidden.remove(i),
-                    None => return,
-                }
-            }
-            _ => removed.tile,
-        };
-        // An Undo takes the tile back out of the archive it went into.
-        self.archive.retain(|a| a.tile.id != tile.id);
-        returned(&mut tile);
-        let removed = Removed { tile, ..removed };
-        let own = removed.tile.is_own();
+        let Removed {
+            tile,
+            index_in_group,
+            family,
+        } = removed;
+        let own = tile.is_own();
         let sessions = self.tiles.iter().filter(|t| !t.is_own()).count();
         let (start, len) = if own {
             (sessions, self.tiles.len() - sessions)
         } else {
             (0, sessions)
         };
-        let index = start + removed.index_in_group.min(len);
-        self.tiles.insert(index, removed.tile);
+        let mut index = Some(start + index_in_group.min(len));
+        for (k, tile) in std::iter::once(tile).chain(family).enumerate() {
+            match (self.take_back(tile), index) {
+                (Some(tile), Some(i)) => {
+                    self.tiles.insert(i, tile);
+                    index = Some(i + 1);
+                }
+                // A sub-session whose parent didn't come back goes where it would come back on
+                // its own.
+                (Some(tile), None) => self.show(tile),
+                (None, _) if k == 0 => index = None,
+                (None, _) => {}
+            }
+        }
+    }
+
+    // Takes a removed tile back for an Undo. A dismissed session comes back as it stands now,
+    // since its events kept it up to date, and not at all if it came back or ended meanwhile.
+    fn take_back(&mut self, removed: Tile) -> Option<Tile> {
+        let mut tile = match removed.session() {
+            Some(s) if s.state != SessionState::Ended => {
+                let i = self.hidden.iter().position(|t| t.id == removed.id)?;
+                self.hidden.remove(i)
+            }
+            _ => removed,
+        };
+        // An Undo takes the tile back out of the archive it went into.
+        self.archive.retain(|a| a.tile.id != tile.id);
+        returned(&mut tile);
+        Some(tile)
     }
 
     /// Takes a tile off the rack until `until`, a reminder for later, runs out, or until you wake
@@ -1057,11 +1111,24 @@ impl Rack {
     }
 
     /// What you removed, newest first, with when: your own tiles, and the sessions you dismissed
-    /// that haven't come back on their own.
+    /// that haven't come back on their own. A dismissed sub-session whose parent is dismissed
+    /// too isn't listed, since it comes back with its parent.
     pub fn archived(&self) -> Vec<(&Tile, SystemTime)> {
-        let dismissed = self.hidden.iter().filter_map(|t| {
-            let at = t.session()?.dismissed_at?;
-            Some((t, at))
+        let parents: Vec<&str> = self
+            .hidden
+            .iter()
+            .filter_map(Tile::session)
+            .filter(|s| s.dismissed_at.is_some())
+            .filter_map(|s| s.app_id.as_deref())
+            .collect();
+        let dismissed = self.hidden.iter().filter_map(move |t| {
+            let s = t.session()?;
+            let at = s.dismissed_at?;
+            let under = s
+                .app_parent
+                .as_deref()
+                .is_some_and(|p| parents.contains(&p));
+            (!under).then_some((t, at))
         });
         let mut all: Vec<_> = self
             .archive
@@ -1074,7 +1141,8 @@ impl Rack {
     }
 
     /// Brings a tile in the archive back to the rack, as it stands now, after the others of its
-    /// kind. It returns whether a tile came back.
+    /// kind, and a session with its dismissed sub-sessions under it. It returns whether a tile
+    /// came back.
     pub fn unarchive(&mut self, id: TileId, now: SystemTime) -> bool {
         let mut tile = if let Some(i) = self.archive.iter().position(|a| a.tile.id == id) {
             self.archive.remove(i).tile
@@ -1087,9 +1155,27 @@ impl Rack {
         } else {
             return false;
         };
+        let mut family: Vec<String> = tile
+            .session()
+            .and_then(|s| s.app_id.clone())
+            .into_iter()
+            .collect();
         returned(&mut tile);
         tile.refresh_need(now);
         self.show(tile);
+        // Each sub-session comes back after its parent, which came back before it.
+        while let Some(i) = self.hidden.iter().position(|t| {
+            t.session().is_some_and(|s| {
+                s.dismissed_at.is_some()
+                    && s.app_parent.as_ref().is_some_and(|p| family.contains(p))
+            })
+        }) {
+            let mut tile = self.hidden.remove(i);
+            family.extend(tile.session().and_then(|s| s.app_id.clone()));
+            returned(&mut tile);
+            tile.refresh_need(now);
+            self.show(tile);
+        }
         true
     }
 
@@ -1333,19 +1419,83 @@ mod tests {
         let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
         assert_eq!(order, [plates, probe, deeper, second, other, orphan]);
 
-        // A dismissed sub-session that needs you comes back under its parent, ahead of its own
-        // sub-session, which then follows it again.
-        rack.remove(probe, at(0));
-        apply(&mut rack, "probe", stop("Found it."), 5);
-        let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
-        assert_eq!(order, [plates, probe, deeper, second, other, orphan]);
-
         // A sub-session the app detaches leaves its parent's family with its own sub-session,
         // so its sibling stays under the parent, and one that sat elsewhere stays there.
         rack.set_app_session("probe", &app("local_c1", None));
         rack.set_app_session("orphan", &app("local_x", None));
         let order: Vec<TileId> = rack.tiles().iter().map(|t| t.id).collect();
         assert_eq!(order, [plates, second, probe, deeper, other, orphan]);
+    }
+
+    fn ids(rack: &Rack) -> Vec<TileId> {
+        rack.tiles().iter().map(|t| t.id).collect()
+    }
+
+    // A rack of "plates", its sub-session "probe", and probe's own sub-session "deeper", then
+    // "other".
+    fn family_rack() -> (Rack, [TileId; 4]) {
+        let mut rack = Rack::new();
+        let add = |rack: &mut Rack, id: &str, parent: Option<&str>| {
+            let tile = apply(rack, id, stop("Done."), 0);
+            let app = AppSession {
+                id: Some(format!("local_{id}")),
+                parent: parent.map(|p| format!("local_{p}")),
+                ..AppSession::default()
+            };
+            rack.set_app_session(id, &app);
+            rack.place_under_parent(id);
+            tile
+        };
+        let plates = add(&mut rack, "plates", None);
+        let other = add(&mut rack, "other", None);
+        let probe = add(&mut rack, "probe", Some("plates"));
+        let deeper = add(&mut rack, "deeper", Some("probe"));
+        (rack, [plates, probe, deeper, other])
+    }
+
+    #[test]
+    fn dismissing_a_session_takes_its_sub_sessions_and_an_undo_brings_them_back() {
+        let (mut rack, [plates, probe, deeper, other]) = family_rack();
+        assert_eq!(rack.family(plates), [probe, deeper]);
+        apply(&mut rack, "deeper", SessionEvent::Ended, 1);
+        let removed = rack.remove(plates, at(5)).unwrap();
+        assert_eq!(ids(&rack), [other]);
+        assert!(!rack.knows("deeper"), "an ended sub-session goes for good");
+        let listed: Vec<TileId> = rack.archived().iter().map(|(t, _)| t.id).collect();
+        assert_eq!(listed, [plates], "the archive lists the family once");
+
+        rack.restore(removed);
+        assert_eq!(ids(&rack), [plates, probe, deeper, other]);
+        assert!(rack.archived().is_empty());
+    }
+
+    #[test]
+    fn bringing_a_session_back_from_the_archive_brings_its_sub_sessions() {
+        let (mut rack, [plates, probe, deeper, other]) = family_rack();
+        rack.remove(plates, at(5));
+        assert!(rack.unarchive(plates, at(6)));
+        assert_eq!(ids(&rack), [other, plates, probe, deeper]);
+        assert!(rack.archived().is_empty());
+    }
+
+    #[test]
+    fn an_undo_after_the_parent_came_back_puts_its_sub_sessions_under_it() {
+        let (mut rack, [plates, probe, deeper, other]) = family_rack();
+        let removed = rack.remove(plates, at(5)).unwrap();
+        apply(&mut rack, "plates", prompt("More"), 6);
+        rack.restore(removed);
+        assert_eq!(ids(&rack), [other, plates, probe, deeper]);
+    }
+
+    #[test]
+    fn a_dismissed_sub_session_comes_back_without_the_ones_that_went_with_it() {
+        let (mut rack, [plates, probe, deeper, other]) = family_rack();
+        rack.remove(probe, at(5));
+        assert_eq!(ids(&rack), [plates, other]);
+        apply(&mut rack, "probe", prompt("Go on"), 6);
+        assert_eq!(ids(&rack), [plates, probe, other]);
+        let listed: Vec<TileId> = rack.archived().iter().map(|(t, _)| t.id).collect();
+        assert_eq!(listed, [deeper], "its sub-session waits until it needs you");
     }
 
     #[test]

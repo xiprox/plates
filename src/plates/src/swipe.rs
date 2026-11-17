@@ -37,6 +37,9 @@ pub enum Swiped {
 /// A swipe from the fingers touching until what it moves has settled.
 pub struct Swipe {
     pub target: Swiped,
+    /// The sub-sessions nested under a session's tile, which slide with it, since dismissing it
+    /// takes them along.
+    pub family: Vec<TileId>,
     dx: f32,
     dy: f32,
     /// Whether the fingers move sideways, once they've moved `DECIDE` to tell.
@@ -59,9 +62,10 @@ pub enum Release {
 }
 
 impl Swipe {
-    pub fn new(target: Swiped) -> Self {
+    pub fn new(target: Swiped, family: Vec<TileId>) -> Self {
         Self {
             target,
+            family,
             dx: 0.,
             dy: 0.,
             sideways: None,
@@ -148,7 +152,7 @@ mod tests {
     use super::*;
 
     fn swipe_by(steps: &[(f32, f32)], every: Duration) -> (Swipe, Instant) {
-        let mut s = Swipe::new(Swiped::Tile(TileId(1)));
+        let mut s = Swipe::new(Swiped::Tile(TileId(1)), Vec::new());
         let mut now = Instant::now();
         for &(dx, dy) in steps {
             now += every;
