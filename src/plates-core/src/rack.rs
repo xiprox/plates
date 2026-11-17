@@ -1269,6 +1269,22 @@ impl Rack {
         any
     }
 
+    /// Brightens again every tile on the rack that started needing you at `since` or later, whose
+    /// brighten waited while you typed (record/areas/rack/03-holding-pings.md). It returns whether
+    /// any tile brightens.
+    pub fn brighten_since(&mut self, since: SystemTime, now: SystemTime) -> bool {
+        let mut any = false;
+        for tile in &mut self.tiles {
+            if let Some((need, at)) = tile.need
+                && at >= since
+            {
+                tile.need = Some((need, now));
+                any = true;
+            }
+        }
+        any
+    }
+
     /// Sets a reminder for tomorrow, over any timer running, where the local time is
     /// `utc_offset` seconds ahead of UTC.
     pub fn remind_tomorrow(&mut self, id: TileId, now: SystemTime, utc_offset: i64) {
@@ -2195,6 +2211,24 @@ mod tests {
         rack.clear_time_up(id, later);
         rack.tick(later);
         assert!(rack.tile(id).is_none());
+    }
+
+    #[test]
+    fn tiles_that_started_needing_you_while_pings_waited_brighten_again_together() {
+        let mut rack = Rack::new();
+        let before = apply(&mut rack, "a", stop("Push it?"), 0);
+        let during = apply(&mut rack, "b", stop("Commit it?"), 20);
+        assert!(rack.brighten_since(at(10), at(60)));
+        assert_eq!(
+            rack.tile(during).unwrap().need,
+            Some((Need::YourTurn, at(60)))
+        );
+        assert_eq!(
+            rack.tile(before).unwrap().need,
+            Some((Need::YourTurn, at(0))),
+            "a tile that needed you before the pings waited brightened then"
+        );
+        assert!(!rack.brighten_since(at(61), at(70)));
     }
 
     #[test]

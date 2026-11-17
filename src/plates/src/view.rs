@@ -488,7 +488,10 @@ impl RackView {
         let group: SharedString = format!("tile-{i}").into();
         let rest = tile_bg(t);
         let mut bg = rest;
+        // A tile that started needing you while you typed waits to brighten until you're done
+        // (record/areas/rack/03-holding-pings.md).
         if let Some((need, since_at)) = t.need
+            && !self.hold.holds(since_at)
             && let Some(c) = brightened(rest, brighten_to(t, need), since(since_at, now), BRIGHTEN)
         {
             bg = c;
@@ -1424,7 +1427,8 @@ impl RackView {
             .is_some_and(|s| s.settling(Instant::now()));
         swiped
             || self.rack.tiles().iter().any(|t| {
-                t.need.is_some_and(|(_, at)| since(at, now) < BRIGHTEN)
+                t.need
+                    .is_some_and(|(_, at)| !self.hold.holds(at) && since(at, now) < BRIGHTEN)
                     || flipping(t, now).is_some()
                     || t.session().is_some_and(|s| {
                         s.state == SessionState::New && since(s.state_since, now) < ENTER + BRIGHTEN

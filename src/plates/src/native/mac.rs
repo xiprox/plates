@@ -319,6 +319,16 @@ pub fn idle_for() -> Duration {
     Duration::from_secs_f64(secs.max(0.))
 }
 
+/// On macOS, Plates doesn't watch for typing, since whether reading key presses needs the Input
+/// Monitoring permission is unmeasured, so no ping waits for your typing there
+/// (record/areas/rack/03-holding-pings.md, "Left open").
+pub fn watch_typing() {}
+
+/// How long since the last typing key you pressed, which Plates doesn't watch for on macOS.
+pub fn typed_ago() -> Option<Duration> {
+    None
+}
+
 // Start at login is a launch agent in the user's LaunchAgents folder, which macOS loads when you
 // sign in. (documented, https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)
 const AGENT: &str = "plates.start-at-login";

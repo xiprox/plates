@@ -1,0 +1,16 @@
+﻿Input counted by kind through raw input, one listener in the background.
+Windows: Microsoft Windows 11 Pro build 26200, 2026-11-17
+"Secs" columns count the seconds of the part that held at least one event of that kind.
+Hid counts reports from a precision touchpad, if one is registered.
+
+Phase           Seconds Typing TypingSecs Navigation Modifier OtherKey Button ButtonSecs Wheel
+-----           ------- ------ ---------- ---------- -------- -------- ------ ---------- -----
+Rest                 10      0          0          0        0        0      1          1     0
+Typing               20     70         10          0       41        0      6          5     0
+Wheel scrolling      20      0          0          0        0        0      1          1   143
+Key scrolling        15      0          0        111        0        0      1          1     0
+Clicking             15      0          0          0        0        0     18         12    65
+Moving               10      0          0          0        0        0      0          0     0
+
+
+

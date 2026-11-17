@@ -48,6 +48,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
   Your own tile's pip is a gray square, outlined in yellow while the tile's timer runs, or in violet while it's set for tomorrow, and solid yellow once the tile is time-up ([02-tiles](02-tiles.md#the-timer)), since the strip has no room for the timer, and time-up needs you where a running timer doesn't (user, 2026-11-15 and 2026-11-16).
   While any tile is snoozed, a violet moon follows the pips, as the grip band's moon does on the rack ([02-tiles](02-tiles.md#snoozing)).
 - When a tile starts needing you, the strip nudges 12px out of the edge once, then sits still.
+  On Windows, the nudge waits while you type, as [03-holding-pings](03-holding-pings.md) describes.
 - Hovering the strip peeks it 6px out of the edge and lists the tiles that need you, with their pips.
 - Clicking the strip slides the rack back out of the edge over 200ms, to sit flush with it (user, 2026-11-15).
 

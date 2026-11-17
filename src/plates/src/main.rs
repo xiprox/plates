@@ -8,6 +8,7 @@ mod app;
 mod assets;
 mod card;
 mod cli;
+mod hold;
 mod markup;
 mod menu;
 mod motion;

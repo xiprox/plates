@@ -7,8 +7,9 @@ use std::{
     ffi::c_void,
     sync::{
         OnceLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use windows::Win32::{
@@ -31,7 +32,7 @@ use windows::Win32::{
             HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW,
             RegSetKeyValueW,
         },
-        SystemInformation::GetTickCount,
+        SystemInformation::{GetTickCount, GetTickCount64},
         Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION},
     },
     UI::{
@@ -39,17 +40,26 @@ use windows::Win32::{
         Controls::MARGINS,
         Input::KeyboardAndMouse::{
             GetAsyncKeyState, GetLastInputInfo, LASTINPUTINFO, MOD_CONTROL, MOD_NOREPEAT,
-            MOD_SHIFT, RegisterHotKey, VK_LBUTTON, VK_RBUTTON, VK_SPACE,
+            MOD_SHIFT, RegisterHotKey, VIRTUAL_KEY, VK_0, VK_9, VK_A, VK_BACK, VK_CONTROL,
+            VK_DELETE, VK_DIVIDE, VK_LBUTTON, VK_LMENU, VK_LWIN, VK_NUMPAD0, VK_OEM_1, VK_OEM_3,
+            VK_OEM_4, VK_OEM_8, VK_OEM_102, VK_RBUTTON, VK_RETURN, VK_RMENU, VK_RWIN, VK_SPACE,
+            VK_TAB, VK_Z,
+        },
+        Input::{
+            GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER, RID_INPUT,
+            RIDEV_INPUTSINK, RIM_TYPEKEYBOARD, RegisterRawInputDevices,
         },
         Shell::{DefSubclassProc, SetWindowSubclass, ShellExecuteW},
         WindowsAndMessaging::{
-            ASFW_ANY, AllowSetForegroundWindow, EVENT_SYSTEM_FOREGROUND, GW_HWNDPREV, GWL_EXSTYLE,
-            GetClientRect, GetCursorPos, GetForegroundWindow, GetWindow, GetWindowLongPtrW,
-            GetWindowRect, GetWindowThreadProcessId, HWND_TOPMOST, IsWindowVisible, MA_NOACTIVATE,
-            SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
-            SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-            WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_HOTKEY, WM_MOUSEACTIVATE,
-            WM_NCCALCSIZE, WS_EX_NOACTIVATE, WS_EX_TOPMOST,
+            ASFW_ANY, AllowSetForegroundWindow, CreateWindowExW, DispatchMessageW,
+            EVENT_SYSTEM_FOREGROUND, GW_HWNDPREV, GWL_EXSTYLE, GetClientRect, GetCursorPos,
+            GetForegroundWindow, GetMessageW, GetWindow, GetWindowLongPtrW, GetWindowRect,
+            GetWindowThreadProcessId, HWND_MESSAGE, HWND_TOPMOST, IsWindowVisible, MA_NOACTIVATE,
+            MSG, RI_KEY_BREAK, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+            SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
+            SetWindowPos, WINDOW_EX_STYLE, WINDOW_STYLE, WINEVENT_OUTOFCONTEXT,
+            WINEVENT_SKIPOWNPROCESS, WM_HOTKEY, WM_INPUT, WM_MOUSEACTIVATE, WM_NCCALCSIZE,
+            WS_EX_NOACTIVATE, WS_EX_TOPMOST,
         },
     },
 };
@@ -444,6 +454,112 @@ pub fn idle_for() -> std::time::Duration {
     std::time::Duration::from_millis(u64::from(now.wrapping_sub(info.dwTime)))
 }
 
+/// The tick count, in milliseconds since Windows started, of the last typing key you pressed, in
+/// any app, or 0 before the first.
+static LAST_TYPED: AtomicU64 = AtomicU64::new(0);
+
+/// Starts watching the keyboard of every app for typing keys, so a ping can wait while you type.
+/// Raw input with `RIDEV_INPUTSINK` hands each key press to a window in the background, and a
+/// message loop on GPUI's thread would hand GPUI tasks while it holds its own state, as
+/// `ShellExecuteW`'s loop did, which ended Plates; so the window is a message-only window on a
+/// thread of its own, with a loop of its own. Plates keeps the time of the last typing key, and
+/// never which key. (record/areas/rack/03-holding-pings.md)
+pub fn watch_typing() {
+    let spawned = std::thread::Builder::new()
+        .name("plates-typing".into())
+        .spawn(|| unsafe {
+            let window = match CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                w!("STATIC"),
+                PCWSTR::null(),
+                WINDOW_STYLE::default(),
+                0,
+                0,
+                0,
+                0,
+                Some(HWND_MESSAGE),
+                None,
+                None,
+                None,
+            ) {
+                Ok(window) => window,
+                Err(e) => {
+                    eprintln!("Couldn't make a window to watch for typing: {e}");
+                    return;
+                }
+            };
+            // Usage page 1, usage 6: the keyboard.
+            let keyboard = RAWINPUTDEVICE {
+                usUsagePage: 1,
+                usUsage: 6,
+                dwFlags: RIDEV_INPUTSINK,
+                hwndTarget: window,
+            };
+            if let Err(e) = RegisterRawInputDevices(&[keyboard], size_of::<RAWINPUTDEVICE>() as u32)
+            {
+                eprintln!("Couldn't watch the keyboard for typing: {e}");
+                return;
+            }
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                if msg.message == WM_INPUT {
+                    note_key(HRAWINPUT(msg.lParam.0 as *mut c_void));
+                }
+                DispatchMessageW(&msg);
+            }
+        });
+    if let Err(e) = spawned {
+        eprintln!("Couldn't start a thread to watch for typing: {e}");
+    }
+}
+
+/// Notes the time of a typing key's press.
+unsafe fn note_key(input: HRAWINPUT) {
+    let mut raw: RAWINPUT = unsafe { std::mem::zeroed() };
+    let mut size = size_of::<RAWINPUT>() as u32;
+    let header = size_of::<RAWINPUTHEADER>() as u32;
+    let into = (&mut raw as *mut RAWINPUT).cast::<c_void>();
+    let read = unsafe { GetRawInputData(input, RID_INPUT, Some(into), &mut size, header) };
+    if read == u32::MAX || raw.header.dwType != RIM_TYPEKEYBOARD.0 {
+        return;
+    }
+    let key = unsafe { raw.data.keyboard };
+    let pressed = u32::from(key.Flags) & RI_KEY_BREAK == 0;
+    if pressed && types(key.VKey) && !in_shortcut() {
+        LAST_TYPED.store(unsafe { GetTickCount64() }, Ordering::Relaxed);
+    }
+}
+
+/// Whether a key pressed now is part of a shortcut, such as Ctrl+Tab or Alt+Tab, rather than
+/// typing: Ctrl, the left Alt key, or a Windows key is held. Windows sends AltGr, which types
+/// characters such as @ on the German layout, as Ctrl with the right Alt key, so Ctrl with the
+/// right Alt key held still types. (unverified, record/areas/rack/03-holding-pings.md)
+fn in_shortcut() -> bool {
+    let held = |vk: VIRTUAL_KEY| unsafe { GetAsyncKeyState(i32::from(vk.0)) } < 0;
+    held(VK_LWIN) || held(VK_RWIN) || held(VK_LMENU) || (held(VK_CONTROL) && !held(VK_RMENU))
+}
+
+/// How long since the last typing key you pressed, in any app, or `None` before the first.
+pub fn typed_ago() -> Option<Duration> {
+    let at = LAST_TYPED.load(Ordering::Relaxed);
+    (at != 0).then(|| Duration::from_millis(unsafe { GetTickCount64() }.saturating_sub(at)))
+}
+
+/// Whether a key, by its virtual-key code, types: a digit, a letter, a number-pad key,
+/// punctuation, Space, Backspace, Enter, Tab, or Delete. The arrow and page keys scroll, and
+/// Shift, Ctrl, Alt, and the Windows key alone do neither, so none of them counts. When you change
+/// which keys count, change the list in record/areas/rack/03-holding-pings.md too.
+fn types(vk: u16) -> bool {
+    let within = |from: VIRTUAL_KEY, to: VIRTUAL_KEY| (from.0..=to.0).contains(&vk);
+    let one_of = [VK_OEM_102, VK_SPACE, VK_BACK, VK_RETURN, VK_TAB, VK_DELETE];
+    within(VK_0, VK_9)
+        || within(VK_A, VK_Z)
+        || within(VK_NUMPAD0, VK_DIVIDE)
+        || within(VK_OEM_1, VK_OEM_3)
+        || within(VK_OEM_4, VK_OEM_8)
+        || one_of.iter().any(|key| key.0 == vk)
+}
+
 /// Whether Plates starts when you sign in to Windows: a value named "Plates" under the current
 /// user's `Run` key that names this program.
 /// (documented, https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)
@@ -578,4 +694,21 @@ pub fn play_sound(wav: &'static [u8]) -> bool {
         eprintln!("Couldn't play the tone.");
     }
     played
+}
+
+#[cfg(test)]
+mod tests {
+    use super::types;
+
+    #[test]
+    fn only_keys_that_type_count_as_typing() {
+        // A letter, a digit, a comma, Space, Backspace, and Enter type.
+        for vk in [0x41, 0x35, 0xBC, 0x20, 0x08, 0x0D] {
+            assert!(types(vk), "{vk:#x} should type");
+        }
+        // The down arrow, Page Down, Shift, Ctrl, and the Windows key don't.
+        for vk in [0x28, 0x22, 0x10, 0x11, 0x5B] {
+            assert!(!types(vk), "{vk:#x} shouldn't type");
+        }
+    }
 }

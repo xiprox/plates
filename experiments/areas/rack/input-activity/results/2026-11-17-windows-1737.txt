@@ -1,0 +1,13 @@
+﻿Input counted by kind through raw input, one listener in the background.
+Windows: Microsoft Windows 11 Pro build 26200, 2026-11-17
+"in Ns" counts the seconds of the part that held at least one event of that kind.
+A pause is the time between one typing key and the next.
+Touchpad counts reports from a precision touchpad, if one is registered.
+
+Rest              10s | typing    0 in  0s, longest pause   0.0s, pauses over 2s  0, over 5s  0 | navigation    0 | modifier    0 | other key   0 | button   2 in  2s | wheel    0 in  0s | move   107 | touchpad    0
+Typing            20s | typing   63 in 13s, longest pause   3.1s, pauses over 2s  1, over 5s  0 | navigation    0 | modifier    0 | other key   0 | button   4 in  3s | wheel    0 in  0s | move   262 | touchpad    0
+Wheel scrolling   20s | typing    0 in  0s, longest pause   0.0s, pauses over 2s  0, over 5s  0 | navigation    0 | modifier    0 | other key   0 | button   3 in  3s | wheel  216 in 18s | move   422 | touchpad    0
+Key scrolling     15s | typing    0 in  0s, longest pause   0.0s, pauses over 2s  0, over 5s  0 | navigation   21 | modifier    0 | other key   0 | button   1 in  1s | wheel    0 in  0s | move   158 | touchpad    0
+Clicking          15s | typing    0 in  0s, longest pause   0.0s, pauses over 2s  0, over 5s  0 | navigation    0 | modifier    0 | other key   0 | button  11 in  8s | wheel   85 in  9s | move   724 | touchpad    0
+Moving            10s | typing    0 in  0s, longest pause   0.0s, pauses over 2s  0, over 5s  0 | navigation    0 | modifier    0 | other key   0 | button   0 in  0s | wheel    0 in  0s | move   274 | touchpad    0
+

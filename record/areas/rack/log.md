@@ -2,6 +2,34 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-17: On Windows, raw input sees typing keys only while you type, in any app, and clicks while you browse too
+
+**Asked:** can Plates tell that you're working at the PC, typing or clicking in any app, from idling at it, scrolling or watching, so a timer that runs out could hold its tone, brighten, and nudge until you're done?
+
+**Expected:** `GetLastInputInfo`, which `native::idle_for` reads, gives only the time of the last input event, of any kind ([GetLastInputInfo](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo)), so it can't tell typing from the wheel or mouse movement.
+Windows' raw input names each event's kind, and with `RIDEV_INPUTSINK` a window in the background receives the input of every app ([RAWINPUTDEVICE](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawinputdevice)).
+
+**Found:** a probe counted the user's input by kind through raw input, from a background window, while the user went through six parts, twice (measured on Windows 11 Pro build 26200, 2026-11-17, [first run](../../../experiments/areas/rack/input-activity/results/2026-11-17-windows.txt), [second run](../../../experiments/areas/rack/input-activity/results/2026-11-17-windows-1737.txt)):
+
+- Typing in another app for 20s gave 70 typing keys, in 10 of the 20 seconds, and then 63, in 13 of them.
+  In the second run, the only one that timed pauses, the longest pause between two typing keys was 3.1s, and one pause ran over 2s.
+- Scrolling with the wheel for 20s gave 143 wheel events, then 216, and scrolling with the keyboard for 15s gave 111 navigation keys, then 21.
+- No part but typing gave a typing key, in either run.
+- Clicking for 15s gave 18 button presses, then 11, but clicks came in the other parts too: 1 to 3 while resting, scrolling with the wheel, and scrolling with the keyboard.
+- Moving the mouse for 10s gave nothing but movement in either run: 274 events in the second, whose report kept that column.
+  In the second run, every part with the mouse in hand gave movement too.
+- Windows asked for no permission.
+
+So typing keys alone mark you as working, and clicks don't, since the clicks of browsing look like the clicks of work.
+A quiet spell of about 5s outlasts every pause measured here, but 20s of typing in a probe is short, and how long you pause to think while writing a real message is unmeasured.
+In the first run, the report's table lost its columns for wheel seconds, mouse movement, and touchpad reports to PowerShell fitting it to the window, and the second run's report writes each part on a line of its own.
+Neither run had a precision touchpad registered, so whether a touchpad's scrolling arrives as wheel events is unmeasured.
+
+**Changed:** [03-holding-pings](03-holding-pings.md) holds Plates' tone, brighten, and nudge while you type on Windows, counting typing keys alone.
+
+**Affects:** [03-holding-pings](03-holding-pings.md) and [plan step 9](../product/plan.md#9-holding-pings-while-you-type).
+macOS needs its own measurement: `CGEventSourceSecondsSinceLastEventType` takes an event type, so it may tell key-downs from the wheel, and whether it does so without a permission is unverified.
+
 ## 2026-11-17: The timer's tone is a felt-mallet strike on a glass bar, and three measures tracked what the user heard
 
 **Asked:** why did the timer's first tone, an 880 Hz sine 400ms long, sound "compressed" and "low bits" to the user, and "suffocate" at the end, and what would it need to sound like one of macOS' own alert sounds?

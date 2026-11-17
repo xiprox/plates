@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::{
     desktop::AppSession,
     rack::{Rack, TileId},
-    session::{BackgroundTask, SessionEvent, SessionState, Tool, WrapUp, first_line},
+    session::{BackgroundTask, SessionEvent, SessionState, Tool, WrapUp, first_line, prompt_title},
     transcript::{self, Turn},
 };
 
@@ -84,6 +84,29 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
         rack.set_first_prompt(&message.session_id, &prompt);
     }
     Some(id)
+}
+
+/// Whether a message shows that Claude just heard from you, which ends your typing for the pings
+/// that wait (record/areas/rack/03-holding-pings.md): a prompt with text you typed, rather than a
+/// subagent's report or a task notification, which are only the blocks of context the Claude
+/// desktop app puts before a prompt; a question you answered, whose tool finishes as you answer;
+/// an MCP server's form or page you answered; or an interrupt or a denial. A tool you approved
+/// doesn't count, since Claude Code sends nothing until the tool finishes, which can be minutes
+/// after you approved it. It reads the session's tile as it was before the message.
+pub fn answers_claude(rack: &Rack, message: &HookMessage) -> bool {
+    let asked_you = || {
+        rack.session(&message.session_id)
+            .is_some_and(|(_, s)| s.state == SessionState::NeedsApproval && s.question)
+    };
+    match &message.event {
+        Some(SessionEvent::PromptSubmitted {
+            prompt: Some(prompt),
+            ..
+        }) => !prompt_title(prompt).is_empty(),
+        Some(SessionEvent::ToolFinished { .. }) => asked_you(),
+        Some(SessionEvent::InputGiven | SessionEvent::Interrupted { .. }) => true,
+        _ => false,
+    }
 }
 
 /// Brings session tiles restored from `sessions.json` up to date with what each session did while
@@ -1036,6 +1059,44 @@ mod tests {
         changed.app = Some(app(None));
         assert_eq!(apply(&mut rack, changed, now), Some(id));
         assert_eq!(parent(&rack), None);
+    }
+
+    #[test]
+    fn a_typed_prompt_or_an_answer_tells_that_claude_heard_from_you() {
+        let now = some_time();
+        let mut rack = Rack::new();
+        let typed = message("UserPromptSubmit", json!({ "prompt": "Ship it" }));
+        assert!(answers_claude(&rack, &typed));
+        let report = message(
+            "UserPromptSubmit",
+            json!({ "prompt": "<task-notification>agent done</task-notification>" }),
+        );
+        assert!(!answers_claude(&rack, &report), "a subagent's report");
+
+        // A question you answered counts, and a tool you approved doesn't.
+        let question = message(
+            "PermissionRequest",
+            json!({ "tool_name": "AskUserQuestion", "tool_input": { "questions": [] } }),
+        );
+        apply(&mut rack, question, now);
+        let answered = message("PostToolUse", json!({ "tool_name": "AskUserQuestion" }));
+        assert!(answers_claude(&rack, &answered));
+        apply(&mut rack, answered, now);
+        let approval = message("PermissionRequest", json!({ "tool_name": "Bash" }));
+        apply(&mut rack, approval, now);
+        let ran = message("PostToolUse", json!({ "tool_name": "Bash" }));
+        assert!(
+            !answers_claude(&rack, &ran),
+            "an approved tool, once it finishes"
+        );
+
+        let mut cut = message("Stop", json!({}));
+        cut.event = Some(SessionEvent::Interrupted { denied: false });
+        assert!(answers_claude(&rack, &cut));
+        let form = message("ElicitationResult", json!({}));
+        assert!(answers_claude(&rack, &form));
+        let tool = message("PreToolUse", json!({ "tool_name": "Read" }));
+        assert!(!answers_claude(&rack, &tool));
     }
 
     #[test]

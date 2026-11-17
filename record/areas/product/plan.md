@@ -62,6 +62,12 @@ Done when a GitHub release holds both platforms' installers, built by the workfl
 
 Done on 2026-11-16, with [v0.1.0](https://github.com/xiprox/plates/releases/tag/v0.1.0).
 
+## 9. Holding pings while you type
+
+The rule [03-holding-pings](../rack/03-holding-pings.md) gives, on Windows.
+Its macOS half, measuring whether `CGEventSourceSecondsSinceLastEventType` reports key-downs without the Input Monitoring permission ([03-holding-pings](../rack/03-holding-pings.md#left-open)), runs in step 7.
+Done when a timer that runs out while you type in another app turns its tile time-up in silence, and rings and brightens 30s after your last typing key, or as soon as you send Claude a prompt.
+
 ## Later
 
 Plates looking for its own updates while it runs, and the questions [01-window](../rack/01-window.md#left-open) leaves open.
