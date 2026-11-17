@@ -13,7 +13,7 @@ use crate::{
     motion::Rect,
     native,
     rack_view::RackView,
-    view::{BORDER, MUTED, TEXT, TILE, marker},
+    view::{BORDER, MUTED, TEXT, TILE, marker, white},
 };
 
 pub const MENU_W: f32 = 156.;
@@ -296,8 +296,35 @@ impl MenuView {
             .collect();
         let rows = rows.into_iter().map(|(id, mark, title, at)| {
             let when = at.map(|at| ago(at, now)).unwrap_or_default();
+            let row: SharedString = format!("archived-{}", id.0).into();
+            // Hovering a row swaps how long ago you removed it for an × that forgets it, as Clear
+            // all forgets every row (user, 2026-11-17).
+            let forget = div()
+                .id(("forget", id.0))
+                .absolute()
+                .top(px(-4.))
+                .right(px(-6.))
+                .size(px(24.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(5.))
+                .opacity(0.)
+                .group_hover(row.clone(), |s| s.opacity(1.))
+                .hover(|s| s.bg(white(0.08)))
+                .child(
+                    svg()
+                        .path("plates/x.svg")
+                        .size(px(14.))
+                        .text_color(rgb(MUTED)),
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    cx.stop_propagation();
+                    this.forget(id, window, cx);
+                }));
             div()
                 .id(("archived", id.0))
+                .group(row.clone())
                 .flex_none()
                 .h(px(32.))
                 .px(px(10.))
@@ -319,9 +346,11 @@ impl MenuView {
                 .child(
                     div()
                         .flex_none()
+                        .relative()
                         .text_size(px(11.5))
                         .text_color(rgb(MUTED))
-                        .child(when),
+                        .child(div().group_hover(row, |s| s.opacity(0.)).child(when))
+                        .child(forget),
                 )
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.rack.update(cx, |rack, cx| rack.unarchive(id, cx)).ok();
@@ -398,6 +427,27 @@ impl MenuView {
                 }))
                 .into_any_element(),
         ]
+    }
+
+    // Forgets an archived tile and takes its row out of the list, which shrinks from the bottom,
+    // under the badge it opened from, or closes once it's empty.
+    fn forget(&mut self, id: TileId, window: &mut Window, cx: &mut App) {
+        self.rack
+            .update(cx, |rack, cx| rack.forget_archived(id, cx))
+            .ok();
+        self.listed.retain(|(t, _)| t.id != id);
+        if self.listed.is_empty() {
+            self.close(window, cx);
+            return;
+        }
+        let was = self.kind.height();
+        self.kind = MenuKind::Archived {
+            count: self.listed.len(),
+        };
+        let r = native::window_rect(self.hwnd);
+        let scale = (r.bottom - r.top) / f64::from(was);
+        let bottom = r.top + f64::from(self.kind.height()) * scale;
+        native::set_bounds(self.hwnd, Rect { bottom, ..r });
     }
 
     fn close(&mut self, window: &mut Window, cx: &mut App) {

@@ -207,6 +207,8 @@ While it holds any, its badge sits in the grip band: an archive-box icon and the
   Each row shows the tile's marker as it stands now and how long ago you removed or dismissed it: "just now" under a minute, then "12m ago", "3h ago", "yesterday" from 24 to 48 hours, and "4d ago".
 - Clicking a row brings the tile back to the rack as it stands now, in the place [Snoozing](#snoozing) gives a tile that comes back, and clicking the badge again closes the list.
 - Clear all, in the list's heading, forgets them: your own tiles go for good, and the dismissed sessions leave the list but stay dismissed until they come back on their own.
+- Hovering a row swaps how long ago for an ×, which forgets that row's tile the way Clear all forgets them all, with a session's sub-sessions listed under it (user, 2026-11-17).
+  The list stays open and shrinks from the bottom, and closes once it's empty.
 - The archive keeps the newest 50 of your own tiles you removed.
 
 ## Saving

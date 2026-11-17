@@ -42,6 +42,11 @@ fn snoozed(tile: &Tile) -> bool {
     tile.timer.is_tomorrow()
 }
 
+/// Whether a session off the rack is one you dismissed that the archive lists.
+fn dismissed(tile: &Tile) -> bool {
+    tile.session().is_some_and(|s| s.dismissed_at.is_some())
+}
+
 /// Notes that you set or canceled a session tile's timer yourself, which no reminder after a
 /// look overrides until the session's next state.
 fn take_in_hand(tile: &mut Tile) {
@@ -1144,39 +1149,71 @@ impl Rack {
     /// kind, and a session with its dismissed sub-sessions under it. It returns whether a tile
     /// came back.
     pub fn unarchive(&mut self, id: TileId, now: SystemTime) -> bool {
-        let mut tile = if let Some(i) = self.archive.iter().position(|a| a.tile.id == id) {
-            self.archive.remove(i).tile
-        } else if let Some(i) = self
-            .hidden
-            .iter()
-            .position(|t| t.id == id && t.session().is_some_and(|s| s.dismissed_at.is_some()))
+        let (mut tile, family) = if let Some(i) = self.archive.iter().position(|a| a.tile.id == id)
         {
-            self.hidden.remove(i)
+            (self.archive.remove(i).tile, Vec::new())
+        } else if let Some(i) = self.hidden.iter().position(|t| t.id == id && dismissed(t)) {
+            let family = self.dismissed_family(&self.hidden[i]);
+            (self.hidden.remove(i), family)
         } else {
             return false;
         };
-        let mut family: Vec<String> = tile
-            .session()
-            .and_then(|s| s.app_id.clone())
-            .into_iter()
-            .collect();
         returned(&mut tile);
         tile.refresh_need(now);
         self.show(tile);
         // Each sub-session comes back after its parent, which came back before it.
-        while let Some(i) = self.hidden.iter().position(|t| {
-            t.session().is_some_and(|s| {
-                s.dismissed_at.is_some()
-                    && s.app_parent.as_ref().is_some_and(|p| family.contains(p))
-            })
-        }) {
-            let mut tile = self.hidden.remove(i);
-            family.extend(tile.session().and_then(|s| s.app_id.clone()));
-            returned(&mut tile);
-            tile.refresh_need(now);
-            self.show(tile);
+        for sub in family {
+            if let Some(i) = self.hidden.iter().position(|t| t.id == sub) {
+                let mut sub = self.hidden.remove(i);
+                returned(&mut sub);
+                sub.refresh_need(now);
+                self.show(sub);
+            }
         }
         true
+    }
+
+    /// Forgets one tile in the archive, as Clear all forgets every one: your own tile goes for
+    /// good, and a dismissed session leaves the list, with the sub-sessions listed under it, though
+    /// each still comes back when it needs you (user, 2026-11-17). It returns whether a tile left
+    /// the archive.
+    pub fn forget(&mut self, id: TileId) -> bool {
+        if let Some(i) = self.archive.iter().position(|a| a.tile.id == id) {
+            self.archive.remove(i);
+            return true;
+        }
+        let Some(tile) = self.hidden.iter().find(|t| t.id == id && dismissed(t)) else {
+            return false;
+        };
+        let family = self.dismissed_family(tile);
+        for tile in &mut self.hidden {
+            if tile.id == id || family.contains(&tile.id) {
+                returned(tile);
+            }
+        }
+        true
+    }
+
+    // The dismissed sub-sessions under a dismissed session, at any depth, each after its parent,
+    // which the archive lists under the session's row.
+    fn dismissed_family(&self, head: &Tile) -> Vec<TileId> {
+        let mut family: Vec<&str> = head
+            .session()
+            .and_then(|s| s.app_id.as_deref())
+            .into_iter()
+            .collect();
+        let mut ids = Vec::new();
+        while let Some(t) = self.hidden.iter().find(|t| {
+            !ids.contains(&t.id)
+                && dismissed(t)
+                && t.session()
+                    .and_then(|s| s.app_parent.as_deref())
+                    .is_some_and(|p| family.contains(&p))
+        }) {
+            ids.push(t.id);
+            family.extend(t.session().and_then(|s| s.app_id.as_deref()));
+        }
+        ids
     }
 
     /// Empties the archive: your own tiles in it go for good, and the sessions you dismissed
@@ -2402,6 +2439,42 @@ mod tests {
         apply(&mut rack, "a", wrapped(true), 4);
         apply(&mut rack, "a", stop("Commit it?"), 5);
         assert!(rack.tile(a).is_some());
+    }
+
+    #[test]
+    fn forgetting_one_archived_tile_leaves_the_others() {
+        let mut rack = Rack::new();
+        let own = rack.add_own("A", at(0));
+        let kept = rack.add_own("B", at(0));
+        let a = apply(&mut rack, "a", prompt("Go"), 0);
+        rack.remove(own, at(1));
+        rack.remove(kept, at(2));
+        rack.remove(a, at(3));
+        assert!(rack.forget(own));
+        assert!(rack.forget(a));
+        let listed: Vec<TileId> = rack.archived().iter().map(|(t, _)| t.id).collect();
+        assert_eq!(listed, [kept]);
+        assert!(
+            !rack.unarchive(own, at(4)),
+            "your own tile is gone for good"
+        );
+        assert!(!rack.forget(own));
+        apply(&mut rack, "a", wrapped(true), 5);
+        apply(&mut rack, "a", stop("Commit it?"), 6);
+        assert!(
+            rack.tile(a).is_some(),
+            "a forgotten session still comes back"
+        );
+    }
+
+    #[test]
+    fn forgetting_a_session_forgets_the_sub_sessions_listed_under_it() {
+        let (mut rack, [plates, probe, deeper, _]) = family_rack();
+        rack.remove(plates, at(5));
+        assert!(rack.forget(plates));
+        assert!(rack.archived().is_empty());
+        assert!(!rack.unarchive(probe, at(6)));
+        assert!(!rack.unarchive(deeper, at(6)));
     }
 
     #[test]

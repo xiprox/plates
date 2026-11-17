@@ -1543,6 +1543,14 @@ impl RackView {
         }
     }
 
+    /// Forgets one tile in the archive, from the × on its row in the list, which stays open.
+    pub(crate) fn forget_archived(&mut self, id: TileId, cx: &mut Context<Self>) {
+        if self.rack.forget(id) {
+            self.save();
+            self.after_change(cx);
+        }
+    }
+
     /// Forgets every tile in the archive, from its list's Clear all.
     pub(crate) fn clear_archive(&mut self, cx: &mut Context<Self>) {
         self.rack.clear_archive();
