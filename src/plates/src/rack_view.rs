@@ -1565,7 +1565,7 @@ impl RackView {
     }
 
     /// Turns the tone for a timer that runs out on or off, from the bell in the grip band. Turning
-    /// it on shakes the bell and plays the tone, so you hear what it'll sound like
+    /// it on shakes the bell, and plays no tone, since the shake already says it's on
     /// (user, 2026-11-17).
     pub(crate) fn toggle_sound(&mut self, cx: &mut Context<Self>) {
         if self.suppress_click {
@@ -1576,7 +1576,6 @@ impl RackView {
         // silent rings nothing (user, 2026-11-17).
         if self.sound {
             self.bell_turned = Some(Instant::now());
-            tone::play();
         }
         if !self.showcase {
             let settings = Settings { sound: self.sound };

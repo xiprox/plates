@@ -173,11 +173,13 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
 - A timer runs on the wall clock, whether or not anyone is at the desk.
 - When a timer runs out, Plates rings a soft tone, once however many run out together, for every timer, yours or one a session started on its own, and for a snoozed tile coming back (user, 2026-11-17).
   It rings only for a timer that ran out in the last 5s, so a timer that ran out while the computer slept, or while Plates was closed, rings nothing, and the tile brightens again once you're back instead.
-  The tone is one soft note, A5, 400ms long at 28% of full scale, which Plates builds rather than ships as a file, and macOS plays it with `NSSound` and Windows with `PlaySoundW`.
-  We haven't heard it on Windows.
-- The bell at the left of the rack's grip band turns the tone on and off, and is struck through while it's off (user, 2026-11-17).
-  Turning the tone on swings the bell on its loop for 600ms, as iOS' bell does when you flip the ring switch to ring, and plays the tone, so you hear what you turned on.
-  Turning it off strikes the bell through without a swing, since a swing is the bell ringing (user, 2026-11-17).
+  The tone is one strike of a felt mallet on a glass bar at A5, chosen as a nudge rather than a call (user, 2026-11-17).
+  It falls about 3.5 dB every 100ms, from -21 dBFS in its first 100ms to -63 dBFS by 1.3s, and measures -26.8 LUFS, 1 dB under macOS' Glass (measured on macOS 26.5.2, 2026-11-17, [rack log](log.md#2026-11-17-the-timers-tone-is-a-felt-mallet-strike-on-a-glass-bar-and-three-measures-tracked-what-the-user-heard)).
+  Plates builds it at 48 kHz in 24-bit stereo, as Glass, Ping, Tink, Pop, and Purr are, and plays it with `NSSound` on macOS and `PlaySoundW` on Windows.
+  We haven't heard it on Windows, so we don't know whether `PlaySoundW` plays the 24-bit file or Plates falls back to its 16-bit copy; a timer running out on Windows 11 would settle it, as the [rack log](log.md#2026-11-17-the-timers-tone-is-a-felt-mallet-strike-on-a-glass-bar-and-three-measures-tracked-what-the-user-heard) says.
+- The bell at the left of the rack's grip band turns the tone on and off, and has a line through it while the tone is off (user, 2026-11-17).
+  Turning the tone on plays no tone (user, 2026-11-17), and swings the bell on its loop for 600ms, as iOS' bell does when you flip the ring switch to ring.
+  Turning it off draws the line through the bell without a swing, since a swing is the bell ringing (user, 2026-11-17).
   The tone's on until you turn it off.
 - The timer slot's icon, divider, and hover highlight are translucent white, so they take on a tile's tint without adding a color of their own (user, 2026-11-15).
 

@@ -567,13 +567,15 @@ pub fn open_url(url: &str) {
     }
 }
 
-/// Plays a WAV file held in memory, and returns while it plays. With `SND_MEMORY`, `PlaySoundW`
-/// reads the sound from the pointer it's given rather than a file name, so the file must live
-/// until it has played, which a `'static` one does.
-/// (documented, https://learn.microsoft.com/windows/win32/api/playsoundapi/nf-playsoundapi-playsound)
-pub fn play_sound(wav: &'static [u8]) {
+/// Plays a WAV file held in memory, returns while it plays, and says whether it could. With
+/// `SND_MEMORY`, `PlaySoundW` reads the sound from the pointer it's given rather than a file name,
+/// so the file must live until it has played, which a `'static` one does.
+/// (documented, https://learn.microsoft.com/previous-versions/dd743680(v=vs.85))
+pub fn play_sound(wav: &'static [u8]) -> bool {
     let flags = SND_MEMORY | SND_ASYNC | SND_NODEFAULT;
-    if !unsafe { PlaySoundW(PCWSTR(wav.as_ptr().cast()), None, flags) }.as_bool() {
+    let played = unsafe { PlaySoundW(PCWSTR(wav.as_ptr().cast()), None, flags) }.as_bool();
+    if !played {
         eprintln!("Couldn't play the tone.");
     }
+    played
 }

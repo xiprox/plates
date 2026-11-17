@@ -502,15 +502,17 @@ thread_local! {
     static PLAYING: std::cell::RefCell<Option<Retained<NSSound>>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Plays a WAV file held in memory, and returns while it plays.
-pub fn play_sound(wav: &'static [u8]) {
+/// Plays a WAV file held in memory, returns while it plays, and says whether it could.
+pub fn play_sound(wav: &'static [u8]) -> bool {
     let data = NSData::with_bytes(wav);
     let Some(sound) = NSSound::initWithData(NSSound::alloc(), &data) else {
         eprintln!("Couldn't read the tone.");
-        return;
+        return false;
     };
-    if !sound.play() {
+    let played = sound.play();
+    if !played {
         eprintln!("Couldn't play the tone.");
     }
     PLAYING.with(|p| *p.borrow_mut() = Some(sound));
+    played
 }
