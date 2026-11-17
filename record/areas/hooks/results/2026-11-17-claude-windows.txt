@@ -1,0 +1,17 @@
+The processes named claude.exe on Windows 11 25H2, with the Claude desktop app 5.11492.5.0
+running, 2026-11-17, read through PowerShell's Win32_Process and Get-Process. Each line counts the
+processes with that program, that parent, and that window, with the home folder written as
+<user>.
+
+  1 x  C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\Claude.exe
+       parent: none running, window: yes, titled "Claude"
+ 12 x  C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\Claude.exe
+       parent: claude.exe, window: no
+  7 x  C:\Users\<user>\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\claude-code\2.1.325\806e0a45e6f5\claude.exe
+       parent: claude.exe, window: no
+
+The 7 are Claude Code 2.1.325, which the app runs for its sessions. No Claude Code session ran in
+a terminal at the time.
+
+The window in front, read through GetForegroundWindow and GetWindowThreadProcessId while the user
+read a reply in the app, belonged to Claude.exe, titled "Claude".

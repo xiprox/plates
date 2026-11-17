@@ -1270,8 +1270,8 @@ impl Rack {
     }
 
     /// Brightens again every tile on the rack that started needing you at `since` or later, whose
-    /// brighten waited while you typed (record/areas/rack/03-holding-pings.md). It returns whether
-    /// any tile brightens.
+    /// brighten waited while you were busy (record/areas/rack/03-holding-pings.md). It returns
+    /// whether any tile brightens.
     pub fn brighten_since(&mut self, since: SystemTime, now: SystemTime) -> bool {
         let mut any = false;
         for tile in &mut self.tiles {

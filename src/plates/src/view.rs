@@ -488,8 +488,8 @@ impl RackView {
         let group: SharedString = format!("tile-{i}").into();
         let rest = tile_bg(t);
         let mut bg = rest;
-        // A tile that started needing you while you typed waits to brighten until you're done
-        // (record/areas/rack/03-holding-pings.md).
+        // A tile that started needing you while you were busy waits to brighten until the held
+        // pings come (record/areas/rack/03-holding-pings.md).
         if let Some((need, since_at)) = t.need
             && !self.hold.holds(since_at)
             && let Some(c) = brightened(rest, brighten_to(t, need), since(since_at, now), BRIGHTEN)

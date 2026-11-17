@@ -62,11 +62,12 @@ Done when a GitHub release holds both platforms' installers, built by the workfl
 
 Done on 2026-11-16, with [v0.1.0](https://github.com/xiprox/plates/releases/tag/v0.1.0).
 
-## 9. Holding pings while you type
+## 9. Holding pings while you're busy
 
 The rule [03-holding-pings](../rack/03-holding-pings.md) gives, on Windows.
-Its macOS half, measuring whether `CGEventSourceSecondsSinceLastEventType` reports key-downs without the Input Monitoring permission ([03-holding-pings](../rack/03-holding-pings.md#left-open)), runs in step 7.
-Done when a timer that runs out while you type in another app turns its tile time-up in silence, and rings and brightens 30s after your last typing key, or as soon as you send Claude a prompt.
+Step 7 runs its macOS half, which measures whether `CGEventSourceSecondsSinceLastEventType` reports key-downs without the Input Monitoring permission and, if step 9 holds pings for reading on macOS, tests the bundle-ID check for the Claude app in front ([03-holding-pings](../rack/03-holding-pings.md#left-open)).
+Done when a timer that runs out while you type in another app, or while you read a reply in the Claude app, turns its tile time-up in silence.
+It rings and brightens once you've gone 30s without typing and left the Claude app, or 3s after you send Claude a prompt.
 
 ## Later
 

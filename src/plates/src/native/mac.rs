@@ -329,6 +329,12 @@ pub fn typed_ago() -> Option<Duration> {
     None
 }
 
+/// Whether the Claude desktop app is in front, which Plates doesn't ask on macOS, where no ping
+/// waits for you (record/areas/rack/03-holding-pings.md, "Left open").
+pub fn claude_in_front() -> bool {
+    false
+}
+
 // Start at login is a launch agent in the user's LaunchAgents folder, which macOS loads when you
 // sign in. (documented, https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)
 const AGENT: &str = "plates.start-at-login";

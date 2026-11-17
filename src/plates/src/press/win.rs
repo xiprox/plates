@@ -4,13 +4,9 @@ use std::{mem::ManuallyDrop, time::Instant};
 
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, HWND, LPARAM},
+        Foundation::{HWND, LPARAM},
         System::{
             Com::{CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx},
-            Threading::{
-                OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-                QueryFullProcessImageNameW,
-            },
             Variant::{VARIANT, VT_BSTR, VT_I4, VariantClear},
         },
         UI::{
@@ -20,12 +16,10 @@ use windows::{
                 UIA_DocumentControlTypeId, UIA_GroupControlTypeId, UIA_InvokePatternId,
                 UIA_NamePropertyId,
             },
-            WindowsAndMessaging::{
-                EnumWindows, GetClassNameW, GetWindowThreadProcessId, IsWindowVisible,
-            },
+            WindowsAndMessaging::{EnumWindows, IsWindowVisible},
         },
     },
-    core::{BOOL, BSTR, PWSTR},
+    core::{BOOL, BSTR},
 };
 
 use super::{POLL, WAIT};
@@ -122,8 +116,7 @@ fn variant_i4(n: i32) -> VARIANT {
     v
 }
 
-// The app's visible top-level windows: Chromium's `Chrome_WidgetWin_1` windows of a process whose
-// image is `claude.exe`.
+// The app's visible top-level windows, as `native::claude_app_window` tells them.
 fn app_windows() -> Vec<HWND> {
     unsafe extern "system" fn each(hwnd: HWND, lparam: LPARAM) -> BOOL {
         let found = unsafe { &mut *(lparam.0 as *mut Vec<HWND>) };
@@ -138,40 +131,6 @@ fn app_windows() -> Vec<HWND> {
     }
     visible
         .into_iter()
-        .filter(|&hwnd| class_name(hwnd) == "Chrome_WidgetWin_1" && is_app(hwnd))
+        .filter(|&hwnd| crate::native::claude_app_window(hwnd))
         .collect()
-}
-
-fn class_name(hwnd: HWND) -> String {
-    let mut buf = [0u16; 64];
-    let n = unsafe { GetClassNameW(hwnd, &mut buf) };
-    String::from_utf16_lossy(&buf[..n.max(0) as usize])
-}
-
-fn is_app(hwnd: HWND) -> bool {
-    let mut pid = 0u32;
-    unsafe {
-        GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    }
-    let Ok(process) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) })
-    else {
-        return false;
-    };
-    let mut buf = [0u16; 1024];
-    let mut len = buf.len() as u32;
-    let read = unsafe {
-        QueryFullProcessImageNameW(
-            process,
-            PROCESS_NAME_WIN32,
-            PWSTR(buf.as_mut_ptr()),
-            &mut len,
-        )
-    };
-    unsafe {
-        let _ = CloseHandle(process);
-    }
-    read.is_ok()
-        && String::from_utf16_lossy(&buf[..len as usize])
-            .to_ascii_lowercase()
-            .ends_with("\\claude.exe")
 }

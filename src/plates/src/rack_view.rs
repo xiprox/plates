@@ -227,7 +227,7 @@ pub struct RackView {
     settings_file: PathBuf,
     /// When the bell in the grip band last turned the tone on, which starts its shake.
     pub(crate) bell_turned: Option<Instant>,
-    /// The pings that wait while you type.
+    /// The pings that wait while you're busy.
     pub(crate) hold: Hold,
     _subs: Vec<Subscription>,
     _tasks: Vec<Task<()>>,
@@ -462,22 +462,29 @@ impl RackView {
 
     fn receive(&mut self, message: HookMessage, cx: &mut Context<Self>) {
         // A prompt you typed or an answer to Claude ends your typing, so the pings that wait come
-        // with this message's change (record/areas/rack/03-holding-pings.md).
+        // `SETTLE` later, unless you type again first. The message's own change, such as an
+        // interrupt moving its tile to your turn, starts at the same `now`, so it comes with
+        // them (record/areas/rack/03-holding-pings.md).
+        let now = SystemTime::now();
         if hooks::answers_claude(&self.rack, &message) {
-            self.hold.done();
+            self.hold.heard_from_you(now);
         }
-        hooks::apply(&mut self.rack, message, SystemTime::now());
+        hooks::apply(&mut self.rack, message, now);
         self.after_change(cx);
     }
 
     // Gives the pings that wait, if they come now: the tone once, if it's on and a timer that ran
     // out while they waited is still time-up, so a timer you dealt with meanwhile, such as by
     // answering its session, rings nothing; a brighten for every tile that started needing you
-    // while they waited; and the docked strip's nudge.
+    // while they waited; and the docked strip's nudge. You're busy while you type or while the
+    // Claude desktop app is in front, as you read its reply.
     fn give_held(&mut self) {
+        if !self.hold.waiting() {
+            return;
+        }
         let now = SystemTime::now();
-        let typing = self.hold.typing(native::typed_ago());
-        let Some(held) = self.hold.take_due(typing, now) else {
+        let in_front = native::claude_in_front();
+        let Some(held) = self.hold.take_due(native::typed_ago(), in_front, now) else {
             return;
         };
         let ran_out = held
@@ -510,7 +517,7 @@ impl RackView {
         }
         let changed = self.rack.tick(now);
         // A timer that ran out since the last tick rings the tone, once however many ran out
-        // (user, 2026-11-17), as one of the pings `give_held` gives, which wait while you type.
+        // (user, 2026-11-17), as one of the pings `give_held` gives, which wait while you're busy.
         // The tiles it ran out on started needing you at `now`, in the rack's tick above.
         let after = self.last_tick.max(now - RING_LATE);
         if !self.showcase && self.rack.ran_out_between(after, now) {
@@ -520,7 +527,7 @@ impl RackView {
             self.save();
             self.after_change(cx);
         }
-        // The pings that waited come once you've been 30s without typing.
+        // The pings that waited come once you aren't busy, or at the cap.
         self.give_held();
         // A tile brightens once as its time runs out, which nobody sees if you're away, so the
         // first input after you were away brightens every time-up tile again.
@@ -754,9 +761,8 @@ impl RackView {
         self.forced = None;
         self.last_press_focus = native::foreground_window();
         // A press on the rack, as a press in its card or menus does (set_read, wake, and
-        // unarchive), means you're at the rack, so a ping waiting for your typing to end comes,
-        // and the brighten of what you just did, such as an Undo, shows at once.
-        self.hold.done();
+        // unarchive), means you're at the rack, so the pings waiting for you come.
+        self.hold.at_rack(SystemTime::now());
         self.suppress_click = false;
         if self.docked.is_some() || self.tween.is_some() {
             return;
@@ -881,7 +887,7 @@ impl RackView {
 
     pub(crate) fn note_press(&mut self) {
         self.last_press_focus = native::foreground_window();
-        self.hold.done();
+        self.hold.at_rack(SystemTime::now());
     }
 
     /// Moves the window one frame: the drag, the throw, a slide into or out of the dock, or the
@@ -1250,8 +1256,10 @@ impl RackView {
     /// Marks a session's turn read or unread, from the tile's menu.
     pub(crate) fn set_read(&mut self, id: TileId, read: bool, cx: &mut Context<Self>) {
         self.menu = None;
-        self.hold.done();
+        // The tile you mark unread starts needing you at the same `now` as you're done, so its
+        // brighten comes at once, even with the Claude app in front.
         let now = SystemTime::now();
+        self.hold.at_rack(now);
         let changed = if read {
             self.rack.mark_read(id, now)
         } else {
@@ -1551,8 +1559,9 @@ impl RackView {
     /// Brings a snoozed tile back now, from the list the moon opens.
     pub(crate) fn wake(&mut self, id: TileId, cx: &mut Context<Self>) {
         self.menu = None;
-        self.hold.done();
-        if self.rack.wake(id, SystemTime::now()) {
+        let now = SystemTime::now();
+        self.hold.at_rack(now);
+        if self.rack.wake(id, now) {
             self.save();
             self.after_change(cx);
         }
@@ -1615,8 +1624,9 @@ impl RackView {
     /// 2026-11-16).
     pub(crate) fn unarchive(&mut self, id: TileId, cx: &mut Context<Self>) {
         self.menu = None;
-        self.hold.done();
-        if self.rack.unarchive(id, SystemTime::now()) {
+        let now = SystemTime::now();
+        self.hold.at_rack(now);
+        if self.rack.unarchive(id, now) {
             self.save();
             self.after_change(cx);
         }

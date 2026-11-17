@@ -172,7 +172,7 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
 - A timer runs on the wall clock, whether or not anyone is at the desk.
 - When a timer runs out, Plates rings a soft tone, once however many run out together, for every timer, yours or one a session started on its own, and for a snoozed tile coming back (user, 2026-11-17).
   It rings only for a timer that ran out in the last 5s, so a timer that ran out while the computer slept, or while Plates was closed, rings nothing, and the tile brightens again once you're back instead.
-  On Windows, the tone and the tile's brighten wait while you type, and a tone that waited rings once you're done, however long ago its timer ran out, as [03-holding-pings](03-holding-pings.md) describes.
+  On Windows, the tone and the tile's brighten wait while you're busy, and a tone that waited still rings when it's let through, however long ago its timer ran out, as [03-holding-pings](03-holding-pings.md) describes.
   The tone is one strike of a felt mallet on a glass bar at A5, chosen as a nudge rather than a call (user, 2026-11-17).
   It falls about 3.5 dB every 100ms, from -21 dBFS in its first 100ms to -63 dBFS by 1.3s, and measures -26.8 LUFS, 1 dB under macOS' Glass (measured on macOS 26.5.2, 2026-11-17, [rack log](log.md#2026-11-17-the-timers-tone-is-a-felt-mallet-strike-on-a-glass-bar-and-three-measures-tracked-what-the-user-heard)).
   Plates builds it at 48 kHz in 24-bit stereo, as Glass, Ping, Tink, Pop, and Purr are, and plays it with `NSSound` on macOS and `PlaySoundW` on Windows.

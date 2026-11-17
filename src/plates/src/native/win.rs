@@ -13,7 +13,7 @@ use std::{
 };
 
 use windows::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+    Foundation::{CloseHandle, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
     Graphics::{
         Dwm::{
             DWM_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR, DWMWA_CLOAKED,
@@ -33,6 +33,10 @@ use windows::Win32::{
             RegSetKeyValueW,
         },
         SystemInformation::{GetTickCount, GetTickCount64},
+        Threading::{
+            OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+            QueryFullProcessImageNameW,
+        },
         Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION},
     },
     UI::{
@@ -52,18 +56,18 @@ use windows::Win32::{
         Shell::{DefSubclassProc, SetWindowSubclass, ShellExecuteW},
         WindowsAndMessaging::{
             ASFW_ANY, AllowSetForegroundWindow, CreateWindowExW, DispatchMessageW,
-            EVENT_SYSTEM_FOREGROUND, GW_HWNDPREV, GWL_EXSTYLE, GetClientRect, GetCursorPos,
-            GetForegroundWindow, GetMessageW, GetWindow, GetWindowLongPtrW, GetWindowRect,
-            GetWindowThreadProcessId, HWND_MESSAGE, HWND_TOPMOST, IsWindowVisible, MA_NOACTIVATE,
-            MSG, RI_KEY_BREAK, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-            SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
-            SetWindowPos, WINDOW_EX_STYLE, WINDOW_STYLE, WINEVENT_OUTOFCONTEXT,
+            EVENT_SYSTEM_FOREGROUND, GW_HWNDPREV, GWL_EXSTYLE, GetClassNameW, GetClientRect,
+            GetCursorPos, GetForegroundWindow, GetMessageW, GetWindow, GetWindowLongPtrW,
+            GetWindowRect, GetWindowThreadProcessId, HWND_MESSAGE, HWND_TOPMOST, IsWindowVisible,
+            MA_NOACTIVATE, MSG, RI_KEY_BREAK, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+            SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
+            SetWindowLongPtrW, SetWindowPos, WINDOW_EX_STYLE, WINDOW_STYLE, WINEVENT_OUTOFCONTEXT,
             WINEVENT_SKIPOWNPROCESS, WM_HOTKEY, WM_INPUT, WM_MOUSEACTIVATE, WM_NCCALCSIZE,
             WS_EX_NOACTIVATE, WS_EX_TOPMOST,
         },
     },
 };
-use windows::core::{PCWSTR, w};
+use windows::core::{PCWSTR, PWSTR, w};
 
 use crate::motion::{Edges, Rect};
 
@@ -537,6 +541,49 @@ unsafe fn note_key(input: HRAWINPUT) {
 fn in_shortcut() -> bool {
     let held = |vk: VIRTUAL_KEY| unsafe { GetAsyncKeyState(i32::from(vk.0)) } < 0;
     held(VK_LWIN) || held(VK_RWIN) || held(VK_LMENU) || (held(VK_CONTROL) && !held(VK_RMENU))
+}
+
+/// Whether the Claude desktop app's window is in front, which holds pings while you read a reply
+/// in it, as typing does (record/areas/rack/03-holding-pings.md).
+pub fn claude_in_front() -> bool {
+    let window = unsafe { GetForegroundWindow() };
+    !window.is_invalid() && claude_app_window(window)
+}
+
+/// Whether a top-level window is one of the Claude desktop app's: a Chromium `Chrome_WidgetWin_1`
+/// window of a process whose program is `claude.exe`. Claude Code's own program is `claude.exe`
+/// too, and a console window may count as its process's (unverified), so the class keeps a
+/// console window from counting. (record/areas/hooks/01-claude-code-hooks.md, "Answering a
+/// wrap-up")
+pub fn claude_app_window(window: HWND) -> bool {
+    let mut class = [0u16; 64];
+    let n = unsafe { GetClassNameW(window, &mut class) };
+    if String::from_utf16_lossy(&class[..n.max(0) as usize]) != "Chrome_WidgetWin_1" {
+        return false;
+    }
+    let mut pid = 0;
+    unsafe { GetWindowThreadProcessId(window, Some(&mut pid)) };
+    let Ok(process) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) })
+    else {
+        return false;
+    };
+    let mut path = [0u16; 1024];
+    let mut len = path.len() as u32;
+    let read = unsafe {
+        QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            PWSTR(path.as_mut_ptr()),
+            &mut len,
+        )
+    };
+    unsafe {
+        let _ = CloseHandle(process);
+    }
+    read.is_ok()
+        && String::from_utf16_lossy(&path[..len as usize])
+            .to_ascii_lowercase()
+            .ends_with("\\claude.exe")
 }
 
 /// How long since the last typing key you pressed, in any app, or `None` before the first.

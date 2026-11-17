@@ -27,7 +27,7 @@ Neither run had a precision touchpad registered, so whether a touchpad's scrolli
 
 **Changed:** [03-holding-pings](03-holding-pings.md) holds Plates' tone, brighten, and nudge while you type on Windows, counting typing keys alone.
 
-**Affects:** [03-holding-pings](03-holding-pings.md) and [plan step 9](../product/plan.md#9-holding-pings-while-you-type).
+**Affects:** [03-holding-pings](03-holding-pings.md) and [plan step 9](../product/plan.md#9-holding-pings-while-youre-busy).
 macOS needs its own measurement: `CGEventSourceSecondsSinceLastEventType` takes an event type, so it may tell key-downs from the wheel, and whether it does so without a permission is unverified.
 
 ## 2026-11-17: The timer's tone is a felt-mallet strike on a glass bar, and three measures tracked what the user heard

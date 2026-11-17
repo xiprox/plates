@@ -2,6 +2,21 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-17: On Windows, the Claude desktop app's Claude.exe is the only process named claude with a window
+
+**Asked:** how can Plates tell that the Claude desktop app is the app in front, to hold its pings while you read a reply?
+
+**Expected:** the app runs as several processes of one program, as an Electron app does, and Claude Code's own `claude.exe` runs inside a terminal's window, so the window in front would belong to the app's program only when the app is in front.
+
+**Found:** of the 20 processes named `claude` running, 13 were the app's `Claude.exe` and 7 were Claude Code's `claude.exe`, all 7 started by the app (measured on Windows 11 25H2, Claude desktop app 5.11492.5.0, 2026-11-17, [results](results/2026-11-17-claude-windows.txt)).
+Only one, the app's, owned a window, titled "Claude", and its program was `C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\Claude.exe`.
+While the user read a reply in the app, the window in front was that one.
+No Claude Code session ran in a terminal at the time, so what a terminal's window in front reports is unmeasured.
+
+**Changed:** Plates holds its pings while the app is in front, and takes the window in front as the app's when it's a Chromium window of `claude.exe`, the test it already used to find the app's windows for pressing a wrap-up's choice, as [03-holding-pings](../rack/03-holding-pings.md) describes.
+
+**Affects:** [03-holding-pings](../rack/03-holding-pings.md).
+
 ## 2026-11-16: The app shows a session detached from its parent on its own
 
 **Asked:** why did the rack draw three sessions under one session, 42dd5edf, when the app's sidebar showed two of them on their own and the third under one of those two?
