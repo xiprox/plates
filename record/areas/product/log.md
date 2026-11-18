@@ -2,6 +2,25 @@
 
 What we found about building and running Plates as a program, newest entry first.
 
+## 2026-11-16: A dry run's packages carry Plates' icon, and its macOS installer offers /Applications or ~/Applications
+
+**Asked:** do the packages a release would make carry the app icon that `-i` and `src/plates/build.rs` give them, and where does the macOS installer put `Plates.app`?
+
+**Expected:** the icon on the macOS bundle and on `Setup.exe`, as `vpk pack -i` sets them, and in `plates.exe`, as `build.rs` embeds it, and `Plates.app` in `/Applications` or `~/Applications`, as Velopack documents.
+
+**Found:** the Release workflow's dry run on a snapshot of the working tree built and packed both platforms, so the Windows-only code that macOS can't build, such as the tray's click handler and `build.rs`, compiled there (run 43862446532, 2026-11-16, [results/2026-11-16-dry-run-packages.txt](results/2026-11-16-dry-run-packages.txt)).
+
+- `Plates.app`'s `Info.plist` names `plates.icns` as `CFBundleIconFile`, and the bundle's `plates.icns` has the same SHA-256 as `src/plates/icons/plates.icns`.
+- `Setup.pkg`'s `Distribution` enables installing for the current user's home and for the local system, its package installs to `/Applications`, and it has a `postinstall` script.
+- `plates.exe`, the portable package's `Plates.exe`, and `Setup.exe` each hold one icon group of 8 images, from 16px to 256px, the sizes `plates.ico` holds, and a version resource with `FileDescription` `Plates`.
+- `plates.exe`'s manifest still holds the `detached` console allocation policy that `tools/build-release.ps1` merges in after `build.rs` added its resources.
+
+We installed neither package, so the Start menu and desktop shortcuts, the Apps entry, and a Dock icon at launch stay unverified.
+
+**Changed:** nothing; the packages are as the release workflow and `build.rs` make them.
+
+**Affects:** [releasing](../build/releasing.md#the-app-icon).
+
 ## 2026-11-16: v0.1.0's Plates.app has an icon Plates didn't supply, and no LSUIElement
 
 **Asked:** what v0.1.0's macOS app bundle holds, which an installed Plates shows in Finder and in Apps, macOS 26's list of apps.

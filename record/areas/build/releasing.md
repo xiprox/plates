@@ -35,8 +35,8 @@ Velopack names each file from the pack ID `plates` and the channel (read in Velo
 
 `tools/make-icons.mjs` draws the app icon and writes it to `src/plates/icons/`, as `plates.ico` for Windows and `plates.icns` for macOS.
 `src/plates/build.rs` puts `plates.ico` in `plates.exe` as a resource, and the workflow hands `vpk pack` the platform's icon with `-i`.
-Velopack's documentation says only that `-i` is the "Path to icon file for package" (documented, [vpk pack on Windows](https://docs.velopack.io/reference/cli/content/vpk-windows) and [on macOS](https://docs.velopack.io/reference/cli/content/vpk-osx), as of 2026-11-16).
-Which of the installer, the app bundle, and the shortcuts show it is unverified, and the files from a dry run, as [How to try the packaging without releasing](#how-to-try-the-packaging-without-releasing) makes them, would settle it.
+In a dry run's packages, `Plates.app` names `plates.icns` as its icon and holds the same bytes as `src/plates/icons/plates.icns`, and `plates.exe`, the portable package's `Plates.exe`, and `plates-win-x64-Setup.exe` each hold an icon with the `.ico`'s 8 sizes, from 16px to 256px (read on 2026-11-16, [product log](../product/log.md#2026-11-16-a-dry-runs-packages-carry-plates-icon-and-its-macos-installer-offers-applications-or-applications)).
+Which icon the Start menu and desktop shortcuts show is unverified, and installing a dry run's `Setup.exe` on Windows would settle it.
 
 ## Where an install puts Plates
 
@@ -47,7 +47,8 @@ Which of the installer, the app bundle, and the shortcuts show it is unverified,
 
 Velopack's installer decides every cell, and the Windows folder is lowercase because Velopack names it `%LocalAppData%\{packId}` from the pack ID `plates` (documented, [Velopack installers](https://docs.velopack.io/packaging/installer), as of 2026-11-16).
 The desktop shortcut is Velopack's default, and Plates keeps it (user, 2026-11-16).
-That Apps lists an installed `Plates.app` is unverified, and installing a dry run's `Setup.pkg` on macOS 26 would settle it.
+A dry run's `Setup.pkg` offers to install for all users or for you alone, installs to `/Applications`, and runs a `postinstall` script, which Velopack documents as opening the app (read with `pkgutil --expand`, 2026-11-16, [product log](../product/log.md#2026-11-16-a-dry-runs-packages-carry-plates-icon-and-its-macos-installer-offers-applications-or-applications)).
+That Apps lists an installed `Plates.app`, and that `Setup.exe` makes both shortcuts, are unverified, and installing a dry run's packages would settle them.
 
 ## How to release from a tag
 

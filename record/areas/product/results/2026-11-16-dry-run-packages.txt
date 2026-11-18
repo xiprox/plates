@@ -1,0 +1,80 @@
+2026-11-16. The Release workflow's dry run, run 43862446532 on the branch dryrun/installers
+(a snapshot of the working tree), version 0.1.0-dryrun.7. Both package jobs succeeded. The
+packages were read on macOS 26.5.2 without installing them.
+
+1. macOS: plates-osx-arm64-Portable.zip, unzipped.
+
+Plates.app/Contents/Info.plist
+Plates.app/Contents/MacOS/plates-hook
+Plates.app/Contents/MacOS/plates
+Plates.app/Contents/MacOS/UpdateMac
+Plates.app/Contents/Resources/plates.icns
+Plates.app/Contents/Resources/sq.version
+
+`plutil -p Plates.app/Contents/Info.plist`:
+
+{
+  "CFBundleExecutable" => "plates"
+  "CFBundleIconFile" => "plates.icns"
+  "CFBundleIdentifier" => "com.plates.plates"
+  "CFBundleName" => "Plates"
+  "CFBundlePackageType" => "APPL"
+  "CFBundleShortVersionString" => "0.1.0.0"
+  "CFBundleSignature" => "????"
+  "CFBundleVersion" => "0.1.0-dryrun.7"
+  "NSHighResolutionCapable" => true
+  "NSPrincipalClass" => "NSApplication"
+}
+
+`shasum -a 256` of the bundle's Resources/plates.icns and of src/plates/icons/plates.icns, both:
+0cf10d5cd8ed1c4782b2ded79811f4e29c20d0639072862e9bf8030af6f0e244
+
+2. macOS: plates-osx-arm64-Setup.pkg, expanded with `pkgutil --expand`.
+
+Distribution:
+<domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="true"/>
+<pkg-ref id="com.plates.plates" version="0.1.0" onConclusion="none" installKBytes="36077" updateKBytes="0">
+<title>Plates</title>
+
+1.pkg/PackageInfo:
+identifier="com.plates.plates"
+install-location="/Applications"
+
+1.pkg/Scripts: postinstall
+
+3. Windows: the resource tables of three programs, read with a script that walks the PE resource
+directory. The ProductVersion it found in Setup.exe was unreadable bytes from outside the
+version resource, and is left out.
+
+current/plates.exe, in plates-win-x64-Portable.zip:
+  ICON: 8
+  GROUP_ICON: 1
+    icon sizes: 16, 20, 24, 32, 40, 48, 64, 256
+  VERSION: 1
+  MANIFEST: 1
+  FileDescription: Plates
+  ProductName: Plates
+  ProductVersion: 0.1.0
+
+Plates.exe, the portable package's launcher:
+  ICON: 8
+  GROUP_ICON: 1
+    icon sizes: 16, 20, 24, 32, 40, 48, 64, 256
+  VERSION: 1
+  MANIFEST: 1
+  FileDescription: Plates
+  ProductName: Plates
+  ProductVersion: 0.1.0
+
+plates-win-x64-Setup.exe:
+  ICON: 8
+  GROUP_ICON: 1
+    icon sizes: 16, 20, 24, 32, 40, 48, 64, 256
+  VERSION: 1
+  MANIFEST: 1
+  FileDescription: Plates
+  ProductName: Plates
+
+current/plates.exe's manifest still holds the console allocation policy that
+tools/build-release.ps1 merges in:
+<consoleAllocationPolicy xmlns="http://schemas.microsoft.com/SMI/2024/WindowsSettings">detached</consoleAllocationPolicy>
