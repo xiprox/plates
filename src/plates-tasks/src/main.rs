@@ -50,7 +50,9 @@ Call tasks_get before changing a list you haven't seen in this conversation.
 If an update is due before you've seen the list, call tasks_get in the message the update was due in, and send the update in your next message, since task_update needs the task's ID.
 This list is the only copy of the plan's tasks: don't copy it into your memory or any other notes, since a second copy goes stale.
 
-When you end a turn to wait on something outside this session that will start your next turn, such as a background command watching a pull request's checks, call wait with what you're waiting on, at most {on} characters, so the tile doesn't show the turn as needing the user.
+Before you end a turn that waits on a background command whose result you'll act on, such as tests, a build, an install, or a watch on a pull request's checks, call wait with what the turn waits on, at most {on} characters, such as \"test run\" or \"CI checks\". The command's exit starts your next turn, and until then the tile shows the session as waiting rather than needing the user.
+If your closing message says you're waiting on something, that's your cue to call wait before you send it.
+Don't call wait for a command you leave running for the user, such as a dev server.
 When the user has asked you to tell them when something happens, call ping in the turn it happens, with what happened, at most {message} characters, so the tile rings at once. Ping only when they asked.
 
 The tools are tasks_get, task_add, task_update, tasks_replace, tasks_decline, wait, and ping, from the plates server.",
@@ -321,7 +323,7 @@ fn tools() -> Value {
         },
         {
             "name": "wait",
-            "description": "Says this turn ends waiting on something outside the session that will start the next turn, such as a background command watching CI, so the session's tile waits without asking for the user.",
+            "description": "Call before ending a turn that waits on a background command's result, such as tests, a build, or CI checks, whose exit starts the next turn, so the session's tile shows it waiting rather than needing the user. Not for a command left running for the user, such as a dev server.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

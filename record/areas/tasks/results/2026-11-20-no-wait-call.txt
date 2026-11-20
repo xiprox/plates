@@ -1,0 +1,23 @@
+A turn that ended waiting on background commands, with no call to wait
+Windows 11 25H2, Claude desktop app 6.6395.1.0 with Claude Code 2.1.326, 2026-11-20. Times are UTC.
+Read from the transcript of a Claude desktop app session on another of the user's projects,
+started at 21:29:36Z, after `plates hooks install` registered the plates server. Names and
+details of that project are left out.
+
+21:29:55.623Z  attachment deferred_tools_delta: lists mcp__plates__wait among the deferred tools
+21:29:55.624Z  attachment mcp_instructions_delta: added "plates"
+22:10:28.957Z  PowerShell, run_in_background: "Check each rule against the full history"
+22:10:43.686Z  PowerShell, run_in_background: "Run the repository's check script"
+22:12:27.185Z  PowerShell, run_in_background: "Install packages and rerun the full check script"
+22:12:41 to 22:13:03  four foreground PowerShell calls, the last a commit
+22:13:05  assistant, the turn's last message: "Committed as `<hash>` on `<branch>`, and the tree is
+          clean. Waiting on the history-variant check and the full `<script>` rerun before I
+          finish ..."
+22:13:07  system stop_hook_summary: the turn ended
+22:17:19  user <task-notification> for the first background command, and the turn it started
+          went on with tool calls
+
+The transcript holds no tool_use named mcp__plates__* and no mcp__ccd_turn__wrap_up in that
+turn. The Claude desktop app's background tasks panel showed two of the commands still running
+at the turn's end (the user's screenshot). The same screenshot showed the session's tile with an
+amber ring, which src/plates/src/view.rs draws for a your-turn tile that's been read.

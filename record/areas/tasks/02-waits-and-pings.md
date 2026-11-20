@@ -38,10 +38,14 @@ And a tile at your turn rings only when its timer runs out ([02-tiles](../rack/0
 
 The server's instructions also give these two rules (user, 2026-11-20):
 
-- When Claude ends a turn waiting for something that will start its next turn, such as a background command watching a pull request's checks, it calls `wait` with what it waits on, such as "CI checks", so the tile doesn't show the turn as needing you.
+- Before Claude ends a turn that waits on a background command whose result it will act on, such as tests, a build, an install, or a watch on a pull request's checks, it calls `wait` with what the turn waits on, such as "CI checks", so the tile doesn't show the turn as needing you.
+  If Claude's closing message says it's waiting on something, Claude calls `wait` before sending it, and a command left running for you, such as a dev server, gets no `wait`.
 - When you've requested a ping for something, Claude calls `ping` in the turn it happens, with what happened, so the tile rings at once.
 
 Claude pings only on your request, since a ping at the end of every turn would stop meaning anything.
+The rule for `wait` says to call it before the closing message, and names tests, builds, and installs.
+Under a rule that said only "when you end a turn", with a watch on a pull request's checks as its one example, a session ended a turn saying it was waiting on two background commands and didn't call `wait` ([tasks log](log.md#2026-11-20-a-session-ended-a-turn-waiting-on-two-background-commands-without-calling-wait)).
+Plates doesn't infer a wait from a background command still running at `Stop`, since a dev server is one, and its tile would then show waiting for as long as the server runs instead of asking for you (user, 2026-11-20).
 
 ## How Plates learns of a call
 
@@ -103,7 +107,7 @@ On Windows, the tone and the brighten wait while you're busy, as a timer's tone 
 ## Watching for the event
 
 Claude watches for the event with a background command, such as `gh pr checks 12 --watch`, which exits once the pull request's checks finish (documented, [gh pr checks](https://cli.github.com/manual/gh_pr_checks), as of 2026-11-20).
-In a Claude desktop app session on macOS, the command's exit starts a new turn, even after the turn that started it has ended (measured on macOS 26.5.2, 2026-11-20, [hooks log](../hooks/log.md#2026-11-20-on-macos-a-background-commands-exit-starts-a-new-turn-in-a-desktop-session)).
+In a Claude desktop app session, the command's exit starts a new turn, even after the turn that started it has ended (measured on macOS 26.5.2, 2026-11-20, [hooks log](../hooks/log.md#2026-11-20-on-macos-a-background-commands-exit-starts-a-new-turn-in-a-desktop-session), and on Windows 11 25H2, 2026-11-20, [tasks log](log.md#2026-11-20-a-session-ended-a-turn-waiting-on-two-background-commands-without-calling-wait)).
 In that turn, Claude reads the command's result, and calls `ping` with it if you requested one.
 
 The Claude desktop app also watches a pull request a session opened, and starts a new turn in the session for "CI failures, merge conflicts and review comments" (read in the system prompt the app gives Claude, Claude desktop app 5.11492.5 on macOS 26.5.2, as of 2026-11-20).
@@ -126,7 +130,5 @@ That list names no new turn for checks that pass, so Claude watches for those wi
   Asking a session in a pull request's branch to ping you once the checks pass, then watching its tile, would settle it.
 - Whether the Claude desktop app starts a turn in a session when its pull request's checks pass.
   Opening a pull request from a session, ending the turn with nothing watching, and waiting for the checks to pass would settle it.
-- Whether a background command's exit starts a new turn on Windows.
-  Ending a turn in a Windows desktop session with a background command that exits a minute later, and reading the transcript, would settle it.
 - Whether a background command's exit starts a new turn in a terminal session.
   Running `claude` in a terminal and ending a turn with a background command that exits a minute later would settle it.

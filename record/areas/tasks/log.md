@@ -2,6 +2,33 @@
 
 What we found about keeping a task list for each session, for Plates to show in its tile, newest entry first.
 
+## 2026-11-20: A session ended a turn waiting on two background commands without calling wait
+
+**Asked:** why did a session's tile show your turn, rather than waiting, while the session waited on two background commands?
+
+**Expected:** that Claude would call `wait` before the turn ended, since the server's instructions said "When you end a turn to wait on something outside this session that will start your next turn, such as a background command watching a pull request's checks, call wait".
+
+**Found:** we read the transcript of a session on another of the user's projects, started after `plates hooks install` registered the server (measured on Windows 11 25H2, Claude desktop app 6.6395.1.0 with Claude Code 2.1.326, 2026-11-20, [results](results/2026-11-20-no-wait-call.txt)).
+
+- The session loaded the server at 21:29:55Z, with its instructions, and with `mcp__plates__wait` among the tools Claude loads through ToolSearch.
+- Claude started three commands in the background between 22:10:28Z and 22:12:27Z.
+  Its last message, at 22:13:05Z, said it was waiting on two of them, and the turn ended at 22:13:07Z with no call to a Plates tool.
+- With no wrap-up and no `wait` in the turn, `Rack::apply` moves the tile to your turn at `Stop` (read in plates-core at 385819c, `rack.rs`, `Rack::apply`), and the user's screenshot showed the tile with the amber ring of a your-turn tile that's been read.
+- At 22:17:19Z, one command's exit started a new turn, with its task notification as the prompt, as the [hooks log](../hooks/log.md#2026-11-20-on-macos-a-background-commands-exit-starts-a-new-turn-in-a-desktop-session) had seen on macOS.
+  The transcript doesn't record whether that notification fired `UserPromptSubmit`.
+
+Our reading, unverified because a transcript shows what Claude did and not why: the rule tied `wait` to ending a turn without saying the call comes before the closing message, and its only example was a watch on a pull request's checks.
+
+**Changed:** the server's rule for `wait`, in `instructions()` in `src/plates-tasks/src/main.rs`, has Claude call `wait` before ending a turn that waits on a background command whose result it will act on, such as tests, a build, an install, or a watch on a pull request's checks.
+If Claude's closing message says it's waiting on something, the rule has Claude call `wait` before sending it, and it rules out a command left running for the user, such as a dev server.
+The `wait` tool's description gives the same moment and the dev-server exception.
+Plates doesn't infer a wait from a background command still running at a turn's end, since a dev server is one, and its tile would then show waiting for as long as the server runs (user, 2026-11-20).
+Whether Claude follows the new rule is unmeasured: a new session that ends a turn waiting on a background command would settle it.
+A running session gets the new rule at its next compaction, which is unverified ([the restart entry](#2026-11-20-a-running-session-didnt-get-its-restarted-servers-new-instructions)).
+
+**Affects:** [02-waits-and-pings](02-waits-and-pings.md#what-claude-is-told).
+Since a command's exit starting a turn now holds on Windows too, it also affects that doc's [Watching for the event](02-waits-and-pings.md#watching-for-the-event) and [Left open](02-waits-and-pings.md#left-open), and [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#background-tasks).
+
 ## 2026-11-20: On Windows, a list saved under the home folder from inside the Claude app's package reaches the rack
 
 **Asked:** does a list the task server saves outside `%APPDATA%`, in `%USERPROFILE%\.plates\tasks\`, reach the rack on Windows when the server runs inside the Claude desktop app's package?
