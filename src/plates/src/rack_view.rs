@@ -1394,9 +1394,9 @@ impl RackView {
         self.show_card(id, folder, &spot, cx);
     }
 
-    /// Gives the showcase's tile `id` the made-up task list, open, as if you last opened the
-    /// session 30 minutes ago.
-    pub(crate) fn showcase_tasks(&mut self, id: TileId, cx: &mut Context<Self>) {
+    /// Gives the showcase's tile `id` the made-up task list, open if `open`, as if you last opened
+    /// the session 30 minutes ago.
+    pub(crate) fn showcase_tasks(&mut self, id: TileId, open: bool, cx: &mut Context<Self>) {
         let now = SystemTime::now();
         let Some((session, folder, key)) = self.rack.tile(id).and_then(|t| {
             let s = t.session()?;
@@ -1410,7 +1410,9 @@ impl RackView {
         };
         self.rack.apply(&session, &folder, seen, now);
         self.task_lists.insert(key, crate::showcase::task_list(now));
-        self.open_list = Some(Open::new(id));
+        if open {
+            self.open_list = Some(Open::new(id));
+        }
         cx.notify();
     }
 

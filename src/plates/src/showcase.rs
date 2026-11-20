@@ -302,12 +302,15 @@ pub struct Picture {
 }
 
 /// The README's picture, in logical pixels: a canvas in a README's usual 16:10, and on it the
-/// rack twice, the second with a tile's card open over it as Plates opens it, each with a shadow.
+/// rack three times, the second with a tile's task list open and the third with the tile's card
+/// open over it as Plates opens it, each with a shadow.
 #[cfg(feature = "capture")]
 mod canvas {
-    pub const WIDTH: f32 = 1200.;
-    pub const HEIGHT: f32 = 750.;
-    /// The gap between the two racks.
+    /// The canvas's width over its height. The canvas grows to hold the racks with at least
+    /// `MARGIN` around them, and then in its other direction to this shape.
+    pub const RATIO: f32 = 1.6;
+    pub const MARGIN: f32 = 88.;
+    /// The gap between two racks.
     pub const GAP: f32 = 64.;
     /// The canvas's color at its top and its bottom, a warm stone gray that darkens a little
     /// downward, as a surface under a light from above would, so the dark rack stands out on
@@ -318,16 +321,48 @@ mod canvas {
     pub const BLUR: f32 = 18.;
     pub const DROP: f32 = 16.;
     pub const DARK: f32 = 0.34;
+    /// The radius of the canvas's corners, which are see-through past it (user, 2026-11-20).
+    pub const RADIUS: f32 = 16.;
 }
 
-/// Lays the rack on the canvas twice, and over the second the card, `card.1` logical pixels right
-/// of the rack's window and `card.2` down, where Plates opened it. The pictures come at the
-/// screen's scale, which the canvas takes from the rack's width.
+/// Lays the rack on the canvas, then `list`, the rack with a task list open, and then the rack
+/// again with the card over it, `card.1` logical pixels right of the rack's window and `card.2`
+/// down, where Plates opened it. The pictures come at the screen's scale, which the canvas takes
+/// from the rack's width. The picture it returns has straight alpha, as a PNG stores it, unlike
+/// the ones it takes, so it's for saving rather than for laying over another canvas.
 #[cfg(feature = "capture")]
-pub fn compose(rack: &Picture, card: Option<(&Picture, f32, f32)>) -> Picture {
+pub fn compose(
+    rack: &Picture,
+    list: Option<&Picture>,
+    card: Option<(&Picture, f32, f32)>,
+) -> Picture {
     use canvas::*;
     let scale = rack.width as f32 / crate::rack_view::RACK_W;
-    let (width, height) = ((WIDTH * scale) as usize, (HEIGHT * scale) as usize);
+    let gap = GAP * scale;
+    // The racks sit side by side in the canvas's middle with their tops level, as a list opens
+    // downward, and the card reaches past the last rack's right edge.
+    let mut columns = vec![(rack, rack.width as f32)];
+    if let Some(list) = list {
+        columns.push((list, list.width as f32));
+    }
+    if let Some((card, dx, _)) = card {
+        let reach = dx * scale + card.width as f32;
+        columns.push((rack, (rack.width as f32).max(reach)));
+    }
+    let group = columns.iter().map(|&(_, w)| w).sum::<f32>() + gap * (columns.len() - 1) as f32;
+    let tallest = columns
+        .iter()
+        .map(|&(picture, _)| picture.height as f32)
+        .chain(card.map(|(card, _, dy)| dy * scale + card.height as f32))
+        .fold(0., f32::max);
+    let margin = MARGIN * scale;
+    let (mut w, mut h) = (group + 2. * margin, tallest + 2. * margin);
+    if w < h * RATIO {
+        w = h * RATIO;
+    } else {
+        h = w / RATIO;
+    }
+    let (width, height) = (w.round() as usize, h.round() as usize);
     let mut pixels = vec![[0f32; 3]; width * height];
     for y in 0..height {
         for x in 0..width {
@@ -335,20 +370,15 @@ pub fn compose(rack: &Picture, card: Option<(&Picture, f32, f32)>) -> Picture {
             pixels[y * width + x] = [0, 1, 2].map(|c| FROM[c] + (TO[c] - FROM[c]) * t);
         }
     }
-    // The racks sit side by side in the canvas's middle, the second with the card reaching past
-    // its right edge.
-    let rack_w = rack.width as f32;
-    let group = match card {
-        Some((card, dx, _)) => rack_w + GAP * scale + rack_w.max(dx * scale + card.width as f32),
-        None => rack_w,
-    };
-    let rack_x = (width as f32 - group) / 2.;
-    let rack_y = (height as f32 - rack.height as f32) / 2.;
-    let mut placed = vec![(rack, rack_x, rack_y)];
-    if let Some((card, dx, dy)) = card {
-        let second = rack_x + rack_w + GAP * scale;
-        placed.push((rack, second, rack_y));
-        placed.push((card, second + dx * scale, rack_y + dy * scale));
+    let top = (height as f32 - tallest) / 2.;
+    let mut x = (width as f32 - group) / 2.;
+    let mut placed = Vec::new();
+    for &(picture, column_w) in &columns {
+        placed.push((picture, x, top));
+        x += column_w + gap;
+    }
+    if let (Some((card, dx, dy)), Some(&(_, last, _))) = (card, placed.last()) {
+        placed.push((card, last + dx * scale, top + dy * scale));
     }
     for &(picture, x, y) in &placed {
         shadow(&mut pixels, width, height, picture, x, y, scale);
@@ -356,18 +386,123 @@ pub fn compose(rack: &Picture, card: Option<(&Picture, f32, f32)>) -> Picture {
     for &(picture, x, y) in &placed {
         over(&mut pixels, width, height, picture, x as isize, y as isize);
     }
+    let radius = RADIUS * scale;
     Picture {
         width: width as u32,
         height: height as u32,
         rgba: pixels
             .iter()
-            .flat_map(|p| {
+            .enumerate()
+            .flat_map(|(i, p)| {
+                let alpha = inside_corners(i % width, i / width, width, height, radius);
                 [p[0], p[1], p[2]]
                     .map(|c| c.round().clamp(0., 255.) as u8)
                     .into_iter()
-                    .chain([255])
+                    .chain([(alpha * 255.).round() as u8])
             })
             .collect(),
+    }
+}
+
+/// How much of the pixel at (x, y) lies inside a `width` by `height` picture with corners
+/// rounded to `radius`: all of it away from the corners, and a part along each corner's arc, so
+/// the arc's edge comes out smooth.
+#[cfg(feature = "capture")]
+pub fn inside_corners(x: usize, y: usize, width: usize, height: usize, radius: f32) -> f32 {
+    let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
+    let dx = (radius - cx).max(cx - (width as f32 - radius)).max(0.);
+    let dy = (radius - cy).max(cy - (height as f32 - radius)).max(0.);
+    if dx == 0. || dy == 0. {
+        return 1.;
+    }
+    (radius - (dx * dx + dy * dy).sqrt() + 0.5).clamp(0., 1.)
+}
+
+#[cfg(all(test, feature = "capture"))]
+mod tests {
+    use super::{Picture, canvas, compose, inside_corners};
+
+    fn solid(width: u32, height: u32, rgb: [u8; 3]) -> Picture {
+        Picture {
+            width,
+            height,
+            rgba: [rgb[0], rgb[1], rgb[2], 255].repeat((width * height) as usize),
+        }
+    }
+
+    #[test]
+    fn three_racks_sit_level_with_the_card_over_the_last() {
+        // Stand-ins at 2x, the size the code gives the real pictures: the showcase's 6 tiles with
+        // the list's closed bar, 537 logical pixels tall, the rack with the list open, 770, and a
+        // card 360 wide, 13 logical pixels right of its rack and 105 down.
+        let rack = solid(608, 1074, [255, 0, 0]);
+        let list = solid(608, 1540, [0, 255, 0]);
+        let card = solid(720, 570, [0, 0, 255]);
+        let p = compose(&rack, Some(&list), Some((&card, 13., 105.)));
+        let (w, h) = (p.width as usize, p.height as usize);
+        assert!(
+            (w as f32 / h as f32 - canvas::RATIO).abs() < 0.01,
+            "{w}x{h}"
+        );
+
+        let kind = |x: usize, y: usize| {
+            let i = (y * w + x) * 4;
+            match (p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]) {
+                (255, 0, 0) => 'R',
+                (0, 255, 0) => 'G',
+                (0, 0, 255) => 'B',
+                _ => '.',
+            }
+        };
+        // The list's rack is the tallest, so its top and bottom keep the margin, and the other
+        // racks' tops are level with it.
+        let margin = (canvas::MARGIN * 2.) as usize;
+        let column = |x: usize| (0..h).filter(|&y| kind(x, y) != '.').collect::<Vec<_>>();
+        let row: String = (0..w).map(|x| kind(x, margin + 10)).collect();
+        let first_red = row.find('R').unwrap();
+        let green = row.find('G').unwrap();
+        let tops: Vec<usize> = [first_red, green].map(|x| column(x)[0]).to_vec();
+        assert_eq!(tops[0], tops[1]);
+        assert!(tops[0] >= margin && column(green).last().unwrap() + margin < h);
+        assert!(first_red >= margin);
+
+        // Left to right: the rack, a gap, the list, a gap, the rack the card opens over.
+        let runs: Vec<(char, usize)> = row.chars().fold(Vec::new(), |mut runs, c| {
+            match runs.last_mut() {
+                Some((k, n)) if *k == c => *n += 1,
+                _ => runs.push((c, 1)),
+            }
+            runs
+        });
+        let kinds: String = runs.iter().map(|r| r.0).collect();
+        assert_eq!(kinds, ".R.G.R.");
+        assert_eq!((runs[2].1, runs[4].1), (128, 128));
+        let last = first_red + 608 + 128 + 608 + 128;
+        assert_eq!(kind(last + 26 + 5, tops[0] + 210 + 5), 'B');
+        assert_eq!(kind(last + 26 - 5, tops[0] + 210 + 5), 'R');
+
+        assert_eq!(p.rgba[3], 0, "the top left corner is see-through");
+        assert_eq!(p.rgba[(w * h / 2 + w / 2) * 4 + 3], 255);
+    }
+
+    #[test]
+    fn the_canvas_corners_are_rounded_and_its_edges_are_not() {
+        let (w, h, r) = (200, 100, 16.);
+        for (x, y) in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)] {
+            assert_eq!(inside_corners(x, y, w, h, r), 0., "corner ({x}, {y})");
+        }
+        for (x, y) in [
+            (w / 2, 0),
+            (0, h / 2),
+            (w - 1, h / 2),
+            (w / 2, h - 1),
+            (16, 16),
+        ] {
+            assert_eq!(inside_corners(x, y, w, h, r), 1., "({x}, {y})");
+        }
+        // A pixel the arc crosses is partly inside.
+        let edge = inside_corners(4, 4, w, h, r);
+        assert!(edge > 0. && edge < 1., "{edge}");
     }
 }
 

@@ -244,9 +244,9 @@ pub fn run() {
 }
 
 /// Opens the rack on the made-up tiles of `showcase::rack`, which receives no hook events and
-/// writes none of Plates' data files, and with `capture`, saves a picture of it and quits. With
-/// `tasks`, the tile whose card the picture would show gets a made-up task list, open, and the
-/// picture shows the list instead of the card.
+/// writes none of Plates' data files. With `tasks`, the tile whose card the picture shows gets a
+/// made-up task list, open. With `capture`, that tile gets the list closed, and Plates saves a
+/// picture of the rack three times, as `save_picture` takes it, and quits.
 pub fn showcase(capture: Option<PathBuf>, tasks: bool) {
     crate::view::STILL.store(true, std::sync::atomic::Ordering::Relaxed);
     let (rack, card_tile) = showcase::rack(SystemTime::now());
@@ -264,31 +264,34 @@ pub fn showcase(capture: Option<PathBuf>, tasks: bool) {
             true,
             cx,
         );
-        if tasks {
-            view.update(cx, |this, cx| this.showcase_tasks(card_tile, cx));
+        if tasks || capture.is_some() {
+            let open = capture.is_none();
+            view.update(cx, |this, cx| this.showcase_tasks(card_tile, open, cx));
         }
         if let Some(path) = capture {
-            let card = (!tasks).then_some(card_tile);
-            save_picture(window, view.downgrade(), card, path, cx);
+            save_picture(window, view.downgrade(), card_tile, path, cx);
         }
     });
 }
 
-/// How long the showcase waits for the tiles to grow in before it opens the card, and then for
-/// the card to grow before the picture.
+/// How long the showcase waits for the tiles to grow in, and for a task list or a card to open or
+/// close, before its next step.
 #[cfg(feature = "capture")]
 const SETTLE: Duration = Duration::from_millis(1000);
 
 // GPUI draws a window's last frame again into an image of its own, at the screen's scale and with
 // the transparent corners left clear, so the picture needs no permission to record the screen and
 // shows nothing behind the rack. That drawing comes with GPUI's test support, which only a build
-// with the `capture` feature turns on. The rack and the card are windows of their own, so each is
-// drawn on its own, and `showcase::compose` lays them on a canvas where they sat on screen.
+// with the `capture` feature turns on, and only on macOS: on Windows, `render_to_image` returns
+// "not implemented" (record/areas/rack/log.md, 2026-11-20). The rack and the card are windows of
+// their own, so each is drawn on its own, and `showcase::compose` lays them on a canvas where they
+// sat on screen. The picture shows the rack, the rack with `tile`'s task list open, and the rack
+// with `tile`'s card, so the list opens and closes again before the card opens.
 #[cfg(feature = "capture")]
 fn save_picture(
     window: AnyWindowHandle,
     view: WeakEntity<RackView>,
-    card_tile: Option<plates_core::TileId>,
+    tile: plates_core::TileId,
     path: PathBuf,
     cx: &mut App,
 ) {
@@ -305,12 +308,16 @@ fn save_picture(
             })
         };
         cx.background_executor().timer(SETTLE).await;
-        if let Some(card_tile) = card_tile {
-            view.update(cx, |this, cx| this.showcase_card(card_tile, cx))
-                .ok();
-        }
+        view.update(cx, |this, cx| this.toggle_list(tile, cx)).ok();
+        cx.background_executor().timer(SETTLE).await;
+        let list = draw(window, cx);
+        view.update(cx, |this, cx| this.toggle_list(tile, cx)).ok();
+        cx.background_executor().timer(SETTLE).await;
+        view.update(cx, |this, cx| this.showcase_card(tile, cx))
+            .ok();
         cx.background_executor().timer(SETTLE).await;
         let saved = (|| {
+            let list = list?;
             let bounds = |window: AnyWindowHandle, cx: &mut AsyncApp| {
                 window
                     .update(cx, |_, window, _| window.bounds().origin)
@@ -329,7 +336,19 @@ fn save_picture(
                 }
                 None => None,
             };
-            let picture = showcase::compose(&rack, card.as_ref().map(|(c, x, y)| (c, *x, *y)));
+            // The capture runs once, on the Mac, so a step that didn't happen says so rather
+            // than leaving a picture that looks finished.
+            if list.height <= rack.height {
+                eprintln!("The task list didn't open, so the second rack shows it closed.");
+            }
+            if card.is_none() {
+                eprintln!("The card didn't open, so the picture has no rack with a card.");
+            }
+            let picture = showcase::compose(
+                &rack,
+                Some(&list),
+                card.as_ref().map(|(c, x, y)| (c, *x, *y)),
+            );
             write_png(&path, picture.width, picture.height, &picture.rgba)
         })();
         match saved {
@@ -357,7 +376,7 @@ fn write_png(path: &std::path::Path, width: u32, height: u32, rgba: &[u8]) -> Re
 fn save_picture(
     _: AnyWindowHandle,
     _: WeakEntity<RackView>,
-    _: Option<plates_core::TileId>,
+    _: plates_core::TileId,
     _: PathBuf,
     cx: &mut App,
 ) {

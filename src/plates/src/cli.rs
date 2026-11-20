@@ -6,8 +6,10 @@
 //! - `plates listen` runs the hook receiver and prints what each event does to a rack, and
 //!   `--log <file>` also appends each event's JSON to that file, one per line.
 //! - `plates showcase` opens the rack on made-up tiles, and `--capture <file.png>` saves a picture
-//!   of it and quits, in a build with the `capture` feature. `--tasks` gives a tile a made-up
-//!   task list and opens it, in place of a hover card.
+//!   of the rack three times, plain, with a tile's task list open, and with the tile's card, and
+//!   quits, in a build with the `capture` feature on macOS. `--tasks` gives that tile its made-up
+//!   task list, open, for working on how it looks. `--capture` opens and closes the list itself,
+//!   so `--tasks` adds nothing to it.
 
 use std::{
     fs,

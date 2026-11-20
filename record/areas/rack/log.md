@@ -2,6 +2,25 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-20: On Windows, `plates showcase --capture` can't draw the rack
+
+**Asked:** can we take the README's picture again on Windows, with a third rack that shows a session's task list open?
+
+**Expected:** no, since GPUI's `render_to_image` returns "not implemented" on Windows when read in gpui-pre's source ([the capture entry](#2026-11-16-gpui-draws-the-rack-into-a-picture-offscreen-with-no-permission-to-record-the-screen)).
+
+**Found:** a build with the `capture` feature printed `Couldn't save <file.png>: render_to_image not implemented for this platform` and saved nothing (measured on Windows 11 25H2, 2026-11-20).
+So the README's picture can only be taken on the Mac.
+
+**Changed:** the picture's layout and the capture that takes it, which the Mac runs next:
+
+- `plates showcase --capture` gives the landing page session its made-up task list, closed, draws the rack with the list open, closes the list, and opens the session's card as before.
+- `showcase::compose` lays the rack three times, plain, with the list open, and with the card, with their tops level, on a 16:10 canvas that grows to keep 88 logical pixels around the racks.
+  With the showcase's 6 tiles and the list's closed bar, the rack is 537 logical pixels tall and the list's rack 770, so the canvas is 1,514 by 946 (read in plates at 385819c, `rack_view.rs`, `rack_height_for`, and `task_list.rs`'s row heights, unverified until the Mac takes the picture).
+- `showcase::compose` rounds the canvas's corners to 16 logical pixels, see-through past them (user, 2026-11-20).
+  The README's two-rack picture got the same corners from a one-off program that applies the same function to it.
+
+**Affects:** the README's picture and its description in README.md, which wait for the Mac session in [the plan's step 7](../product/plan.md#7-macos).
+
 ## 2026-11-20: On macOS, a window placed at fractions of a point can change size, and the moving rack's frames came late
 
 **Asked:** why do dragging and throwing the rack feel slow and laggy on macOS, when they're smooth on Windows?
