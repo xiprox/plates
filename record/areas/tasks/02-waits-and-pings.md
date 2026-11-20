@@ -83,7 +83,7 @@ Waiting ends when the session's next turn begins:
 
 - at `UserPromptSubmit`, which moves the tile to working
 - at the turn's first `PreToolUse`, which moves the tile to working, in case the turn fires no `UserPromptSubmit` ([Left open](#left-open))
-- at `PreCompact`, which moves the tile to working, and at an MCP server's `Elicitation`, which moves it to needs approval
+- at a `PreCompact` for a `/compact` you typed, which moves the tile to working, and at an MCP server's `Elicitation`, which moves it to needs approval
 - at `Stop`, for a turn that fired none of these, which moves the tile as [Where a turn's end moves the tile](#where-a-turns-end-moves-the-tile) says
 - at `SessionEnd`, which moves the tile to ended
 

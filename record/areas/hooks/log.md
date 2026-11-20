@@ -2,6 +2,30 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-20: Claude Code fired a PreCompact in an idle session, with no compaction and no PostCompact after it
+
+**Asked:** why did a session's tile show "Compacting session…" while the session sat idle, and keep showing it through the session's next turn?
+
+**Expected:** a `PreCompact` only as a compaction starts, during a turn or for a `/compact` you type, with a `PostCompact` after it ([the 33 hook events entry](#2026-11-15-claude-code-documents-33-hook-events-and-the-apps-status-line-shows-8-states)).
+
+**Found:** (measured on Windows 11 25H2, Claude desktop app 6.6395.1.0 with Claude Code 2.1.326, 2026-11-20, [results](results/2026-11-20-idle-precompact.txt))
+
+- At 21:01:26Z, the session's tile moved to working with "Compacting session…", while the session's transcript held no entry from 20:55Z until the user's next prompt at 21:06:46Z.
+  Only a `PreCompact` sets the flag that shows "Compacting session…" (read in plates-core at 4aecd40, `rack.rs`, `Rack::apply`, and `session.rs`, `Session::refresh_line`), so what moved the tile was a `PreCompact`, 5 minutes before the prompt.
+- The transcript records no compaction after the `/compact` the user typed at 09:21:58Z, and the tile's line, below, shows that no `PostCompact` reached Plates before the next turn.
+- The tile kept showing "Compacting session…" through the next turn, because only a `PostCompact` or a turn's end cleared the flag, and Plates showed the line ahead of the turn's tools (read in plates-core at 4aecd40, same functions).
+
+We don't know the `PreCompact`'s `trigger` or why Claude Code fired it: Plates doesn't keep hook payloads, and the Claude desktop app's logs on this PC last changed on 2026-08-23.
+Keeping each hook payload Plates receives while a session sits idle would show the `trigger`, but not why Claude Code fired it.
+
+**Changed:** a `PreCompact` carries its `trigger` into Plates.
+One whose `trigger` is `manual`, a `/compact` you typed, moves the tile to working, as before.
+One whose `trigger` is `auto` gives "Compacting session…" only to a tile whose turn is running, leaves any other tile as it is, and adds no tile for a session Plates doesn't show.
+A new prompt, a tool call, or the turn's end ends a compaction whose `PostCompact` never came, even when background agents keep the tile working.
+If the idle `PreCompact` had a `trigger` of `manual`, this change doesn't stop the tile moving to working, and a kept payload would show which it was.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#events), and [02-waits-and-pings](../tasks/02-waits-and-pings.md#the-waiting-state), since a `PreCompact` with a `trigger` of `auto` no longer ends a wait.
+
 ## 2026-11-20: On macOS, a background command's exit starts a new turn in a desktop session
 
 **Asked:** when a turn ends with a background command still running, does the command's exit start a new turn in a Claude desktop app session?

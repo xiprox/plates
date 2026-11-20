@@ -1,0 +1,27 @@
+A PreCompact to an idle Claude desktop app session, with no compaction after it
+Windows 11 25H2, Claude desktop app 6.6395.1.0 with Claude Code 2.1.326, 2026-11-20.
+Times are UTC; the PC's clock is UTC+1. The session is a desktop app session, local_<id>,
+titled "Plates", with Plates' hooks installed and the rack running.
+
+1. Plates' sessions.json, the session's tile, read at about 21:08Z
+     "state": "working", "state_since": 1795208486864 (21:01:26.864Z), "summary": null
+   In plates-core at 4aecd40, only CompactStarted, which only PreCompact produces, sets
+   `compacting` (rack.rs, Rack::apply), and the line shows "Compacting session…" only while
+   `compacting` is set (session.rs, Session::refresh_line). On a tile that isn't working,
+   CompactStarted also moves it to working and clears the summary.
+
+2. The rack showed the tile working, its line "Compacting session…": the user's screenshot at
+   about 21:06Z, and two more during the next turn.
+
+3. The session's transcript, every entry with a timestamp from 20:55:00Z to 21:06:50Z:
+     21:06:46.044  queue-operation
+     21:06:46.045  queue-operation
+     21:06:46.073  user, the user's next prompt
+     21:06:46.215  api-request
+   Nothing else: no entry at 21:01Z.
+
+4. compact_boundary entries in the transcript: one, at 09:21:58.152Z, with trigger "manual",
+   a /compact the user typed. None after it, up to 21:07Z. No transcript entry records a
+   PreCompact or PostCompact hook.
+
+5. The Claude desktop app's logs, in Claude-Data\claude_<id>\logs, last changed on 2026-08-23.

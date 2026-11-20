@@ -64,6 +64,7 @@ fn begin_turn(s: &mut Session) {
     s.tool_running = false;
     s.pending_tool = None;
     s.asks = None;
+    s.compacting = false;
 }
 
 /// How long an ended session's tile stays before it clears itself.
@@ -295,7 +296,7 @@ impl Rack {
 
         // A waiting tile waits until its session's next turn begins. A turn that a background
         // command's exit starts may fire no UserPromptSubmit (record/areas/tasks/
-        // 02-waits-and-pings.md, "Left open"), so the turn's first tool, question, or compaction
+        // 02-waits-and-pings.md, "Left open"), so the turn's first tool, question, or `/compact`
         // ends the wait too.
         let starts_turn = matches!(
             event,
@@ -304,7 +305,7 @@ impl Rack {
                 | SessionEvent::WaitCalled { .. }
                 | SessionEvent::PingCalled { .. }
                 | SessionEvent::InputAsked { .. }
-                | SessionEvent::CompactStarted
+                | SessionEvent::CompactStarted { manual: true }
         );
         if starts_turn && s.state == SessionState::Waiting {
             begin_turn(s);
@@ -353,6 +354,11 @@ impl Rack {
                 s.activity_at = now;
                 s.tool_running = true;
                 s.pending_tool = Some(tool);
+                // Claude calls no tool while Claude Code compacts, so a compaction whose
+                // PostCompact never came is over (unverified: the hooks of a turn whose context
+                // fills, kept in order, would settle it, and a background agent's tool would at
+                // worst end the line early).
+                s.compacting = false;
             }
             SessionEvent::ApprovalAsked { tool } => {
                 if tool.is_some() {
@@ -406,6 +412,9 @@ impl Rack {
                 background,
             } => {
                 s.pending_tool = None;
+                // A compaction in the turn whose PostCompact never came ends with the turn, even
+                // when background agents keep the tile working.
+                s.compacting = false;
                 s.message = last_message
                     .map(|m| m.trim().to_string())
                     .filter(|m| !m.is_empty());
@@ -474,11 +483,20 @@ impl Rack {
                 s.ended_at = Some(now);
                 set_state(s, &mut tile.timer, SessionState::Ended);
             }
-            SessionEvent::CompactStarted => {
-                s.compacting = true;
-                if s.state != SessionState::Working {
+            // A /compact you typed is work you wait on, so it moves the tile to working. Claude
+            // Code also fired a PreCompact in a session that sat idle, with no compaction and no
+            // PostCompact after it, and we take it to have been one Claude Code started on its
+            // own (unverified: Plates keeps no hook payloads, and keeping one from an idle session
+            // would settle it; record/areas/hooks/log.md, 2026-11-20). So a compaction Claude
+            // Code starts marks only a turn that's running, and a tile that waits on you, or one
+            // kept working only for background agents, keeps saying so.
+            SessionEvent::CompactStarted { manual } => {
+                if s.state != SessionState::Working && manual {
                     s.summary = None;
                     set_state(s, &mut tile.timer, SessionState::Working);
+                }
+                if s.state == SessionState::Working && (manual || s.waiting_on() == 0) {
+                    s.compacting = true;
                 }
             }
             // A /compact you typed hands the turn back once it's done, and the Claude desktop
@@ -515,8 +533,8 @@ impl Rack {
                 set_state(s, &mut tile.timer, SessionState::YourTurn);
             }
         }
-        // A turn that ends, or a session that ends, ends a compaction whose PostCompact never
-        // came, so its tile doesn't say "Compacting session…" the next time it works.
+        // A tile that stops working, as when the session ends, ends a compaction whose
+        // PostCompact never came, so it doesn't say "Compacting session…" the next time it works.
         if s.state != SessionState::Working {
             s.compacting = false;
         }
@@ -2390,7 +2408,12 @@ mod tests {
     fn a_compact_you_type_works_then_hands_you_the_turn_and_an_auto_one_keeps_working() {
         let mut rack = Rack::new();
         let id = apply(&mut rack, "a", stop("Done."), 0);
-        apply(&mut rack, "a", SessionEvent::CompactStarted, 1);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::CompactStarted { manual: true },
+            1,
+        );
         let s = session(&rack, id);
         assert_eq!(s.state, SessionState::Working);
         assert_eq!(s.line.as_deref(), Some(crate::session::COMPACTING));
@@ -2405,7 +2428,14 @@ mod tests {
         assert_eq!(s.summary.as_deref(), Some(COMPACTED));
 
         apply(&mut rack, "a", prompt("Go on"), 3);
-        apply(&mut rack, "a", SessionEvent::CompactStarted, 4);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::CompactStarted { manual: false },
+            4,
+        );
+        let s = session(&rack, id);
+        assert_eq!(s.line.as_deref(), Some(crate::session::COMPACTING));
         apply(
             &mut rack,
             "a",
@@ -2415,6 +2445,134 @@ mod tests {
         let s = session(&rack, id);
         assert_eq!(s.state, SessionState::Working);
         assert!(!s.compacting);
+    }
+
+    #[test]
+    fn a_compaction_claude_code_starts_leaves_an_idle_tile_as_it_is() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", stop("Merge it?"), 0);
+        let timer = rack.tile(id).unwrap().timer;
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::CompactStarted { manual: false },
+            60,
+        );
+        let t = rack.tile(id).unwrap();
+        let s = t.session().unwrap();
+        assert_eq!(s.state, SessionState::YourTurn);
+        assert_eq!(s.summary.as_deref(), Some("Merge it?"));
+        assert!(!s.compacting);
+        assert_eq!(t.timer, timer, "the turn's timer runs on");
+
+        // A tile that waits on something outside the session keeps waiting.
+        apply(
+            &mut rack,
+            "b",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            0,
+        );
+        let b = apply(&mut rack, "b", stop("Watching the checks."), 1);
+        apply(
+            &mut rack,
+            "b",
+            SessionEvent::CompactStarted { manual: false },
+            2,
+        );
+        let s = session(&rack, b);
+        assert_eq!(s.state, SessionState::Waiting);
+        assert_eq!(s.summary.as_deref(), Some("CI checks"));
+        assert!(!s.compacting);
+
+        // So does a tile kept working only for a background agent, and the turn's end ends a
+        // compaction in the turn whose PostCompact never came.
+        let c = apply(&mut rack, "c", prompt("Review it"), 0);
+        apply(
+            &mut rack,
+            "c",
+            SessionEvent::CompactStarted { manual: false },
+            1,
+        );
+        apply(
+            &mut rack,
+            "c",
+            SessionEvent::TurnEnded {
+                last_message: Some("An agent is reviewing.".into()),
+                background: vec![BackgroundTask {
+                    kind: "subagent".into(),
+                    description: "Review the diff".into(),
+                }],
+            },
+            2,
+        );
+        let s = session(&rack, c);
+        assert_eq!(s.state, SessionState::Working);
+        assert!(!s.compacting);
+        assert_eq!(s.line.as_deref(), Some("Waiting on 1 background task"));
+        apply(
+            &mut rack,
+            "c",
+            SessionEvent::CompactStarted { manual: false },
+            3,
+        );
+        let s = session(&rack, c);
+        assert!(!s.compacting);
+        assert_eq!(s.line.as_deref(), Some("Waiting on 1 background task"));
+    }
+
+    #[test]
+    fn a_compact_you_type_ends_a_wait() {
+        let mut rack = Rack::new();
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            0,
+        );
+        let id = apply(&mut rack, "a", stop("Watching the checks."), 1);
+        assert_eq!(session(&rack, id).state, SessionState::Waiting);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::CompactStarted { manual: true },
+            2,
+        );
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::Working);
+        assert_eq!(s.summary, None);
+        assert_eq!(s.wait, None);
+        assert_eq!(s.line.as_deref(), Some(crate::session::COMPACTING));
+    }
+
+    #[test]
+    fn a_new_turn_or_a_tool_ends_a_compaction_whose_postcompact_never_came() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::CompactStarted { manual: false },
+            1,
+        );
+        apply(&mut rack, "a", bash("cargo test"), 2);
+        let s = session(&rack, id);
+        assert!(!s.compacting);
+        assert_ne!(s.line.as_deref(), Some(crate::session::COMPACTING));
+
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::CompactStarted { manual: false },
+            3,
+        );
+        apply(&mut rack, "a", prompt("And then?"), 4);
+        let s = session(&rack, id);
+        assert!(!s.compacting);
+        assert_eq!(s.line.as_deref(), Some(crate::session::THINKING));
     }
 
     #[test]
@@ -2550,13 +2708,14 @@ mod tests {
 
         // Its tool events and a look keep it off the rack, but up to date.
         apply(&mut rack, "a", SessionEvent::Seen { at: at(3) }, 3);
-        apply(&mut rack, "a", SessionEvent::CompactStarted, 4);
         apply(
             &mut rack,
             "a",
-            SessionEvent::CompactFinished { manual: false },
-            5,
+            SessionEvent::CompactStarted { manual: true },
+            4,
         );
+        assert!(rack.tile(a).is_none());
+        apply(&mut rack, "a", bash("cargo test"), 5);
         assert!(rack.tile(a).is_none());
 
         // A turn that asks you something brings it back, needing you.

@@ -90,8 +90,9 @@ pub enum SessionEvent {
     /// You interrupted Claude, or denied the tool it asked about, which no hook event reports, so
     /// the app reads it from the transcript.
     Interrupted { denied: bool },
-    /// `PreCompact`, for a `/compact` you typed or one Claude Code started on its own.
-    CompactStarted,
+    /// `PreCompact`, with whether you typed the `/compact` rather than Claude Code starting it on
+    /// its own.
+    CompactStarted { manual: bool },
     /// `PostCompact`, with whether you typed the `/compact`.
     CompactFinished { manual: bool },
     /// `Elicitation`, when an MCP server asks you to fill in a form or open a page, and Claude's
@@ -133,10 +134,10 @@ impl SessionEvent {
     pub fn moves_to(&self) -> Option<SessionState> {
         match self {
             SessionEvent::Started { .. } => Some(SessionState::New),
-            SessionEvent::PromptSubmitted { .. } | SessionEvent::CompactStarted => {
-                Some(SessionState::Working)
-            }
-            SessionEvent::ToolPending { .. }
+            SessionEvent::PromptSubmitted { .. }
+            | SessionEvent::CompactStarted { manual: true } => Some(SessionState::Working),
+            SessionEvent::CompactStarted { manual: false }
+            | SessionEvent::ToolPending { .. }
             | SessionEvent::ToolFinished { .. }
             | SessionEvent::CompactFinished { .. }
             | SessionEvent::InputGiven
@@ -348,8 +349,9 @@ pub struct Session {
     pub activity_at: SystemTime,
     /// Whether that tool is still running.
     pub tool_running: bool,
-    /// Whether Claude Code is compacting the session's context, between `PreCompact` and
-    /// `PostCompact`.
+    /// Whether Claude Code is compacting the session's context in a running turn: from a
+    /// `PreCompact` for a `/compact` you typed, or one Claude Code started while a turn ran, to
+    /// its `PostCompact`, or else to the session's next prompt, tool, or turn's end.
     pub compacting: bool,
     /// Whether the turn's last wrap-up asked you something, or `None` for a turn with no
     /// wrap-up, such as a session in a terminal, whose end counts as your turn.

@@ -50,11 +50,15 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
     // A look at a session Plates doesn't show, such as one whose tile you cleared, brings no
     // tile back. Nor does opening such a session in the Claude desktop app, which resumes it
     // without anything happening in it, so its tile comes with its next prompt or tool
-    // (record/areas/hooks/log.md, 2026-11-16).
+    // (record/areas/hooks/log.md, 2026-11-16). Nor does a compaction Claude Code starts on its
+    // own, since it fired one in a session that sat idle, with no PostCompact after it to clear
+    // the tile's line (unverified, as `Rack::apply` says; record/areas/hooks/log.md, 2026-11-20).
     if !known
         && matches!(
             event,
-            SessionEvent::Seen { .. } | SessionEvent::Started { resumed: true, .. }
+            SessionEvent::Seen { .. }
+                | SessionEvent::Started { resumed: true, .. }
+                | SessionEvent::CompactStarted { manual: false }
         )
     {
         return None;
@@ -327,6 +331,8 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
     } else {
         None
     };
+    // A compaction's `trigger` is `manual` for a /compact you typed, and `auto` otherwise.
+    let manual = text("trigger").as_deref() == Some("manual");
     let event = match hook.as_str() {
         "SessionStart" => Some(SessionEvent::Started {
             title: text("session_title"),
@@ -374,10 +380,8 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
             text: text("last_assistant_message"),
         }),
         "SessionEnd" => Some(SessionEvent::Ended),
-        "PreCompact" => Some(SessionEvent::CompactStarted),
-        "PostCompact" => Some(SessionEvent::CompactFinished {
-            manual: text("trigger").as_deref() == Some("manual"),
-        }),
+        "PreCompact" => Some(SessionEvent::CompactStarted { manual }),
+        "PostCompact" => Some(SessionEvent::CompactFinished { manual }),
         "Elicitation" => {
             let server = text("mcp_server_name").unwrap_or_else(|| "An MCP server".to_string());
             let message = text("message")
@@ -617,6 +621,9 @@ mod tests {
         let mut rack = Rack::new();
         let resumed = || message("SessionStart", json!({ "source": "resume" }));
         assert_eq!(apply(&mut rack, resumed(), now), None);
+        assert!(!rack.knows("abc123"));
+        let compacting = message("PreCompact", json!({ "trigger": "auto" }));
+        assert_eq!(apply(&mut rack, compacting, now), None);
         assert!(!rack.knows("abc123"));
 
         let prompt = message("UserPromptSubmit", json!({ "prompt": "Go on" }));
@@ -1197,6 +1204,17 @@ mod tests {
         assert_eq!(
             event(with("PostCompact", json!({ "trigger": "auto" }))),
             Some(SessionEvent::CompactFinished { manual: false })
+        );
+        assert_eq!(
+            event(with(
+                "PreCompact",
+                json!({ "trigger": "manual", "custom_instructions": "" })
+            )),
+            Some(SessionEvent::CompactStarted { manual: true })
+        );
+        assert_eq!(
+            event(with("PreCompact", json!({ "trigger": "auto" }))),
+            Some(SessionEvent::CompactStarted { manual: false })
         );
         assert_eq!(
             event(with(
