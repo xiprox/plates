@@ -446,10 +446,10 @@ fn tool(v: &Value, cwd: &Path) -> Option<Tool> {
 }
 
 // A call to the plates server's `wait` or `ping`, which Claude Code names after the server's
-// registered name, `plates`. `PreToolUse` comes before the server answers, so Plates checks the
-// call's text as the server does and keeps only a call that passes
-// (record/areas/tasks/02-waits-and-pings.md). The tools' names live in plates-tasks' `tools` and
-// `call` too, so change them in all three together.
+// registered name, `install::SERVER`, so change both together. `PreToolUse` comes before the
+// server answers, so Plates checks the call's text as the server does and keeps only a call that
+// passes (record/areas/tasks/02-waits-and-pings.md). The tools' names live in plates-tasks'
+// `tools` and `call` too, so change them in all three together.
 fn plates_call(v: &Value) -> Option<SessionEvent> {
     let input = v.get("tool_input")?;
     let field = |key: &str| input.get(key).and_then(Value::as_str).unwrap_or("");

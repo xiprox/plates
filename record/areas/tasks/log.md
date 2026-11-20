@@ -2,6 +2,52 @@
 
 What we found about keeping a task list for each session, for Plates to show in its tile, newest entry first.
 
+## 2026-11-20: `claude mcp add --scope user` registers the task server for every project, and fails on a server already there
+
+**Asked:** should `plates hooks install` register the task server by writing `~/.claude.json` itself, or by running Claude Code's `claude mcp add`?
+
+**Expected:** that `claude mcp add --scope user` writes the server under `mcpServers` in `~/.claude.json`, where the app's sessions find the servers registered for every project ([the server entry](#2026-11-20-each-claude-app-session-starts-its-own-mcp-server-which-knows-the-apps-session-and-claude-keeps-a-task-list-by-its-instructions)).
+
+**Found:** (measured with Claude Code 2.1.284 on Windows 11 25H2, 2026-11-20, [results](results/2026-11-20-windows-package-saves.txt))
+
+- With `CLAUDE_CONFIG_DIR` set to a scratch folder, `claude mcp add --scope user plates -- <path>` wrote `{"type": "stdio", "command": "<path>", "args": [], "env": {}}` under `mcpServers` in a `.claude.json` in that folder, and exited 0.
+- Adding `plates` a second time exited 1 with "MCP server plates already exists in user config".
+  Removing it when it wasn't there exited 1 with "No MCP server named "plates" in user scope".
+- Claude Code had last written the real `~/.claude.json` 10 minutes before we read it, while its sessions ran and nothing of Plates' wrote the file.
+  Whether a running Claude Code would overwrite a change another program made to the file is unverified.
+
+**Changed:** `plates hooks install` runs `claude mcp add --scope user plates`, and `plates hooks uninstall` runs `claude mcp remove --scope user plates`, so only Claude Code writes the file.
+Since each command fails on the server's present state, the install reads `.claude.json` first to choose them.
+The Release workflow ships `plates-tasks` beside `plates`, where the install finds it.
+Whether the app's sessions on Windows start a server registered this way is unverified: a session started after the install that calls `tasks_get` would settle it.
+
+**Affects:** [01-task-list](01-task-list.md#installing).
+
+## 2026-11-20: On Windows, the task server's saves land in the Claude app's package, where the rack can't read them
+
+**Asked:** does a `plates-tasks` started inside a Claude desktop app session on Windows save its list where the rack reads it, in `%APPDATA%\Plates\tasks\`?
+
+**Expected:** not for a new list, since a program started from a session's shell wrote a new `place.json` into the app's package folder ([product log](../product/log.md#2026-11-15-a-plates-started-from-a-shell-inside-the-claude-desktop-app-keeps-its-data-in-the-apps-package)).
+
+**Found:** we ran the release build's `plates-tasks` from a session's shell, which runs inside the app's package (measured on Windows 11 25H2, 2026-11-20, [results](results/2026-11-20-windows-package-saves.txt)).
+That Claude Code starts the session's servers inside the package too is unverified, though the app starts both the shell and the servers through Claude Code.
+
+- A new list landed in `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\Plates\tasks\`.
+  A `.cmd` started with `explorer.exe`, which runs outside the package, found no `tasks` folder in `%APPDATA%\Plates\`.
+- With the list copied into the real `%APPDATA%\Plates\tasks\` first, the server's save, which writes `<id>.json.new` and renames it over the list, landed in the package's folder too.
+  From inside the package, the task read `done`, and from outside, still `doing`.
+- Overwriting a file that already existed in the real folder, in place rather than by a rename, reached the real file: both sides read `dropped`.
+- The session's shell had `CLAUDE_CODE_HOST_SESSION_ID`, starting `local_`, so on Windows too a session's commands get the app's ID for it.
+
+So on Windows, a list Claude keeps in an app session never reaches the rack.
+`wait` and `ping` aren't affected, since Plates reads their calls from the hooks, and `plates-hook` sends each event over HTTP rather than to a file.
+
+**Changed:** nothing in the server yet.
+[01-task-list](01-task-list.md) carries a note at its top.
+
+**Affects:** [01-task-list](01-task-list.md#saving).
+It also answers part of the question the [product log](../product/log.md#2026-11-15-a-plates-started-from-a-shell-inside-the-claude-desktop-app-keeps-its-data-in-the-apps-package) left open: Windows redirects new files and renames, and lets an in-place write to an existing file through.
+
 ## 2026-11-20: A running session didn't get its restarted server's new instructions
 
 **Asked:** does a running session's Claude get the server's new instructions once the session's server restarts?

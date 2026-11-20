@@ -161,6 +161,7 @@ An event from a Claude Code session the app has moved away from, which the app's
 `plates hooks install` adds Plates' hooks to Claude Code's user settings file, `~/.claude/settings.json`.
 It shows you the exact change, backs the file up beside itself, and writes the change only once you confirm.
 `plates hooks uninstall` removes only the entries Plates added.
+Both also register or remove Plates' task server, as [01-task-list](../tasks/01-task-list.md#installing) describes.
 
 Each hook is an async command hook, which Claude Code starts and doesn't wait for, and which runs `plates-hook` directly, with no shell.
 `plates-hook` reads the event from stdin and forwards it to the receiver on `127.0.0.1:47231`.

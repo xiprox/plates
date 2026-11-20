@@ -1,0 +1,60 @@
+Where plates-tasks' saves land on Windows, and how `claude mcp` registers it
+Windows 11 25H2 (10.0.26200), 2026-11-20, plates-tasks from a release build of a2b63e9.
+Paths have the user's folder as <user>.
+
+1. A Claude desktop app session's shell has both session variables
+   CLAUDE_CODE_HOST_SESSION_ID set: True, starting "local_"
+   CLAUDE_CODE_SESSION_ID set: True
+
+2. plates-tasks run from that shell, which runs inside the app's package
+   CLAUDE_CODE_HOST_SESSION_ID=probe-virtualization, then task_add and task_update on stdin.
+
+   Inside the package, %LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Plates\tasks:
+     probe-virtualization.json  248 bytes
+   Outside the package (a .cmd started with explorer.exe), dir /s /b %APPDATA%\Plates:
+     C:\Users\<user>\AppData\Roaming\Plates\panic.log
+     C:\Users\<user>\AppData\Roaming\Plates\place.json
+     C:\Users\<user>\AppData\Roaming\Plates\rack.json
+     C:\Users\<user>\AppData\Roaming\Plates\sessions.json
+     C:\Users\<user>\AppData\Roaming\Plates\settings.json
+   No tasks folder.
+
+3. Writing over files that already exist outside the package
+   Outside the package, the .cmd made %APPDATA%\Plates\tasks and copied the list from step 2
+   to probe-existing.json and probe-inplace.json there, each with "state": "doing".
+
+   a. plates-tasks, CLAUDE_CODE_HOST_SESSION_ID=probe-existing, task_update id 1 to done with
+      status "renamed over": its save writes probe-existing.json.new and renames it over the list.
+        inside the package:   "state": "done",  "status": "renamed over",
+        outside the package:  "state": "doing", "status": "",
+        the package's LocalCache\Roaming\Plates\tasks: probe-existing.json, 259 bytes
+   b. PowerShell's [IO.File]::WriteAllText over probe-inplace.json, "doing" changed to "dropped":
+        inside the package:   "state": "dropped",
+        outside the package:  "state": "dropped",
+
+   Windows PowerShell 5.1 put a byte-order mark before the first line it piped to plates-tasks,
+   which answered that line with {"code":-32700,"message":"The line isn't JSON."}; the probe sent
+   a throwaway first line after that.
+
+4. claude mcp, Claude Code 2.1.284 (the claude.exe on the PATH), CLAUDE_CONFIG_DIR set to a
+   scratch folder
+   claude mcp add --scope user plates -- C:\Users\<user>\dev\plates\target\release\plates-tasks.exe
+     Added stdio MCP server plates with command: C:\...\plates-tasks.exe  to user config
+     File modified: <scratch>\.claude.json
+     exit 0
+   the same again
+     MCP server plates already exists in user config
+     exit 1
+   <scratch>\.claude.json, mcpServers:
+     {"plates":{"type":"stdio","command":"C:\\...\\plates-tasks.exe","args":[],"env":{}}}
+   claude mcp remove --scope user plates
+     Removed MCP server plates from user config
+     exit 0
+   the same again
+     No MCP server named "plates" in user scope
+     exit 1
+   mcpServers after: {}
+
+5. ~/.claude.json, the real one, read-only
+   LastWriteTime 20:18:27 local, read at 20:28:17, with Claude Code sessions running and nothing
+   of Plates' writing it. No mcpServers key.

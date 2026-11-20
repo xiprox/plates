@@ -77,11 +77,13 @@ jobs:
             channel: win-x64
             exe: plates.exe
             hook: plates-hook.exe
+            tasks: plates-tasks.exe
             icon: src/plates/icons/plates.ico
           - os: macos-latest
             channel: osx-arm64
             exe: plates
             hook: plates-hook
+            tasks: plates-tasks
             icon: src/plates/icons/plates.icns
     runs-on: ${{ matrix.os }}
     defaults:
@@ -116,12 +118,14 @@ jobs:
         if: runner.os == 'macOS'
         run: cargo build --release --workspace
 
-      # plates-hook ships beside plates, since `plates hooks install` points Claude Code's hooks
-      # at the plates-hook next to the running plates.
+      # plates-hook and plates-tasks ship beside plates, since `plates hooks install` points
+      # Claude Code's hooks at the plates-hook next to the running plates, and registers the
+      # plates-tasks next to it as the task server.
       - name: Gather the program
         run: |
           mkdir -p publish
-          cp "target/release/${{ matrix.exe }}" "target/release/${{ matrix.hook }}" publish/
+          cp "target/release/${{ matrix.exe }}" "target/release/${{ matrix.hook }}" \
+            "target/release/${{ matrix.tasks }}" publish/
 
       - uses: actions/setup-dotnet@v4
         with:

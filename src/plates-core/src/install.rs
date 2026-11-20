@@ -1,10 +1,16 @@
-//! Adding Plates' hooks to Claude Code's user settings, and taking them out again.
+//! Adding Plates' hooks to Claude Code's user settings, and its task server to the MCP servers
+//! Claude Code starts for every project, and taking both out again.
 //!
 //! Each hook is an async command hook in exec form, which runs `plates-hook` with no shell and
 //! doesn't wait for it, so a closed Plates never slows a session (record/areas/hooks/log.md).
 //! A hook is Plates' own when it runs a program named `plates-hook`, or when it's an `http` hook
 //! to `receiver::PATH` on `127.0.0.1` from an earlier install, so uninstalling leaves every other
 //! hook as it was.
+//!
+//! A write of Plates' to `.claude.json`, the file that registers the task server, could be lost
+//! to one of Claude Code's, which writes the file while its sessions run (unverified,
+//! record/areas/tasks/log.md). So Claude Code's own `claude mcp` command registers the server,
+//! and this module only reads the file, to choose the command.
 
 use std::path::Path;
 
@@ -51,14 +57,75 @@ fn is_ours(hook: &Value) -> bool {
 pub enum InstallError {
     /// The settings file isn't a JSON object, or its `hooks` isn't one.
     NotAnObject(&'static str),
+    /// `.claude.json` registers a server named `SERVER` that runs this program, which isn't
+    /// Plates' task server.
+    NameTaken(String),
 }
 
 impl std::fmt::Display for InstallError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InstallError::NotAnObject(what) => write!(f, "{what} isn't a JSON object"),
+            InstallError::NameTaken(program) => write!(
+                f,
+                "a server named {SERVER} that runs {program:?} is already registered, and it isn't Plates'. \
+                 If you don't need it, remove it with `claude mcp remove --scope user {SERVER}`, then install again."
+            ),
         }
     }
+}
+
+/// The name Plates' task server is registered under. Claude Code names the server's tools after
+/// it, as in `mcp__plates__wait`, which `hooks::plates_call` reads, so change both together.
+pub const SERVER: &str = "plates";
+
+/// What `claude mcp` has to do to `.claude.json` for an install or an uninstall.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ServerStep {
+    Nothing,
+    Add,
+    /// Remove the server, then add it again, as when Plates moved.
+    Replace,
+    Remove,
+}
+
+fn is_tasks_program(command: &str) -> bool {
+    Path::new(command)
+        .file_stem()
+        .is_some_and(|stem| stem == "plates-tasks")
+}
+
+/// The step that leaves `.claude.json`, Claude Code's file that holds the MCP servers registered
+/// for every project, registering Plates' server to run `program`, or with `None`, registering
+/// no server of Plates'. An uninstall leaves a server of someone else's named `SERVER` as it is,
+/// and an install refuses to replace it.
+pub fn server_step(
+    claude_json: &Value,
+    program: Option<&Path>,
+) -> Result<ServerStep, InstallError> {
+    let Some(entry) = claude_json.get("mcpServers").and_then(|s| s.get(SERVER)) else {
+        return Ok(if program.is_some() {
+            ServerStep::Add
+        } else {
+            ServerStep::Nothing
+        });
+    };
+    let command = entry.get("command").and_then(Value::as_str).unwrap_or("");
+    let no_args = entry
+        .get("args")
+        .and_then(Value::as_array)
+        .is_none_or(|a| a.is_empty());
+    if !is_tasks_program(command) {
+        return match program {
+            Some(_) => Err(InstallError::NameTaken(command.to_string())),
+            None => Ok(ServerStep::Nothing),
+        };
+    }
+    Ok(match program {
+        None => ServerStep::Remove,
+        Some(p) if command == p.to_string_lossy() && no_args => ServerStep::Nothing,
+        Some(_) => ServerStep::Replace,
+    })
 }
 
 impl std::error::Error for InstallError {}
@@ -200,6 +267,62 @@ mod tests {
         assert_eq!(without(&installed).unwrap(), theirs());
         let bare = with(&json!({}), Path::new(PROGRAM)).unwrap();
         assert_eq!(without(&bare).unwrap(), json!({}));
+    }
+
+    const SERVER_PROGRAM: &str = "/opt/plates/plates-tasks";
+
+    // `.claude.json` with a server named `plates` as `claude mcp add --scope user` writes it
+    // (Claude Code 2.1.284, record/areas/tasks/log.md).
+    fn registered(command: &str) -> Value {
+        json!({
+            "userID": "x",
+            "mcpServers": {
+                "other": { "type": "stdio", "command": "other-server", "args": [], "env": {} },
+                "plates": { "type": "stdio", "command": command, "args": [], "env": {} },
+            },
+        })
+    }
+
+    #[test]
+    fn installing_the_server_adds_it_once_and_replaces_one_that_moved() {
+        let program = Some(Path::new(SERVER_PROGRAM));
+        assert_eq!(server_step(&json!({}), program), Ok(ServerStep::Add));
+        assert_eq!(
+            server_step(&json!({ "mcpServers": {} }), program),
+            Ok(ServerStep::Add)
+        );
+        assert_eq!(
+            server_step(&registered(SERVER_PROGRAM), program),
+            Ok(ServerStep::Nothing)
+        );
+        assert_eq!(
+            server_step(&registered("/old/place/plates-tasks"), program),
+            Ok(ServerStep::Replace)
+        );
+    }
+
+    #[test]
+    fn uninstalling_removes_only_plates_server() {
+        assert_eq!(
+            server_step(&registered(SERVER_PROGRAM), None),
+            Ok(ServerStep::Remove)
+        );
+        assert_eq!(server_step(&json!({}), None), Ok(ServerStep::Nothing));
+        assert_eq!(
+            server_step(&registered("someone-elses-server"), None),
+            Ok(ServerStep::Nothing)
+        );
+    }
+
+    #[test]
+    fn installing_refuses_to_replace_someone_elses_server_named_plates() {
+        assert_eq!(
+            server_step(
+                &registered("someone-elses-server"),
+                Some(Path::new(SERVER_PROGRAM))
+            ),
+            Err(InstallError::NameTaken("someone-elses-server".into()))
+        );
     }
 
     #[test]

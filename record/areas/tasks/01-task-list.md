@@ -1,5 +1,8 @@
 # Tasks: the task list
 
+> **Note**
+> On Windows, the server's saves land in the Claude desktop app's package folder, where the rack can't read them, so [Saving](#saving) holds only on macOS ([tasks log](log.md#2026-11-20-on-windows-the-task-servers-saves-land-in-the-claude-apps-package-where-the-rack-cant-read-them)).
+
 ```text
 Purpose:     Each session's list of planned work, which Claude keeps and the session's tile shows.
 Depends on:  02-tiles (../rack/02-tiles.md), for the tile the list sits in; 01-window
@@ -114,7 +117,19 @@ Dismissing a session keeps its file, and so does forgetting it in the archive wi
 `plates hooks install` registers the server with Claude Code for every project, under the name `plates`, and `plates hooks uninstall` removes it (user, 2026-11-20).
 The name sets the tools' names that Plates reads from the hooks ([02-waits-and-pings](02-waits-and-pings.md#how-plates-learns-of-a-call)).
 Claude Code keeps the servers registered for every project in `~/.claude.json`, and the app's sessions load them (measured on macOS 26.5.2, 2026-11-20, [tasks log](log.md#2026-11-20-each-claude-app-session-starts-its-own-mcp-server-which-knows-the-apps-session-and-claude-keeps-a-task-list-by-its-instructions)).
-How the install writes that file is open, as [Left open](#left-open) says.
+With `CLAUDE_CONFIG_DIR` set, the file is in the folder it names instead.
+
+The install runs Claude Code's own command, `claude mcp add --scope user plates -- <path to plates-tasks>`, and the uninstall runs `claude mcp remove --scope user plates`.
+Plates doesn't write `~/.claude.json` itself, because Claude Code writes the file while its sessions run, and whether it keeps a change another program made there is unverified ([tasks log](log.md#2026-11-20-claude-mcp-add---scope-user-registers-the-task-server-for-every-project-and-fails-on-a-server-already-there)).
+Each command fails on a server that's already there, or one that isn't (same entry), so the install reads the file first to choose them:
+
+- With no `plates` server registered, the install adds it.
+- With the `plates-tasks` beside the running `plates` registered, it changes nothing.
+- With a `plates-tasks` at another path registered, as after Plates moved, it removes that one and adds this one.
+- With a `plates` server that runs another program registered, it refuses, and says how to remove that server.
+
+Like the hooks' change, the install shows you the commands and runs them only once you confirm.
+If it can't run `claude`, it prints the commands left for you to run.
 
 ## On the tile
 
@@ -211,10 +226,10 @@ A drag moves the rack from where it shows, and then the rack is where you put it
 
 ## Left open
 
-- Whether a server started for an app session on Windows finds `CLAUDE_CODE_HOST_SESSION_ID` in its environment.
+- Whether a server started for an app session on Windows finds `CLAUDE_CODE_HOST_SESSION_ID` in its environment, as the session's commands do ([tasks log](log.md#2026-11-20-on-windows-the-task-servers-saves-land-in-the-claude-apps-package-where-the-rack-cant-read-them)).
   Registering the probe server, `experiments/areas/tasks/mcp-server/probe-server.py`, on Windows and reading its log would settle it.
-- How `plates hooks install` registers the server: by writing `~/.claude.json`, which Claude Code may rewrite while it runs (unverified), or by running `claude mcp add`, which needs Claude Code's command on the PATH.
-  Reading `~/.claude.json` before and after a session's turn would settle whether Claude Code rewrites it.
+- Whether an update of Plates on Windows can replace `plates-tasks.exe` while sessions run it, since Windows doesn't let a program that's running be replaced (unverified for Velopack's update, which might wait or fail).
+  Updating an installed Plates while an app session runs its server would settle it.
 - Whether Claude Code asks you to approve the server's tools in each permission mode, and so whether the install needs to allow them.
   In the probe, the app didn't ask before `tasks_get` in the one session where we noted it, and we didn't record that session's permission mode.
   A session in each mode with the server registered would settle it.
