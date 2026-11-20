@@ -26,8 +26,11 @@ use plates_core::{
 use serde_json::{Value, json};
 
 /// What Claude Code puts in the session's system prompt. The limits come from `Field::max`, which
-/// the list checks. When you change a tool's name here, change it in `tools` too. When you change
-/// a rule here, change it in "How Claude keeps a list" in record/areas/tasks/01-task-list.md too.
+/// the list checks. When you change a tool's name here, change it in `tools` too, and for `wait`
+/// and `ping`, in `call` and in plates-core's `hooks::plates_call`, which reads them from the
+/// hooks. When you change a rule here, change it in "How Claude keeps a list" in
+/// record/areas/tasks/01-task-list.md too, or for `wait` and `ping`, in "What Claude is told" in
+/// record/areas/tasks/02-waits-and-pings.md.
 fn instructions() -> String {
     format!(
         "\
@@ -50,9 +53,14 @@ Call tasks_get before changing a list you haven't seen in this conversation.
 If an update is due before you've seen the list, call tasks_get in the message the update was due in, and send the update in your next message, since task_update needs the task's ID.
 This list is the only copy of the plan's tasks: don't copy it into your memory or any other notes, since a second copy goes stale.
 
-The tools are tasks_get, task_add, task_update, tasks_replace, and tasks_decline, from the plates server.",
+When you end a turn to wait on something outside this session that will start your next turn, such as a background command watching a pull request's checks, call wait with what you're waiting on, at most {on} characters, so the tile doesn't show the turn as needing the user.
+When the user has asked you to tell them when something happens, call ping in the turn it happens, with what happened, at most {message} characters, so the tile rings at once. Ping only when they asked.
+
+The tools are tasks_get, task_add, task_update, tasks_replace, tasks_decline, wait, and ping, from the plates server.",
         title = Field::Title.max(),
         status = Field::Status.max(),
+        on = Field::On.max(),
+        message = Field::Message.max(),
     )
 }
 
@@ -136,6 +144,28 @@ fn call(
     session: Option<&str>,
     now: SystemTime,
 ) -> Result<String, String> {
+    // Plates learns of these two from the hooks, so the server only checks their text and keeps
+    // nothing (record/areas/tasks/02-waits-and-pings.md).
+    let line = |key: &str, field: Field| {
+        let text = args.get(key).and_then(Value::as_str).unwrap_or("");
+        tasks::check_line(text, field).map_err(|e| e.to_string())
+    };
+    match name {
+        "wait" => {
+            let on = line("on", Field::On)?;
+            return Ok(format!(
+                "Unless this turn asks the user something, when it ends the tile shows the session waiting on {on}."
+            ));
+        }
+        "ping" => {
+            line("message", Field::Message)?;
+            return Ok(
+                "When this turn ends, the tile moves to the user's turn with this message and rings."
+                    .to_string(),
+            );
+        }
+        _ => {}
+    }
     let session = session.ok_or(
         "Plates can't tell which session this is, since Claude Code passed neither \
          CLAUDE_CODE_HOST_SESSION_ID nor CLAUDE_CODE_SESSION_ID.",
@@ -292,6 +322,36 @@ fn tools() -> Value {
             "description": "Records that the user doesn't want a task list in this session, so later tasks are refused.",
             "inputSchema": { "type": "object", "properties": {} },
         },
+        {
+            "name": "wait",
+            "description": "Says this turn ends waiting on something outside the session that will start the next turn, such as a background command watching CI, so the session's tile waits without asking for the user.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "on": {
+                        "type": "string",
+                        "maxLength": Field::On.max(),
+                        "description": "What the session waits on, in a word or two, such as \"CI checks\".",
+                    },
+                },
+                "required": ["on"],
+            },
+        },
+        {
+            "name": "ping",
+            "description": "Says this turn ends with something the user asked to hear about, so the session's tile moves to the user's turn with the message and rings at once.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "maxLength": Field::Message.max(),
+                        "description": "What happened, such as \"Checks passed; ready to merge #12\".",
+                    },
+                },
+                "required": ["message"],
+            },
+        },
     ])
 }
 
@@ -356,6 +416,21 @@ mod tests {
     }
 
     #[test]
+    fn wait_and_ping_check_their_text_and_keep_nothing() {
+        let dir = folder("wait");
+        let (text, failed) = tool(&dir, "wait", json!({ "on": "CI checks" }));
+        assert!(!failed, "{text}");
+        assert!(text.contains("CI checks"));
+        let (_, failed) = tool(&dir, "ping", json!({ "message": "Checks passed" }));
+        assert!(!failed);
+        let (text, failed) = tool(&dir, "wait", json!({ "on": "" }));
+        assert!(failed && text.contains("wait needs on"), "{text}");
+        let (text, failed) = tool(&dir, "ping", json!({ "message": "x".repeat(41) }));
+        assert!(failed && text.contains("40 characters"), "{text}");
+        assert!(!dir.exists() || fs::read_dir(&dir).unwrap().next().is_none());
+    }
+
+    #[test]
     fn every_tool_the_instructions_name_is_listed() {
         let dir = folder("list");
         let reply = send(&dir, 2, "tools/list", json!({}));
@@ -371,7 +446,7 @@ mod tests {
                 "{name} isn't in the instructions"
             );
         }
-        assert_eq!(names.len(), 5);
+        assert_eq!(names.len(), 7);
         for word in instructions().split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
             if word.starts_with("task_") || word.starts_with("tasks_") {
                 assert!(

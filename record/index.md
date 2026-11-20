@@ -14,6 +14,7 @@ Documentation people write for other people lives in `docs/` instead.
 - [areas/hooks/01-claude-code-hooks.md](areas/hooks/01-claude-code-hooks.md): how Claude Code's hooks and transcripts tell Plates what each session is doing.
 - [areas/hooks/log.md](areas/hooks/log.md): what we found about Claude Code's hooks and the Claude desktop app.
 - [areas/tasks/01-task-list.md](areas/tasks/01-task-list.md): how Claude keeps each session's task list, and how the rack shows it beside the session's tile.
+- [areas/tasks/02-waits-and-pings.md](areas/tasks/02-waits-and-pings.md): how Claude ends a turn as waiting on something outside the session, and rings you when something you requested a ping for happens.
 - [areas/tasks/log.md](areas/tasks/log.md): what we found about keeping a task list for each session through an MCP server.
 - [areas/build/releasing.md](areas/build/releasing.md): how a release is made, and what files it holds.
 - [areas/build/log.md](areas/build/log.md): what we found about building, versioning, and releasing Plates.

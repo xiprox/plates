@@ -76,6 +76,12 @@ Before this step is done on Windows, we'll register the probe server there to le
 Done when, on Windows, after `plates hooks install`, a session in the Claude desktop app starts a list once you agree on a plan with it, its tile shows the list's bar with its counts, the list opens under the bar and follows Claude's changes, and the list's file is gone once its tile goes for good.
 Step 7's Mac session runs its macOS half.
 
+## 11. Waits and pings
+
+The `wait` and `ping` tools and the waiting state, as [02-waits-and-pings](../tasks/02-waits-and-pings.md) designs them.
+Done when, on Windows, a session you ask to ping you once a pull request's checks pass shows waiting while they run, and when they pass, its tile moves to your turn with the ping's message and rings at once.
+Step 7's Mac session runs its macOS half.
+
 ## Later
 
 Plates looking for its own updates while it runs, and the questions [01-window](../rack/01-window.md#left-open) leaves open.

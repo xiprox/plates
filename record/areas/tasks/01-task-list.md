@@ -111,7 +111,8 @@ Dismissing a session keeps its file, and so does forgetting it in the archive wi
 
 ### Installing
 
-`plates hooks install` registers the server with Claude Code for every project, and `plates hooks uninstall` removes it (user, 2026-11-20).
+`plates hooks install` registers the server with Claude Code for every project, under the name `plates`, and `plates hooks uninstall` removes it (user, 2026-11-20).
+The name sets the tools' names that Plates reads from the hooks ([02-waits-and-pings](02-waits-and-pings.md#how-plates-learns-of-a-call)).
 Claude Code keeps the servers registered for every project in `~/.claude.json`, and the app's sessions load them (measured on macOS 26.5.2, 2026-11-20, [tasks log](log.md#2026-11-20-each-claude-app-session-starts-its-own-mcp-server-which-knows-the-apps-session-and-claude-keeps-a-task-list-by-its-instructions)).
 How the install writes that file is open, as [Left open](#left-open) says.
 

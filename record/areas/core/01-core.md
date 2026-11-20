@@ -1,5 +1,8 @@
 # Core: the model and its rules
 
+> **Note**
+> A turn's end also brightens a tile again when it starts over the state the tile is already in, as [02-waits-and-pings](../tasks/02-waits-and-pings.md#where-a-turns-end-moves-the-tile) says, which the brightening rule under [Tiles](#tiles) doesn't cover.
+
 ```text
 Purpose:     What plates-core holds, and the rules it applies to tiles, timers, and saving.
 Depends on:  02-tiles (../rack/02-tiles.md), 01-claude-code-hooks (../hooks/01-claude-code-hooks.md), and decision 001 (../../decisions/001-rust-and-gpui.md).

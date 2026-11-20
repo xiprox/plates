@@ -687,6 +687,7 @@ fn body(s: &Session) -> (Vec<AnyElement>, bool) {
         SessionState::YourTurn
         | SessionState::Unread
         | SessionState::Done
+        | SessionState::Waiting
         | SessionState::Ended => {
             match &s.message {
                 Some(message) => out.push(message_blocks(message, TEXT).into_any_element()),

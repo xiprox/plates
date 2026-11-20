@@ -104,13 +104,8 @@ impl Change {
             (self.status.as_deref().map(str::trim), Field::Status),
             (self.waiting_on.as_deref().map(str::trim), Field::WaitingOn),
         ] {
-            if text.is_some_and(|t| t.chars().count() > field.max()) {
-                return Err(Error::TooLong(field));
-            }
-            // The tile shows each field on one line, and a line break would draw a second line
-            // over the row below.
-            if text.is_some_and(|t| t.chars().any(char::is_control)) {
-                return Err(Error::NotOneLine(field));
+            if let Some(text) = text {
+                check_field(text, field)?;
             }
         }
         Ok(())
@@ -156,16 +151,23 @@ pub enum Error {
     EmptyTitle,
     TooLong(Field),
     NotOneLine(Field),
+    /// A tool's text that has to be given, such as `wait`'s `on`, was left out or empty.
+    Missing(Field),
     NoTask(u32),
     Declined,
 }
 
-/// A task's text that has a length limit.
+/// Text with a length limit: a task's fields, and the text `wait` and `ping` take.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Field {
     Title,
     Status,
     WaitingOn,
+    /// What `wait` waits on, which the tile's summary line shows after "Waiting on ", so it takes
+    /// `waiting_on`'s limit.
+    On,
+    /// A ping's message, which the tile shows as its summary line, so it takes a status's limit.
+    Message,
 }
 
 impl Field {
@@ -178,8 +180,35 @@ impl Field {
             Field::Title => 30,
             Field::Status => 40,
             Field::WaitingOn => 20,
+            Field::On => Field::WaitingOn.max(),
+            Field::Message => Field::Status.max(),
         }
     }
+}
+
+/// Checks one line of text a tool takes on its own, such as `wait`'s `on`, and returns it
+/// trimmed. The server checks a call's text with it, and so does Plates, which learns of the call
+/// from `PreToolUse` before the server answers, so both keep the same calls
+/// (record/areas/tasks/02-waits-and-pings.md).
+pub fn check_line(text: &str, field: Field) -> Result<String, Error> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(Error::Missing(field));
+    }
+    check_field(text, field)?;
+    Ok(text.to_string())
+}
+
+// Checks text against its field's limit, and that it's one line, since the tile shows each field
+// on one line, and a line break would draw a second line over the row below.
+fn check_field(text: &str, field: Field) -> Result<(), Error> {
+    if text.chars().count() > field.max() {
+        return Err(Error::TooLong(field));
+    }
+    if text.chars().any(char::is_control) {
+        return Err(Error::NotOneLine(field));
+    }
+    Ok(())
 }
 
 impl std::fmt::Display for Error {
@@ -210,11 +239,34 @@ impl std::fmt::Display for Error {
                  as \"Dana\" or \"the data team\".",
                 Field::WaitingOn.max()
             ),
+            Error::TooLong(Field::On) => write!(
+                f,
+                "on takes up to {} characters. Name what you're waiting on in a word or two, such \
+                 as \"CI checks\".",
+                Field::On.max()
+            ),
+            Error::TooLong(Field::Message) => write!(
+                f,
+                "A ping's message shows in one line of about {} characters. Say what happened in a \
+                 few words, such as \"Checks passed; ready to merge #12\".",
+                Field::Message.max()
+            ),
+            Error::Missing(Field::On) => write!(
+                f,
+                "wait needs on: what you're waiting on, such as \"CI checks\"."
+            ),
+            Error::Missing(Field::Message) => write!(
+                f,
+                "ping needs a message: what happened, such as \"Checks passed; ready to merge #12\"."
+            ),
+            Error::Missing(field) => write!(f, "{field:?} needs text."),
             Error::NotOneLine(field) => {
                 let name = match field {
                     Field::Title => "A title",
                     Field::Status => "A status",
                     Field::WaitingOn => "waiting_on",
+                    Field::On => "on",
+                    Field::Message => "A ping's message",
                 };
                 write!(
                     f,

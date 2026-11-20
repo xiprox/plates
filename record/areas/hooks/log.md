@@ -2,6 +2,21 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-20: On macOS, a background command's exit starts a new turn in a desktop session
+
+**Asked:** when a turn ends with a background command still running, does the command's exit start a new turn in a Claude desktop app session?
+[Background tasks](01-claude-code-hooks.md#background-tasks) left it open, and the design for [waits and pings](../tasks/02-waits-and-pings.md) leans on it.
+
+**Expected:** a new turn, as a background agent's report starts one ([2026-11-15 entry](#2026-11-15-stop-lists-the-tasks-still-running-and-a-background-agents-report-starts-a-new-turn)).
+
+**Found:** a background command exited 6.5 minutes after its session's turn had ended, and the app started a new turn for its notification at once (measured on macOS 26.5.2, Claude desktop app 5.11492.5 with Claude Code 2.1.325, 2026-11-20, [results](results/2026-11-20-background-command-turn.txt)).
+A task notification fired `UserPromptSubmit` on Windows ([2026-11-15 entry](#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)), but this transcript doesn't record whether this one did.
+Running `plates listen --log` while a background command exits after its turn would settle it.
+
+**Changed:** nothing in Plates; a shell task still doesn't keep its tile working, for the dev-server reason [Background tasks](01-claude-code-hooks.md#background-tasks) gives.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#background-tasks), and [02-waits-and-pings](../tasks/02-waits-and-pings.md#watching-for-the-event), which has Claude watch with a background command.
+
 ## 2026-11-20: On macOS, a rewind splits a session's tile for about 6s before it merges back
 
 **Asked:** after a rewind in the Claude desktop app on macOS, does the session keep one tile?

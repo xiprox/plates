@@ -523,7 +523,7 @@ impl RackView {
         };
         let ran_out = held
             .ran_out_after
-            .is_some_and(|after| self.rack.ran_out_between(after, now));
+            .is_some_and(|after| self.rack.rings_between(after, now));
         if self.sound && ran_out {
             tone::play();
         }
@@ -552,9 +552,10 @@ impl RackView {
         let changed = self.rack.tick(now);
         // A timer that ran out since the last tick rings the tone, once however many ran out
         // (user, 2026-11-17), as one of the pings `give_held` gives, which wait while you're busy.
-        // The tiles it ran out on started needing you at `now`, in the rack's tick above.
+        // The tiles it ran out on started needing you at `now`, in the rack's tick above. A
+        // session's ping rings the same way (record/areas/tasks/02-waits-and-pings.md).
         let after = self.last_tick.max(now - RING_LATE);
-        if !self.showcase && self.rack.ran_out_between(after, now) {
+        if !self.showcase && self.rack.rings_between(after, now) {
             self.hold.hold_ran_out(after, now);
         }
         if changed {

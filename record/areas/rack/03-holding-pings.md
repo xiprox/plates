@@ -7,7 +7,7 @@ Decides:     What counts as typing or reading a reply, which pings wait, what le
 ```
 
 On Windows, Plates holds back its pings while you're busy: typing in any app, or having the Claude app (the Claude desktop app) in front.
-Its pings are the tone a timer rings as it runs out, a tile's brighten as it starts needing you or as you come back to the PC, and the docked strip's nudge.
+Its pings are the tone a timer rings as it runs out, the tone a session's `ping` rings ([02-waits-and-pings](../tasks/02-waits-and-pings.md#what-a-ping-does)), a tile's brighten as it starts needing you or as you come back to the PC, and the docked strip's nudge.
 They come together as soon as you're no longer busy, 30s after your last typing key with the Claude app not in front.
 They also come at once when you do something on the rack, and 3s after you send Claude a prompt you typed or answer Claude, unless you type again in those 3s.
 None waits longer than 5 minutes (user, 2026-11-17).
@@ -66,7 +66,8 @@ A ping that starts afterward waits only if you press a typing key again or the C
 A tool you approved doesn't count: Claude Code sends nothing after you approve a tool until its `PostToolUse`, once the tool finishes ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events)), so a long `cargo test` you approved would let the pings through when it ends, while you may be typing elsewhere.
 
 Each ping comes once: the tone rings once however many timers ran out while the pings waited, every tile that started needing you while they waited brightens together, and the docked strip nudges once.
-The tone rings only if it's on as the pings come and a timer that ran out while they waited still has its tile time-up, so a timer you dealt with meanwhile, such as by answering its session, rings nothing.
+The tone rings only if it's on as the pings come, and either a timer that ran out while they waited still has its tile time-up, or a session that called `ping` while they waited is still at your turn and you haven't read the turn.
+So a timer or a `ping` you dealt with meanwhile, such as by answering its session, rings nothing.
 A ping that starts as the held ones come is given with them, not after them.
 
 ## Left open

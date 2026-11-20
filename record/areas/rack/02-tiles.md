@@ -37,9 +37,10 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 | --- | --- | --- |
 | New | the session starts | the tile grows in, and its background then brightens blue once |
 | Working | Claude starts a turn, such as when you send a prompt | a blue dot that breathes on a 2.4s cycle, and a blue summary line of what Claude last wrote or is doing, such as "Reading plan.md" ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#titles-and-summaries)) |
-| Your turn | Claude finishes a turn that asks you something, or you interrupt Claude or deny a tool | an amber dot, an amber summary line, and a timer that starts on its own; the summary line is the first line of Claude's last message, or "Interrupted", or "Denied: " and what you denied, such as "Denied: rm -rf target"; once you've read the turn, by opening the session in the Claude desktop app, clicking its tile, or marking it read, the dot becomes an amber ring, the summary line takes the secondary text color, and the timer stops, since the reply is still yours but the turn no longer needs your attention (user, 2026-11-15 and 2026-11-16) |
+| Your turn | Claude finishes a turn that asks you something or calls `ping` ([02-waits-and-pings](../tasks/02-waits-and-pings.md#what-a-ping-does)), or you interrupt Claude or deny a tool | an amber dot, an amber summary line, and a timer that starts on its own; the summary line is the first line of Claude's last message, or the ping's message, or "Interrupted", or "Denied: " and what you denied, such as "Denied: rm -rf target"; once you've read the turn, by opening the session in the Claude desktop app, clicking its tile, or marking it read, the dot becomes an amber ring, the summary line takes the secondary text color, and the timer stops, since the reply is still yours but the turn no longer needs your attention (user, 2026-11-15 and 2026-11-16) |
 | Unread | Claude finishes a turn that asks you nothing, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) tells, or you mark a done tile unread | a green dot, the first line of Claude's last message in the text color, as a new message would be, and a background that brightens green once, with no timer, since the turn wants reading but no response (user, 2026-11-15 and 2026-11-16) |
 | Done | you open an unread session in the Claude desktop app, click its tile, or mark it read | a gray dot, and the first line of Claude's last message in the secondary text color, with no timer and no tint, since the session doesn't need you (user, 2026-11-15 and 2026-11-16) |
+| Waiting | Claude ends a turn by calling `wait`, such as while a pull request's checks run | what [02-waits-and-pings](../tasks/02-waits-and-pings.md#the-waiting-state) gives |
 | Needs approval | Claude asks you to approve a tool, or asks you a question, which the hover card calls "Needs your input" | an orange dot, what Claude wants to do or asks as an orange summary line, such as "Wants to run: cargo test -p collector" or "Asks: Which design?", and a timer that starts on its own |
 | Ended | the session ends | a dimmed ring for its marker, "Ended · clears in 27m" as its summary line in the muted color, and an × on hover that clears the tile (user, 2026-11-15) |
 
@@ -61,7 +62,8 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   A timer holds it past the 30 minutes while the timer is set for tomorrow, and once a timer has run out, until you click the tile (user, 2026-11-16).
   While a timer holds it, its summary line says only "Ended".
 - Every other session tile shows an × on hover too, which dismisses the session: its tile shrinks out, with an Undo button for 5s, and the session is read and its timer stops (user, 2026-11-15).
-  A dismissed session stays off the rack while it works, compacts, or is opened, and comes back once it needs you again, with an approval, a question, an unread turn, or an MCP server's request, or once you send it a new prompt (user, 2026-11-15).
+  A dismissed session stays off the rack while it works, compacts, or is opened, and comes back once it needs you again, with an approval, a question, an unread turn, or an MCP server's request, or once you send it a prompt you typed (user, 2026-11-15).
+  A subagent's report or a task notification fires `UserPromptSubmit` too ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events)), but brings the session back only if its turn ends needing you.
   It comes back after the last session tile, or for a sub-session where [01-core](../core/01-core.md#tiles) says.
   A dismissed session that ends doesn't come back.
 - Dismissing a session takes the sub-sessions indented under its tile along, and they shrink out with it, keeping their indent (user, 2026-11-17).
@@ -84,7 +86,7 @@ From the top, the card shows:
 
 1. The tile's marker, its title on up to two lines, and the session's state in words with how long it has been in it, such as "Your turn · waiting 12m".
 2. What the session's state calls for, as the table below gives it, in a part that scrolls once it's taller than 300px, so a long message can be read whole while the rest of the card stays in place (user, 2026-11-15).
-3. For a tile at your turn, unread, done, or ended whose turn called the wrap-up, the wrap-up's box, which the bullets below describe.
+3. For a tile at your turn, unread, done, waiting, or ended whose turn called the wrap-up, the wrap-up's box, which the bullets below describe.
 4. For a sub-session whose parent's tile is on the rack, "Started from" and the parent's title in quotation marks.
 5. The session's folder and its branch, such as "plates · main".
 6. The timer's controls, except on an ended tile, in two rows as the timer menu's two parts are: after the hourglass, a chip for each length to remind you in, and after a gray moon, a chip for each length to snooze for and Tomorrow (user, 2026-11-16).
@@ -95,9 +97,9 @@ From the top, the card shows:
 | State | The scrolling part shows |
 | --- | --- |
 | Working | the turn's newest four tools in words, oldest first, in the muted color, each after a check, or a cross for one that failed, and then the summary line in the working text color, after three dots that light in turn every 400ms (user, 2026-11-16) |
-| Working, waiting on background agents | Claude's last message, the agents it waits on, and then the summary line |
+| Working, with background agents running | Claude's last message, the agents it waits on, and then the summary line |
 | Needs approval | the summary line, and below it the whole command, for a shell command |
-| Your turn, unread, done, or ended | Claude's last message, or for a turn with neither a message nor a wrap-up, the summary line |
+| Your turn, unread, done, waiting, or ended | Claude's last message, or for a turn with neither a message nor a wrap-up, the summary line |
 
 - The card shows at most 12,000 characters of Claude's last message, cut at a space, with "…" where it stops, and draws it as paragraphs: a heading loses its #s and is 12.5px semibold, and a fenced code block is in the monospace font.
 - A list item's marker, a • for a `-`, `*`, or `+` item, or the item's number, such as "2.", sits in a gutter of its own, so the item's wrapped lines line up with its text, as the Claude desktop app draws a list (user, 2026-11-16).
@@ -172,7 +174,7 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
   - a session tile takes a tint of its own status color, amber for your turn and orange for an approval, and its dot keeps showing Claude's state
   - the timer slot's hourglass stays full of yellow, where a running timer's fill ends, so the tile's yellow reads as the timer having run out, and clicking it turns it over to start another 5 minutes, so hovering it doesn't dim it as it does a running timer (user, 2026-11-16), while clicking anywhere else on the tile clears time-up
 - A timer runs on the wall clock, whether or not anyone is at the desk.
-- When a timer runs out, Plates rings a soft tone, once however many run out together, for every timer, yours or one a session started on its own, and for a snoozed tile coming back (user, 2026-11-17).
+- Plates rings a soft tone when a timer runs out, once however many run out together, for every timer, yours or one a session started on its own, for a snoozed tile coming back (user, 2026-11-17), and at once for a ping ([02-waits-and-pings](../tasks/02-waits-and-pings.md#what-a-ping-does)).
   It rings only for a timer that ran out in the last 5s, so a timer that ran out while the computer slept, or while Plates was closed, rings nothing, and the tile brightens again once you're back instead.
   On Windows, the tone and the tile's brighten wait while you're busy, and a tone that waited still rings when it's let through, however long ago its timer ran out, as [03-holding-pings](03-holding-pings.md) describes.
   The tone is one strike of a felt mallet on a glass bar at A5, chosen as a nudge rather than a call (user, 2026-11-17).

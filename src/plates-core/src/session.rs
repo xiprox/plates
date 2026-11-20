@@ -45,6 +45,10 @@ pub enum SessionState {
     /// it waits without needing you.
     Done,
     NeedsApproval,
+    /// Claude ended a turn waiting on something outside the session, such as a pull request's
+    /// checks, which starts its next turn, so the tile waits without needing you
+    /// (record/areas/tasks/02-waits-and-pings.md). Its `summary` is what it waits on.
+    Waiting,
     Ended,
 }
 
@@ -98,6 +102,11 @@ pub enum SessionEvent {
     /// `PreToolUse` for the Claude desktop app's `mcp__ccd_turn__wrap_up`, which Claude calls at
     /// the end of a turn.
     WrappedUp(WrapUp),
+    /// `PreToolUse` for the plates server's `wait`: the turn ends waiting on `on`.
+    WaitCalled { on: String },
+    /// `PreToolUse` for the plates server's `ping`: the turn ends with news you requested a ping
+    /// for.
+    PingCalled { message: String },
     /// You opened the session in the Claude desktop app at `at`, which the app records in its
     /// file for the session as `lastFocusedAt`.
     Seen { at: SystemTime },
@@ -111,6 +120,15 @@ pub enum SessionEvent {
 }
 
 impl SessionEvent {
+    /// Whether this is a prompt you typed, rather than one that carries only the app's context,
+    /// such as a task notification's, or the one `hooks::catch_up` makes up for a turn.
+    pub fn is_typed_prompt(&self) -> bool {
+        matches!(
+            self,
+            SessionEvent::PromptSubmitted { prompt: Some(prompt), .. } if !prompt_title(prompt).is_empty()
+        )
+    }
+
     /// The state this event moves a tile to, if it moves one.
     pub fn moves_to(&self) -> Option<SessionState> {
         match self {
@@ -123,6 +141,8 @@ impl SessionEvent {
             | SessionEvent::CompactFinished { .. }
             | SessionEvent::InputGiven
             | SessionEvent::WrappedUp(_)
+            | SessionEvent::WaitCalled { .. }
+            | SessionEvent::PingCalled { .. }
             | SessionEvent::Seen { .. }
             | SessionEvent::Continued { .. }
             | SessionEvent::AppChanged => None,
@@ -308,6 +328,12 @@ pub struct Session {
     pub message: Option<String>,
     /// What Claude passed the turn's wrap-up tool.
     pub wrap_up: Option<WrapUp>,
+    /// What the turn's `wait` call waits on, which its `Stop` turns into the waiting state.
+    pub wait: Option<String>,
+    /// The turn's `ping` message, which its `Stop` turns into your turn with a ring.
+    pub ping: Option<String>,
+    /// When a ping last moved the tile to your turn, which the app rings its tone for.
+    pub pinged_at: Option<SystemTime>,
     /// The turn's newest tools, oldest first, at most `RECENT_TOOLS` of them.
     pub recent: Vec<Recent>,
     /// The tasks still running when the turn ended.
@@ -373,6 +399,9 @@ impl Session {
             summary: None,
             message: None,
             wrap_up: None,
+            wait: None,
+            ping: None,
+            pinged_at: None,
             recent: Vec::new(),
             background: Vec::new(),
             status: None,

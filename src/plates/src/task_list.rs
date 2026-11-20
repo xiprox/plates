@@ -23,7 +23,7 @@ use crate::{
     native,
     rack_view::{RACK_W, RackView},
     rows::{ENTER, ease_out},
-    view::{AMBER, BLUE, GRAY, MUTED, TEXT, TEXT2, YOUR_TURN_TEXT, white},
+    view::{AMBER, BLUE, GRAY, MUTED, TEXT, TEXT2, YOUR_TURN_TEXT, pause_mark, white},
 };
 
 const DIVIDER: f32 = 1.;
@@ -208,18 +208,10 @@ fn list_height(list: &TaskList, finished: bool) -> f32 {
 // you, as on a tile at your turn, and blue for work under way, as on a working tile.
 fn mark(holder: Holder) -> AnyElement {
     let dot = |color: u32| div().size(px(7.)).rounded_full().bg(rgb(color));
-    let bar = || div().w(px(2.)).h_full().rounded(px(1.)).bg(rgb(GRAY));
     match holder {
         Holder::You => dot(AMBER).into_any_element(),
         Holder::Doing => dot(BLUE).into_any_element(),
-        Holder::Others => div()
-            .w(px(7.))
-            .h(px(8.))
-            .flex()
-            .justify_between()
-            .child(bar())
-            .child(bar())
-            .into_any_element(),
+        Holder::Others => pause_mark(7., 8., GRAY).into_any_element(),
         Holder::Todo => div()
             .size(px(7.))
             .rounded_full()

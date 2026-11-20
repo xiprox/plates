@@ -1,0 +1,18 @@
+A Claude desktop app session's transcript around a background command that exited after the
+session's turn had ended, read on 2026-11-20 (macOS 26.5.2, Claude desktop app 5.11492.5 with
+Claude Code 2.1.325). The session was the one that wrote this file. The command, started with
+the Bash tool's run_in_background, waited for a process to appear and then exited.
+
+Times are UTC. The numbers are the records' places in the transcript.
+
+  4719  16:26:49  assistant  the turn's closing message
+  4720  16:26:50  system     stop_hook_summary: the turn ends, and its Stop hooks run
+  4721  16:33:17  queue-operation
+  4722  16:33:17  queue-operation
+  4723  16:33:17  user       <task-notification> for the background command, status completed
+  4725  16:33:21  api-request
+  4726  16:33:25  assistant  the new turn's first reply
+
+Nothing came into the session between 16:26:50 and 16:33:17, so the command's exit started the
+new turn. The transcript records the turn's end through stop_hook_summary, but holds no record
+that says whether UserPromptSubmit ran as the new turn began.

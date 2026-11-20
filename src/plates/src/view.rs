@@ -415,6 +415,13 @@ pub(crate) fn marker(t: &Tile, pip: bool) -> AnyElement {
         Some(SessionState::Done) => (base.rounded_full(), Some(GRAY), false),
         Some(SessionState::NeedsApproval) => (base.rounded_full(), Some(HOT), false),
         Some(SessionState::Ended) => (base.rounded_full(), None, false),
+        // A session waiting on something outside it takes the mark of a task waiting on someone
+        // else, two bars, since nothing in it needs you (record/areas/tasks/02-waits-and-pings.md).
+        Some(SessionState::Waiting) => {
+            return pause_mark(size - 1., size, MUTED)
+                .flex_none()
+                .into_any_element();
+        }
         None => (
             base.rounded(px(2.)),
             Some(if t.timer.is_time_up() { YELLOW } else { GRAY }),
@@ -451,6 +458,19 @@ pub(crate) fn marker(t: &Tile, pip: bool) -> AnyElement {
     .into_any_element()
 }
 
+/// The pause mark (‖), two bars, which a task waiting on someone else shows in its list and a
+/// waiting session shows as its marker (record/areas/tasks/02-waits-and-pings.md).
+pub(crate) fn pause_mark(w: f32, h: f32, color: u32) -> Div {
+    let bar = || div().w(px(2.)).h_full().rounded(px(1.)).bg(rgb(color));
+    div()
+        .w(px(w))
+        .h(px(h))
+        .flex()
+        .justify_between()
+        .child(bar())
+        .child(bar())
+}
+
 /// A session tile's state in words, with how long it has been in it, such as "Your turn ·
 /// waiting 12m", for the hover card and an ended tile's summary line.
 pub(crate) fn session_words(t: &Tile, now: SystemTime) -> String {
@@ -474,6 +494,11 @@ pub(crate) fn session_words(t: &Tile, now: SystemTime) -> String {
         SessionState::YourTurn => format!("Your turn · waiting {}", minutes(in_state)),
         SessionState::Unread => format!("Finished {} ago · not read yet", minutes(in_state)),
         SessionState::Done => format!("Done · read {} ago", minutes(in_state)),
+        SessionState::Waiting => format!(
+            "Waiting on {} · {}",
+            s.summary.as_deref().unwrap_or("something"),
+            minutes(in_state)
+        ),
         SessionState::Ended if held || in_state >= ENDED_CLEARS_AFTER => "Ended".into(),
         SessionState::Ended => {
             let left = ENDED_CLEARS_AFTER.saturating_sub(in_state);
@@ -536,6 +561,9 @@ impl RackView {
             // An ended tile says when it clears itself, which a tooltip alone hid (user,
             // 2026-11-15).
             Some(SessionState::Ended) => Some((session_words(t, now), MUTED)),
+            // A waiting tile counts up how long it has waited, so a wait whose session stopped
+            // shows how long it has gone unanswered.
+            Some(SessionState::Waiting) => Some((session_words(t, now), TEXT2)),
             // A working tile shows Claude's newest text and the tool it used after it, as the
             // core's Session::line picks them (user, 2026-11-15).
             Some(SessionState::Working) => t

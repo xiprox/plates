@@ -50,6 +50,22 @@ fn take_in_hand(tile: &mut Tile) {
     }
 }
 
+/// Clears what a session keeps of its last turn, as a new turn starts.
+fn begin_turn(s: &mut Session) {
+    s.summary = None;
+    s.message = None;
+    s.wrap_up = None;
+    s.wait = None;
+    s.ping = None;
+    s.recent.clear();
+    s.background.clear();
+    s.status = None;
+    s.activity = None;
+    s.tool_running = false;
+    s.pending_tool = None;
+    s.asks = None;
+}
+
 /// How long an ended session's tile stays before it clears itself.
 pub const ENDED_CLEARS_AFTER: Duration = Duration::from_secs(30 * 60);
 
@@ -233,7 +249,10 @@ impl Rack {
             Some(place) => place,
             None => Place::Shown(self.add_session(session_id, folder, &event, now)),
         };
-        let new_prompt = matches!(event, SessionEvent::PromptSubmitted { .. });
+        // A prompt you typed brings a dismissed session back, and a task notification's doesn't,
+        // so a dismissed session that waits on a background command stays off the rack when the
+        // command exits and the turn waits again.
+        let new_prompt = event.is_typed_prompt();
         let tile = match place {
             Place::Shown(i) => &mut self.tiles[i],
             Place::Hidden(i) => &mut self.hidden[i],
@@ -244,10 +263,8 @@ impl Rack {
         let was = s.state;
         s.folder = folder.to_path_buf();
 
-        let set_state = |s: &mut Session, timer: &mut Timer, to: SessionState| {
-            if s.state == to {
-                return;
-            }
+        // Puts the tile in `to` from now, with the timer that state starts with.
+        let enter = |s: &mut Session, timer: &mut Timer, to: SessionState| {
             s.state = to;
             s.state_since = now;
             s.read = false;
@@ -263,10 +280,36 @@ impl Rack {
                 SessionState::Working
                 | SessionState::Unread
                 | SessionState::Done
+                | SessionState::Waiting
                 | SessionState::Ended => Timer::Idle,
                 SessionState::New => *timer,
             };
         };
+        let set_state = |s: &mut Session, timer: &mut Timer, to: SessionState| {
+            if s.state != to {
+                enter(s, timer, to);
+            }
+        };
+        // Whether a turn's end moved the tile, even into the state it was in.
+        let mut turned = false;
+
+        // A waiting tile waits until its session's next turn begins. A turn that a background
+        // command's exit starts may fire no UserPromptSubmit (record/areas/tasks/
+        // 02-waits-and-pings.md, "Left open"), so the turn's first tool, question, or compaction
+        // ends the wait too.
+        let starts_turn = matches!(
+            event,
+            SessionEvent::ToolPending { .. }
+                | SessionEvent::WrappedUp(_)
+                | SessionEvent::WaitCalled { .. }
+                | SessionEvent::PingCalled { .. }
+                | SessionEvent::InputAsked { .. }
+                | SessionEvent::CompactStarted
+        );
+        if starts_turn && s.state == SessionState::Waiting {
+            begin_turn(s);
+            set_state(s, &mut tile.timer, SessionState::Working);
+        }
 
         match event {
             SessionEvent::Started { title, .. } => {
@@ -286,22 +329,15 @@ impl Rack {
                 if s.first_prompt.is_none() {
                     s.first_prompt = prompt.filter(|p| !prompt_title(p).is_empty());
                 }
-                s.summary = None;
-                s.message = None;
-                s.wrap_up = None;
-                s.recent.clear();
-                s.background.clear();
-                s.status = None;
-                s.activity = None;
-                s.tool_running = false;
-                s.pending_tool = None;
-                s.asks = None;
+                begin_turn(s);
                 set_state(s, &mut tile.timer, SessionState::Working);
             }
             SessionEvent::WrappedUp(wrap_up) => {
                 s.asks = Some(wrap_up.asks());
                 s.wrap_up = Some(wrap_up);
             }
+            SessionEvent::WaitCalled { on } => s.wait = Some(on),
+            SessionEvent::PingCalled { message } => s.ping = Some(message),
             SessionEvent::ToolPending { tool } => {
                 let activity = tool.activity();
                 if s.recent.last().map(|r| &r.text) != Some(&activity) {
@@ -358,11 +394,13 @@ impl Rack {
                     set_state(s, &mut tile.timer, SessionState::Working);
                 }
             }
-            // A turn whose wrap-up asked you something is your turn. Otherwise a turn that left
-            // background agents running stays working, since Claude takes it up again when they
-            // report back, and a turn whose wrap-up asked you nothing is unread until you look at
-            // it. Any other turn's end is your turn, so a session with no wrap-up still asks for
-            // you as it always has (user, 2026-11-15).
+            // A turn that pinged is your turn, with the ping's message, since you requested the
+            // ping. A turn whose wrap-up asked you something is your turn too. Otherwise a turn
+            // that left background agents running stays working, since Claude takes it up again
+            // when they report back, a turn that called `wait` waits, and a turn whose wrap-up
+            // asked you nothing is unread until you look at it. Any other turn's end is your
+            // turn, so a session with no wrap-up still asks for you as it always has (user,
+            // 2026-11-15 and 2026-11-20).
             SessionEvent::TurnEnded {
                 last_message,
                 background,
@@ -373,13 +411,32 @@ impl Rack {
                     .filter(|m| !m.is_empty());
                 s.summary = s.message.as_deref().map(first_line);
                 s.background = background;
-                let to = match s.asks {
-                    Some(true) => SessionState::YourTurn,
+                let ping = s.ping.take();
+                let wait = s.wait.take();
+                let to = match (&ping, s.asks, &wait) {
+                    (Some(_), _, _) | (None, Some(true), _) => SessionState::YourTurn,
                     _ if s.waiting_on() > 0 => SessionState::Working,
-                    Some(false) => SessionState::Unread,
-                    None => SessionState::YourTurn,
+                    (None, _, Some(_)) => SessionState::Waiting,
+                    (None, Some(false), None) => SessionState::Unread,
+                    (None, None, None) => SessionState::YourTurn,
                 };
-                set_state(s, &mut tile.timer, to);
+                if let Some(message) = ping {
+                    s.summary = Some(message);
+                    s.pinged_at = Some(now);
+                } else if let Some(on) = wait.filter(|_| to == SessionState::Waiting) {
+                    s.summary = Some(on);
+                }
+                // A turn's end starts its state over, even the state the tile is in, with a new
+                // timer and a new need: a turn that begins with no UserPromptSubmit, such as one a
+                // background command's exit starts, finds the tile where the turn before it
+                // ended, and its own end asks for you again. A tile kept working stays as it is.
+                if to == SessionState::Working {
+                    set_state(s, &mut tile.timer, to);
+                } else {
+                    enter(s, &mut tile.timer, to);
+                    tile.need = None;
+                    turned = true;
+                }
             }
             // Only a look after the turn ended reads it: one from before is the look the app
             // last recorded, while the turn ran. Either way, the look is the latest visit.
@@ -400,6 +457,8 @@ impl Rack {
             // them on.
             SessionEvent::Continued { .. } | SessionEvent::AppChanged => {}
             SessionEvent::TurnFailed { error, text } => {
+                s.wait = None;
+                s.ping = None;
                 s.pending_tool = None;
                 s.background.clear();
                 s.message = text.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
@@ -407,6 +466,8 @@ impl Rack {
                 set_state(s, &mut tile.timer, SessionState::YourTurn);
             }
             SessionEvent::Ended => {
+                s.wait = None;
+                s.ping = None;
                 s.pending_tool = None;
                 s.background.clear();
                 s.summary = None;
@@ -443,6 +504,8 @@ impl Rack {
                 }
             }
             SessionEvent::Interrupted { denied } => {
+                s.wait = None;
+                s.ping = None;
                 s.background.clear();
                 s.summary = Some(match (denied, s.pending_tool.take()) {
                     (true, Some(tool)) => format!("Denied: {}", tool.subject()),
@@ -460,7 +523,7 @@ impl Rack {
         s.refresh_line(now);
         let id = tile.id;
         let state = s.state;
-        let needs_you = state != was
+        let needs_you = (state != was || turned)
             && matches!(
                 state,
                 SessionState::NeedsApproval | SessionState::YourTurn | SessionState::Unread
@@ -513,6 +576,30 @@ impl Rack {
             .map_or(0, |i| i + 1);
         self.tiles.insert(index, tile);
         index
+    }
+
+    /// Whether the app rings its tone for something after `after` and by `by`: a timer that ran
+    /// out, or a ping.
+    pub fn rings_between(&self, after: SystemTime, by: SystemTime) -> bool {
+        self.ran_out_between(after, by) || self.pinged_between(after, by)
+    }
+
+    /// Whether a session on the rack pinged after `after` and by `by`, and still shows the
+    /// ping, at your turn with the turn unread, which the app rings its tone for at once. A tone
+    /// held while you were busy rings only for a ping still showing, as one for a timer rings
+    /// only for a tile still time-up (record/areas/tasks/02-waits-and-pings.md). The ping's turn
+    /// is the one the tile shows while the tile has been at your turn since the ping.
+    pub fn pinged_between(&self, after: SystemTime, by: SystemTime) -> bool {
+        self.tiles.iter().any(|t| {
+            t.session()
+                .filter(|s| {
+                    s.state == SessionState::YourTurn
+                        && !s.read
+                        && s.pinged_at == Some(s.state_since)
+                })
+                .and_then(|s| s.pinged_at)
+                .is_some_and(|at| after < at && at <= by)
+        })
     }
 
     /// Whether a timer on the rack ran out after `after` and by `by`, which the app rings a tone
@@ -1586,6 +1673,291 @@ mod tests {
         apply(&mut rack, "a", wrapped(true), 104);
         apply(&mut rack, "a", ended(vec![task("subagent")]), 105);
         assert_eq!(session(&rack, id).state, SessionState::YourTurn);
+    }
+
+    #[test]
+    fn a_turn_that_calls_wait_waits_without_needing_you_until_the_next_turn_starts() {
+        let mut rack = Rack::new();
+        let id = apply(
+            &mut rack,
+            "a",
+            prompt("Open the PR and watch its checks"),
+            0,
+        );
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            5,
+        );
+        apply(&mut rack, "a", wrapped(false), 6);
+        apply(&mut rack, "a", stop("Opened #12; watching its checks."), 7);
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::Waiting);
+        assert_eq!(s.summary.as_deref(), Some("CI checks"));
+        assert_eq!(rack.tile(id).unwrap().timer, Timer::Idle);
+        assert_eq!(rack.tile(id).unwrap().need, None);
+
+        // The watching command's exit starts a turn that may fire no UserPromptSubmit, so its
+        // first tool ends the wait.
+        apply(&mut rack, "a", bash("gh pr view 12"), 300);
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::Working);
+        assert_eq!(s.summary, None);
+        assert_eq!(s.wait, None);
+    }
+
+    #[test]
+    fn a_turn_that_pings_is_your_turn_with_the_message_and_rings_at_once() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Ping me once checks pass"), 0);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            5,
+        );
+        apply(&mut rack, "a", wrapped(false), 6);
+        apply(&mut rack, "a", stop("Watching."), 7);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::PingCalled {
+                message: "Checks passed; ready to merge #12".into(),
+            },
+            300,
+        );
+        apply(&mut rack, "a", wrapped(false), 301);
+        apply(&mut rack, "a", stop("The checks passed."), 302);
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::YourTurn);
+        assert_eq!(
+            s.summary.as_deref(),
+            Some("Checks passed; ready to merge #12")
+        );
+        assert_eq!(s.pinged_at, Some(at(302)));
+        assert!(rack.tile(id).unwrap().timer.is_set());
+        assert_eq!(rack.tile(id).unwrap().need, Some((Need::YourTurn, at(302))));
+        assert!(rack.pinged_between(at(301), at(302)));
+        assert!(!rack.pinged_between(at(302), at(400)));
+    }
+
+    #[test]
+    fn a_turn_that_leaves_background_agents_running_stays_working_even_if_it_calls_wait() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            1,
+        );
+        apply(&mut rack, "a", wrapped(false), 2);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::TurnEnded {
+                last_message: Some("Two agents are on it.".into()),
+                background: vec![BackgroundTask {
+                    kind: "subagent".into(),
+                    description: "Review the diff".into(),
+                }],
+            },
+            3,
+        );
+        assert_eq!(session(&rack, id).state, SessionState::Working);
+    }
+
+    #[test]
+    fn a_ping_you_have_read_rings_nothing_when_its_held_tone_comes() {
+        let mut rack = Rack::new();
+        apply(&mut rack, "a", prompt("Go"), 0);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::PingCalled {
+                message: "Checks passed".into(),
+            },
+            1,
+        );
+        apply(&mut rack, "a", stop("Done."), 2);
+        assert!(rack.pinged_between(at(1), at(2)));
+        apply(&mut rack, "a", SessionEvent::Seen { at: at(3) }, 3);
+        assert!(!rack.pinged_between(at(1), at(4)));
+    }
+
+    fn notification() -> SessionEvent {
+        SessionEvent::PromptSubmitted {
+            title: None,
+            prompt: Some("<task-notification>done</task-notification>".into()),
+        }
+    }
+
+    fn shown(rack: &Rack, id: TileId) -> bool {
+        rack.tiles().iter().any(|t| t.id == id)
+    }
+
+    #[test]
+    fn a_dismissed_waiting_session_stays_off_the_rack_when_its_turn_waits_again() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Watch the checks"), 0);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            1,
+        );
+        apply(&mut rack, "a", stop("Watching."), 2);
+        rack.remove(id, at(3));
+        apply(&mut rack, "a", notification(), 60);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            61,
+        );
+        apply(&mut rack, "a", stop("Still running."), 62);
+        assert!(!shown(&rack, id));
+        // A prompt you type brings it back.
+        apply(&mut rack, "a", prompt("Status?"), 70);
+        assert!(shown(&rack, id));
+    }
+
+    #[test]
+    fn a_ping_brings_back_a_dismissed_session_already_at_your_turn_and_rings() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(&mut rack, "a", wrapped(true), 1);
+        apply(&mut rack, "a", stop("Merge it?"), 2);
+        rack.remove(id, at(3));
+        // The turn a background command's exit starts fires no prompt, here.
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::PingCalled {
+                message: "Checks passed".into(),
+            },
+            60,
+        );
+        apply(&mut rack, "a", stop("The checks passed."), 61);
+        assert!(shown(&rack, id));
+        assert!(rack.pinged_between(at(60), at(61)));
+    }
+
+    #[test]
+    fn a_turn_that_starts_with_no_prompt_still_starts_your_turn_over() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(&mut rack, "a", wrapped(true), 1);
+        apply(&mut rack, "a", stop("Merge it?"), 2);
+        apply(&mut rack, "a", SessionEvent::Seen { at: at(3) }, 3);
+        assert!(session(&rack, id).read);
+        apply(&mut rack, "a", bash("gh pr checks 12"), 60);
+        apply(&mut rack, "a", wrapped(true), 61);
+        apply(&mut rack, "a", stop("Checks failed. Retry?"), 62);
+        let s = session(&rack, id);
+        assert!(!s.read);
+        assert_eq!(s.state_since, at(62));
+        assert!(rack.tile(id).unwrap().timer.is_set());
+        assert_eq!(rack.tile(id).unwrap().need, Some((Need::YourTurn, at(62))));
+    }
+
+    #[test]
+    fn a_ping_you_answered_rings_nothing_when_a_later_turn_ends_at_your_turn() {
+        let mut rack = Rack::new();
+        apply(&mut rack, "a", prompt("Go"), 0);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::PingCalled {
+                message: "Checks passed".into(),
+            },
+            1,
+        );
+        apply(&mut rack, "a", stop("Done."), 2);
+        apply(&mut rack, "a", prompt("Merge it"), 20);
+        apply(&mut rack, "a", wrapped(true), 59);
+        apply(&mut rack, "a", stop("Merged. Delete the branch?"), 60);
+        assert!(!rack.pinged_between(at(1), at(120)));
+    }
+
+    #[test]
+    fn a_question_from_a_waiting_session_starts_a_new_turn() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(&mut rack, "a", bash("gh pr create"), 1);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            2,
+        );
+        apply(&mut rack, "a", stop("Watching."), 3);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::InputAsked {
+                summary: "Asks: Merge now?".into(),
+            },
+            60,
+        );
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::NeedsApproval);
+        assert!(s.recent.is_empty());
+        assert_eq!(s.message, None);
+    }
+
+    #[test]
+    fn a_wrap_up_that_asks_you_something_wins_over_a_wait_and_a_ping_wins_over_both() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            1,
+        );
+        apply(&mut rack, "a", wrapped(true), 2);
+        apply(&mut rack, "a", stop("Merge it?"), 3);
+        assert_eq!(session(&rack, id).state, SessionState::YourTurn);
+        assert_eq!(session(&rack, id).summary.as_deref(), Some("Merge it?"));
+
+        // A ping rings a tile already at your turn again, as a new need.
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::PingCalled {
+                message: "Checks passed".into(),
+            },
+            10,
+        );
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            11,
+        );
+        apply(&mut rack, "a", stop("Done."), 12);
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::YourTurn);
+        assert_eq!(s.summary.as_deref(), Some("Checks passed"));
+        assert_eq!(rack.tile(id).unwrap().need, Some((Need::YourTurn, at(12))));
     }
 
     fn wrapped(asks: bool) -> SessionEvent {

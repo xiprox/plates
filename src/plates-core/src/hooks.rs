@@ -11,7 +11,8 @@ use serde_json::Value;
 use crate::{
     desktop::AppSession,
     rack::{Rack, TileId},
-    session::{BackgroundTask, SessionEvent, SessionState, Tool, WrapUp, first_line, prompt_title},
+    session::{BackgroundTask, SessionEvent, SessionState, Tool, WrapUp, first_line},
+    tasks::{self, Field},
     transcript::{self, Turn},
 };
 
@@ -99,10 +100,7 @@ pub fn answers_claude(rack: &Rack, message: &HookMessage) -> bool {
             .is_some_and(|(_, s)| s.state == SessionState::NeedsApproval && s.question)
     };
     match &message.event {
-        Some(SessionEvent::PromptSubmitted {
-            prompt: Some(prompt),
-            ..
-        }) => !prompt_title(prompt).is_empty(),
+        Some(event @ SessionEvent::PromptSubmitted { .. }) => event.is_typed_prompt(),
         Some(SessionEvent::ToolFinished { .. }) => asked_you(),
         Some(SessionEvent::InputGiven | SessionEvent::Interrupted { .. }) => true,
         _ => false,
@@ -324,6 +322,11 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
     let session_id = text("session_id").ok_or(ParseError::Missing("session_id"))?;
     let cwd = PathBuf::from(text("cwd").unwrap_or_default());
     let transcript_path = text("transcript_path").map(PathBuf::from);
+    let plates_call = if hook == "PreToolUse" {
+        plates_call(&v)
+    } else {
+        None
+    };
     let event = match hook.as_str() {
         "SessionStart" => Some(SessionEvent::Started {
             title: text("session_title"),
@@ -348,6 +351,7 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
                 summary: question(v.get("tool_input").unwrap_or(&Value::Null)),
             })
         }
+        "PreToolUse" if plates_call.is_some() => plates_call,
         "PreToolUse" => tool(&v, &cwd).map(|tool| SessionEvent::ToolPending { tool }),
         "PermissionRequest" => Some(SessionEvent::ApprovalAsked {
             tool: tool(&v, &cwd),
@@ -441,6 +445,25 @@ fn tool(v: &Value, cwd: &Path) -> Option<Tool> {
     })
 }
 
+// A call to the plates server's `wait` or `ping`, which Claude Code names after the server's
+// registered name, `plates`. `PreToolUse` comes before the server answers, so Plates checks the
+// call's text as the server does and keeps only a call that passes
+// (record/areas/tasks/02-waits-and-pings.md). The tools' names live in plates-tasks' `tools` and
+// `call` too, so change them in all three together.
+fn plates_call(v: &Value) -> Option<SessionEvent> {
+    let input = v.get("tool_input")?;
+    let field = |key: &str| input.get(key).and_then(Value::as_str).unwrap_or("");
+    match v.get("tool_name")?.as_str()? {
+        "mcp__plates__wait" => tasks::check_line(field("on"), Field::On)
+            .ok()
+            .map(|on| SessionEvent::WaitCalled { on }),
+        "mcp__plates__ping" => tasks::check_line(field("message"), Field::Message)
+            .ok()
+            .map(|message| SessionEvent::PingCalled { message }),
+        _ => None,
+    }
+}
+
 // Each of Stop's `background_tasks` has a `type`, such as `subagent` or `shell`, and a
 // `description` of up to 1,000 characters, of which the card shows the first line.
 fn background_tasks(v: &Value) -> Vec<BackgroundTask> {
@@ -528,6 +551,37 @@ mod tests {
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
         v
+    }
+
+    #[test]
+    fn the_plates_servers_wait_and_ping_are_read_from_pre_tool_use_once_their_text_checks_out() {
+        let call = |name: &str, input: Value| {
+            event(with(
+                "PreToolUse",
+                json!({ "tool_name": name, "tool_input": input }),
+            ))
+        };
+        assert_eq!(
+            call("mcp__plates__wait", json!({ "on": " CI checks " })),
+            Some(SessionEvent::WaitCalled {
+                on: "CI checks".into()
+            })
+        );
+        assert_eq!(
+            call(
+                "mcp__plates__ping",
+                json!({ "message": "Checks passed; ready to merge #12" })
+            ),
+            Some(SessionEvent::PingCalled {
+                message: "Checks passed; ready to merge #12".into()
+            })
+        );
+        // A call the server refuses is just a tool, as any other.
+        let refused = call(
+            "mcp__plates__wait",
+            json!({ "on": "the long-running integration suite" }),
+        );
+        assert!(matches!(refused, Some(SessionEvent::ToolPending { .. })));
     }
 
     #[test]
