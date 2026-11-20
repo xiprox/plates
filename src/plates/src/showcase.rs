@@ -2,16 +2,84 @@
 //! `plates showcase` opens it, writing none of Plates' data files. Its tiles come from a few
 //! weeks of real Claude Code sessions with the names of projects, clients, and people taken out,
 //! so it shows at once the states record/areas/rack/02-tiles.md describes: a session asking for
-//! approval, one at your turn with a question, one working with a sub-session under it, one
-//! finished and unread, your own tile whose timer runs beside one whose reminder is due, and two
-//! snoozed tiles behind the moon.
+//! approval, one at your turn with a question and a task list, one working with a sub-session under
+//! it, your own tile whose timer runs beside one whose reminder is due, and two snoozed tiles
+//! behind the moon. It leaves out a finished turn you haven't read, so the rack stays short enough
+//! to read at a glance (user, 2026-11-20).
 
 use std::{
     path::PathBuf,
     time::{Duration, SystemTime},
 };
 
-use plates_core::{Rack, SessionEvent, TileId, Timer, Tool, WrapUp, desktop::AppSession};
+use plates_core::{
+    Rack, SessionEvent, TileId, Timer, Tool, WrapUp,
+    desktop::AppSession,
+    tasks::{Change, State, TaskList},
+};
+
+/// A made-up task list for the showcase's open list, shaped like a real session's on
+/// 2026-11-20 with its names and details changed: six pieces of a landing page, two waiting on
+/// you, two on someone else, and two to do, with nothing under way between turns. The one
+/// that changed last did so after the showcase's last visit to the session, 30 minutes ago.
+pub fn task_list(now: SystemTime) -> TaskList {
+    made_up(
+        now,
+        &[
+            (
+                "Category filters",
+                State::Waiting,
+                "Your take on the 8 categories",
+                "you",
+                50,
+            ),
+            (
+                "Real visitor locations",
+                State::Waiting,
+                "City pass, then the query",
+                "Sam",
+                50,
+            ),
+            ("Clean thumbnails", State::Waiting, "", "Dana", 50),
+            (
+                "Results section rework",
+                State::Todo,
+                "Yearly total vs lifetime estimate",
+                "",
+                50,
+            ),
+            (
+                "Notes batch",
+                State::Todo,
+                "End of day, all at once",
+                "",
+                50,
+            ),
+            (
+                "Icon set",
+                State::Waiting,
+                "Where the originals live decides",
+                "you",
+                5,
+            ),
+        ],
+    )
+}
+
+fn made_up(now: SystemTime, tasks: &[(&str, State, &str, &str, u64)]) -> TaskList {
+    let mut list = TaskList::default();
+    for &(title, state, status, waiting_on, minutes) in tasks {
+        let change = Change {
+            title: Some(title.to_string()),
+            state: Some(state),
+            status: Some(status.to_string()),
+            waiting_on: Some(waiting_on.to_string()),
+        };
+        list.add(change, now - Duration::from_secs(minutes * 60))
+            .expect("each made-up task has a title");
+    }
+    list
+}
 
 /// Builds the made-up rack as it stands at `now`, and the tile whose hover card the showcase's
 /// picture shows.
@@ -180,38 +248,6 @@ pub fn rack(now: SystemTime) -> (Rack, TileId) {
         ]
         .concat(),
     );
-    session(
-        "loads",
-        "analytics",
-        "Count widget loads via Cloudflare",
-        None,
-        [
-            at(
-                44,
-                start("PostHog only shows a floor for the widget. Count its loads in Cloudflare"),
-            ),
-            at(
-                23,
-                vec![
-                    did("Using query-run"),
-                    did("Using graphql_query"),
-                    did("Using graphql_query"),
-                ],
-            ),
-            at(
-                13,
-                ended(
-                    "Cloudflare counted the widget's loads, and against them the page converted \
-                     about 17% of visits.",
-                    None,
-                    &[],
-                    "Converts ~17% of visits.",
-                ),
-            ),
-        ]
-        .concat(),
-    );
-
     // Two finished sessions and an errand you dismissed wait in the archive.
     let finished: Vec<TileId> = [
         (

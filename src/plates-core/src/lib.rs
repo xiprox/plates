@@ -11,6 +11,7 @@ pub mod rack;
 pub mod receiver;
 pub mod session;
 pub mod store;
+pub mod tasks;
 pub mod timer;
 pub mod transcript;
 

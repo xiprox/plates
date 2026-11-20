@@ -33,16 +33,10 @@ pub fn load(path: &Path) -> Settings {
     }
 }
 
-/// Writes a new file beside the old one and renames it over the old one, as rack.json's save
-/// does, so a crash mid-save leaves the old settings whole.
+/// Writes the settings to `path`, so a crash mid-save leaves the old settings whole.
 pub fn save(settings: Settings, path: &Path) -> io::Result<()> {
     let body = json!({ "sound": settings.sound });
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let temp = path.with_extension("json.new");
-    fs::write(&temp, body.to_string())?;
-    fs::rename(&temp, path)
+    plates_core::store::write_whole(path, body.to_string().as_bytes())
 }
 
 #[cfg(test)]

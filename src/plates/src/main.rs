@@ -20,6 +20,7 @@ mod rows;
 mod settings;
 mod showcase;
 mod swipe;
+mod task_list;
 mod tone;
 mod tray;
 mod view;

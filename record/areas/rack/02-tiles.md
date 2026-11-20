@@ -7,6 +7,7 @@ Decides:     The tiles' layout and states, marking a turn read or unread, the ho
 ```
 
 A tile is one 60px row of the rack: a session tile for each Claude Code session, and your own tiles for anything else you want kept in view.
+A session's task list extends its tile below the 60px ([01-task-list](../tasks/01-task-list.md#on-the-tile)).
 On every tile, the marker on the left is its status, and the timer slot on the right shows an hourglass, which fills with yellow while a timer runs, or a violet moon while it's set for tomorrow (user, 2026-11-15 and 2026-11-16).
 [The mockups](https://claude.ai/artifact/A81TcK3BfzDVyQ2qaCqgNd) draw every state on this page.
 
@@ -55,6 +56,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 - A summary line draws text between backticks in a monospace font on a background of 8% white, and text between double asterisks in bold, and leaves out the backticks and asterisks (user, 2026-11-15).
   It draws a markdown link, `[text](target)`, as its text with a 1px underline in the line's color at 45% opacity, and the link can't be clicked (user, 2026-11-15).
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
+- A session whose task list has any tasks has a bar under the tile's top that counts them by who holds each, and clicking the bar opens the list inside the tile ([01-task-list](../tasks/01-task-list.md)).
 - An ended tile clears itself 30 minutes after the session ends, and its × clears it at once.
   A timer holds it past the 30 minutes while the timer is set for tomorrow, and once a timer has run out, until you click the tile (user, 2026-11-16).
   While a timer holds it, its summary line says only "Ended".
@@ -128,7 +130,7 @@ From the top, the card shows:
 
 ## Swiping a tile away
 
-On a trackpad, swiping two fingers sideways over a tile does what its × does: it dismisses a session or removes your own tile, each with the same Undo, and clears an ended session's tile at once (user, 2026-11-16).
+On a trackpad, swiping two fingers sideways over a tile's top does what its × does: it dismisses a session or removes your own tile, each with the same Undo, and clears an ended session's tile at once (user, 2026-11-16).
 The phantom tile doesn't swipe, and no swipe starts while a name field is open.
 We've read how macOS and Windows deliver the swipe but measured neither, as the last bullet says.
 
@@ -235,6 +237,7 @@ When it starts, Plates brings each restored tile up to date with any turn that e
 | --- | --- |
 | Tile | `#1C1D21` |
 | Text, and secondary text | `#ECEDEF`, `#A3A6AE` |
+| Muted text | `#8B8E97` |
 | Working and new: dot, and working text | `#74AEFF`, `#9CC4FF` |
 | Your turn: dot, and text | `#F2B441`, `#F2C46A` |
 | Unread: dot, and the color it brightens to | `#5BCB8A`, `#1D3A2B` |

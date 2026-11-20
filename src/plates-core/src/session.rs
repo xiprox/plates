@@ -344,6 +344,10 @@ pub struct Session {
     pub ended_at: Option<SystemTime>,
     /// When you dismissed the session, while it waits off the rack and shows in the archive.
     pub dismissed_at: Option<SystemTime>,
+    /// The latest time the Claude desktop app says you opened the session, which the tile's
+    /// task list compares each task's last change with, to mark what changed since you were last
+    /// there. A session the app doesn't keep, such as one in a terminal, has none.
+    pub seen_at: Option<SystemTime>,
 }
 
 /// One of the turn's tools in words, such as "Reading plan.md", and whether it failed.
@@ -385,6 +389,7 @@ impl Session {
             own_timer: false,
             ended_at: None,
             dismissed_at: None,
+            seen_at: None,
         }
     }
 

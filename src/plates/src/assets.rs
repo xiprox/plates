@@ -83,6 +83,15 @@ fn icon(name: &str) -> Option<String> {
                 r#"<mask id="gap"><rect width="24" height="24" fill="white"/><path d="M4.5 4.5l15 15" stroke="black" stroke-width="5"/></mask><g {STROKE} stroke-width="1.7"><g mask="url(#gap)">{BELL}</g><path d="M4.5 4.5l15 15"/></g>"#
             ),
         ),
+        // The chevrons at the end of a tile's task bar, which open and close its list.
+        "chevron-down.svg" => svg(
+            "0 0 24 24",
+            format!(r#"<path d="M6.5 9.5l5.5 5.5 5.5-5.5" {STROKE} stroke-width="1.9"/>"#),
+        ),
+        "chevron-up.svg" => svg(
+            "0 0 24 24",
+            format!(r#"<path d="M6.5 14.5l5.5-5.5 5.5 5.5" {STROKE} stroke-width="1.9"/>"#),
+        ),
         "plus.svg" => svg(
             "0 0 24 24",
             format!(r#"<path d="M12 5v14M5 12h14" {STROKE} stroke-width="1.8"/>"#),

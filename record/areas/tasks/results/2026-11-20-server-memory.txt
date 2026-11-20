@@ -1,0 +1,10 @@
+Resident memory of the task servers and the rack, read with `ps -o pid=,rss=,comm=` on macOS
+26.5.2, 2026-11-20, with three Claude desktop app sessions running that had the server. Both
+programs were debug builds from `cargo build`. RSS is in kilobytes, and <repo> stands for the
+repository's folder.
+
+  pid    rss    command
+  56695    672  <repo>/target/debug/plates-tasks
+  64802   1376  <repo>/target/debug/plates-tasks
+  71666   1360  <repo>/target/debug/plates-tasks
+  75944  91552  ./target/debug/plates

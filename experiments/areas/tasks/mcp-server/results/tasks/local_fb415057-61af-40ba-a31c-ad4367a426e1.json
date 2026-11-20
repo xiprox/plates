@@ -1,0 +1,75 @@
+{
+  "declined": true,
+  "next_id": 9,
+  "tasks": [
+    {
+      "id": 8,
+      "title": "Write the design doc",
+      "state": "todo",
+      "status": "record/areas/tasks/01-task-list.md",
+      "waiting_on": "",
+      "updated": "2026-11-20T11:53:53.880+00:00"
+    }
+  ],
+  "replaced": {
+    "at": "2026-11-20T11:53:53.880+00:00",
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Design doc, probe log, and plan step 10",
+        "state": "todo",
+        "status": "Clean the home folder path out of the probe's server-log.jsonl before committing it",
+        "waiting_on": "",
+        "updated": "2026-11-20T11:47:44.831+00:00"
+      },
+      {
+        "id": 2,
+        "title": "MCP server in Rust",
+        "state": "todo",
+        "status": "Registered by hand with claude mcp add, replacing the probe's registration",
+        "waiting_on": "",
+        "updated": "2026-11-20T11:50:08.081+00:00"
+      },
+      {
+        "id": 3,
+        "title": "Register the server in plates hooks install",
+        "state": "dropped",
+        "status": "Dropped 2026-11-20: we register the server by hand first",
+        "waiting_on": "",
+        "updated": "2026-11-20T11:50:08.068+00:00"
+      },
+      {
+        "id": 4,
+        "title": "Task panel beside the rack",
+        "state": "todo",
+        "status": "Read-only at first; uses Sam's icon for the open button",
+        "waiting_on": "",
+        "updated": "2026-11-20T11:48:25.900+00:00"
+      },
+      {
+        "id": 5,
+        "title": "Icon for the task panel",
+        "state": "done",
+        "status": "Sam sent it on 2026-11-20",
+        "waiting_on": "",
+        "updated": "2026-11-20T11:48:25.884+00:00"
+      },
+      {
+        "id": 6,
+        "title": "macOS checks in the step 7 Mac session",
+        "state": "todo",
+        "status": "Covers the server, install, and panel on the Mac",
+        "waiting_on": "",
+        "updated": "2026-11-20T11:47:44.897+00:00"
+      },
+      {
+        "id": 7,
+        "title": "buy flowers",
+        "state": "todo",
+        "status": "",
+        "waiting_on": "",
+        "updated": "2026-11-20T11:52:02.624+00:00"
+      }
+    ]
+  }
+}

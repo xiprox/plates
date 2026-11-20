@@ -18,7 +18,9 @@ use plates_core::{
     desktop::{self, AppSessions},
     hooks::{self, HookMessage},
     receiver::{self, PORT, Received, Receiver},
-    store, transcript,
+    store,
+    tasks::{self, TaskList},
+    transcript,
 };
 
 use crate::{
@@ -32,13 +34,7 @@ use crate::{
 /// interrupt or a denial can take to reach a tile.
 const POLL: Duration = Duration::from_secs(1);
 
-/// Plates' data folder, `%APPDATA%\Plates\` on Windows and
-/// `~/Library/Application Support/Plates/` on macOS, as record/areas/rack/02-tiles.md gives it.
-pub fn data_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("Plates")
-}
+pub use plates_core::store::data_dir;
 
 /// A session Plates has heard from or restored, as the events thread last read the Claude desktop
 /// app's file for it.
@@ -175,6 +171,7 @@ pub fn run() {
         eprintln!("Couldn't listen on port {PORT}, so no session tiles will show: {e}");
     }
     let (events_tx, events) = async_channel::unbounded();
+    let (lists_tx, lists) = async_channel::unbounded();
     let (commands_tx, commands) = async_channel::unbounded();
     let show = commands_tx.clone();
     thread::Builder::new()
@@ -186,6 +183,7 @@ pub fn run() {
                 .into_iter()
                 .map(|(id, folder)| (id, Look::new(folder)))
                 .collect();
+            let mut watch = tasks::Watch::new(tasks::folder(&data_dir()));
             let mut polled = Instant::now();
             loop {
                 let mut messages = Vec::new();
@@ -209,6 +207,11 @@ pub fn run() {
                     polled = Instant::now();
                     messages.extend(cuts.poll());
                     messages.extend(read_app_files(&mut looks, &mut app_sessions));
+                    if let Some(all) = watch.poll()
+                        && lists_tx.send_blocking(all).is_err()
+                    {
+                        return;
+                    }
                 }
                 for mut message in messages {
                     message.app = app_sessions.get(&message.session_id);
@@ -228,22 +231,45 @@ pub fn run() {
     application().with_assets(Assets).run(move |cx: &mut App| {
         // The receiver's thread runs for the life of the app.
         let _receiver = receiver;
-        open_rack(rack, data_file, events, (commands_tx, commands), false, cx);
+        open_rack(
+            rack,
+            data_file,
+            events,
+            lists,
+            (commands_tx, commands),
+            false,
+            cx,
+        );
     });
 }
 
 /// Opens the rack on the made-up tiles of `showcase::rack`, which receives no hook events and
-/// writes none of Plates' data files, and with `capture`, saves a picture of it and quits.
-pub fn showcase(capture: Option<PathBuf>) {
+/// writes none of Plates' data files, and with `capture`, saves a picture of it and quits. With
+/// `tasks`, the tile whose card the picture would show gets a made-up task list, open, and the
+/// picture shows the list instead of the card.
+pub fn showcase(capture: Option<PathBuf>, tasks: bool) {
     crate::view::STILL.store(true, std::sync::atomic::Ordering::Relaxed);
     let (rack, card_tile) = showcase::rack(SystemTime::now());
     let (_events_tx, events) = async_channel::unbounded();
+    let (_lists_tx, lists) = async_channel::unbounded();
     let (commands_tx, commands) = async_channel::unbounded();
     application().with_assets(Assets).run(move |cx: &mut App| {
         let data_file = data_dir().join("rack.json");
-        let (window, view) = open_rack(rack, data_file, events, (commands_tx, commands), true, cx);
+        let (window, view) = open_rack(
+            rack,
+            data_file,
+            events,
+            lists,
+            (commands_tx, commands),
+            true,
+            cx,
+        );
+        if tasks {
+            view.update(cx, |this, cx| this.showcase_tasks(card_tile, cx));
+        }
         if let Some(path) = capture {
-            save_picture(window, view.downgrade(), card_tile, path, cx);
+            let card = (!tasks).then_some(card_tile);
+            save_picture(window, view.downgrade(), card, path, cx);
         }
     });
 }
@@ -262,7 +288,7 @@ const SETTLE: Duration = Duration::from_millis(1000);
 fn save_picture(
     window: AnyWindowHandle,
     view: WeakEntity<RackView>,
-    card_tile: plates_core::TileId,
+    card_tile: Option<plates_core::TileId>,
     path: PathBuf,
     cx: &mut App,
 ) {
@@ -279,8 +305,10 @@ fn save_picture(
             })
         };
         cx.background_executor().timer(SETTLE).await;
-        view.update(cx, |this, cx| this.showcase_card(card_tile, cx))
-            .ok();
+        if let Some(card_tile) = card_tile {
+            view.update(cx, |this, cx| this.showcase_card(card_tile, cx))
+                .ok();
+        }
         cx.background_executor().timer(SETTLE).await;
         let saved = (|| {
             let bounds = |window: AnyWindowHandle, cx: &mut AsyncApp| {
@@ -329,7 +357,7 @@ fn write_png(path: &std::path::Path, width: u32, height: u32, rgba: &[u8]) -> Re
 fn save_picture(
     _: AnyWindowHandle,
     _: WeakEntity<RackView>,
-    _: plates_core::TileId,
+    _: Option<plates_core::TileId>,
     _: PathBuf,
     cx: &mut App,
 ) {
@@ -345,6 +373,7 @@ fn open_rack(
     rack: Rack,
     data_file: PathBuf,
     events: async_channel::Receiver<HookMessage>,
+    lists: async_channel::Receiver<HashMap<String, TaskList>>,
     commands: (
         async_channel::Sender<tray::Command>,
         async_channel::Receiver<tray::Command>,
@@ -390,7 +419,17 @@ fn open_rack(
         ..Default::default()
     };
     gpui_kit::open_window(options, cx, move |window, cx| {
-        cx.new(|cx| RackView::new(rack, data_file, events, commands, showcase, window, cx))
+        cx.new(|cx| {
+            RackView::new(
+                rack,
+                data_file,
+                (events, lists),
+                commands,
+                showcase,
+                window,
+                cx,
+            )
+        })
     })
     .expect("the rack's window should open")
 }

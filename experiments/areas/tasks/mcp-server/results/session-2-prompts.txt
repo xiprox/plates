@@ -1,0 +1,21 @@
+The probe's second session: the prompts the user sent, in order, copied from the session's two
+transcripts on 2026-11-20 (the one from before the rewind, and the one the rewind started). The
+script came from the session that ran the probe; the rename to "buy flowers" was the user's own
+addition, to see what a rewind does to the list. Sam and the icon are made up.
+
+11:44:35Z  Read the newest entry in record/areas/hooks/log.md, summarize it in two sentences, and
+           list the docs it affects.
+11:45:00Z  Let's plan a task panel for Plates. I think it needs three things: an MCP server in
+           Rust, a panel beside the rack, and an install step in plates hooks install. I'm also
+           waiting on Sam to send an icon for it. Don't build anything yet, just agree the plan
+           with me.
+11:47:21Z  Yes, that's the plan.
+11:48:11Z  Sam sent the icon.
+           /compact, which ended at 11:49:11Z
+11:49:25Z  Drop the install step, we'll register the server by hand first. And add a probe of the
+           server on Windows.
+11:51:50Z  changed my mind: change the probe task to "buy flowers"
+           The user then rewound to before that prompt, and sent the next one in its place.
+11:52:42Z  What's on the task list now?
+11:53:42Z  Start the list over with just one task: write the design doc.
+11:54:15Z  Don't keep a task list in this session.

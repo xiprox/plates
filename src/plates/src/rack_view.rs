@@ -12,9 +12,10 @@ use std::{
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::*;
 use plates_core::{
-    Rack, Removed, SessionState, Tile, TileId, desktop,
+    Rack, Removed, SessionEvent, SessionState, Tile, TileId, desktop,
     hooks::{self, HookMessage},
     store,
+    tasks::TaskList,
     timer::{DEFAULT_MINUTES, MENU_HOURS, MENU_MINUTES, Timer},
 };
 
@@ -28,6 +29,7 @@ use crate::{
     rows::Rows,
     settings::{self, Settings},
     swipe::{Release, Swipe, Swiped},
+    task_list::{Open, Sections},
     tone,
     tray::{self, Tray},
 };
@@ -203,7 +205,7 @@ pub struct RackView {
     wait_release: bool,
     pub(crate) suppress_click: bool,
     last_press_focus: isize,
-    pos: (f64, f64),
+    pub(crate) pos: (f64, f64),
     vel: (f64, f64),
     tween: Option<(Tween, After)>,
     pub(crate) scale: f64,
@@ -229,6 +231,16 @@ pub struct RackView {
     pub(crate) bell_turned: Option<Instant>,
     /// The pings that wait while you're busy.
     pub(crate) hold: Hold,
+    /// Every session's task list, by the session's ID in the Claude desktop app, or by its
+    /// Claude Code session ID for a session in a terminal.
+    pub(crate) task_lists: HashMap<String, TaskList>,
+    /// The tile whose task list is open, which is one at most.
+    pub(crate) open_list: Option<Open>,
+    /// The list that's closing, which keeps its scroll and its unfolded tasks until its section
+    /// has shrunk to the bar.
+    pub(crate) closing_list: Option<Open>,
+    /// How tall each tile's task section stands, easing as lists appear, open, and close.
+    pub(crate) sections: Sections,
     _subs: Vec<Subscription>,
     _tasks: Vec<Task<()>>,
 }
@@ -237,7 +249,11 @@ impl RackView {
     pub fn new(
         rack: Rack,
         data_file: PathBuf,
-        events: async_channel::Receiver<HookMessage>,
+        // Hook events, and every session's task list each time one changes.
+        (events, lists): (
+            async_channel::Receiver<HookMessage>,
+            async_channel::Receiver<HashMap<String, TaskList>>,
+        ),
         (commands_tx, commands): (
             async_channel::Sender<tray::Command>,
             async_channel::Receiver<tray::Command>,
@@ -328,6 +344,19 @@ impl RackView {
                     .update_in(cx, |this, window, cx| this.hotkey(window, cx))
                     .is_err()
                 {
+                    break;
+                }
+            }
+        });
+        // The events thread reads the task lists' folder once a second, and sends every list
+        // when one changed (record/areas/tasks/01-task-list.md).
+        let receive_lists = cx.spawn(async move |this, cx| {
+            while let Ok(all) = lists.recv().await {
+                let updated = this.update(cx, |this, cx| {
+                    this.task_lists = all;
+                    cx.notify();
+                });
+                if updated.is_err() {
                     break;
                 }
             }
@@ -441,11 +470,16 @@ impl RackView {
             settings_file,
             bell_turned: None,
             hold: Hold::default(),
+            task_lists: HashMap::new(),
+            open_list: None,
+            closing_list: None,
+            sections: Sections::default(),
             _subs: subs,
             _tasks: vec![
                 take_over,
                 hotkey,
                 receive,
+                receive_lists,
                 tick,
                 raised,
                 on_top,
@@ -666,6 +700,7 @@ impl RackView {
             || self.vel != (0., 0.)
             || self.tween.is_some()
             || self.nudge.is_some()
+            || self.sections.animating(Instant::now())
     }
 
     // The window's place and size for the rack's state, in physical pixels: the rack, or the
@@ -688,7 +723,7 @@ impl RackView {
                 Rect::new((x, self.pos.1), (w, h))
             }
             None => Rect::new(
-                self.pos,
+                (self.pos.0, self.pos.1 - self.list_lift()),
                 (RACK_W as f64 * s, self.shown_height() as f64 * s),
             ),
         }
@@ -767,11 +802,16 @@ impl RackView {
         if self.docked.is_some() || self.tween.is_some() {
             return;
         }
+        // The rack's place is where it rests with its task lists closed, so a click on a rack an
+        // open list lifted off the bottom of the screen leaves it to come back down as the list
+        // closes. A drag starts from where the window shows, and then the rack is where you put
+        // it.
         let r = native::window_rect(self.hwnd);
-        self.pos = (r.left, r.top);
+        let lift = self.list_lift();
+        self.pos = (r.left, r.top + lift);
         self.press = Some(Press {
             cursor: native::cursor_pos(),
-            origin: self.pos,
+            origin: (r.left, r.top),
         });
         // A press catches a rack that's still sliding.
         self.vel = (0., 0.);
@@ -987,11 +1027,13 @@ impl RackView {
         )
     }
 
-    /// The rack's height in logical pixels this frame, with its rows as far as they've grown.
+    /// The rack's height in logical pixels this frame, with its rows as far as they've grown,
+    /// and each tile's task section as tall as it stands.
     pub(crate) fn shown_height(&self) -> f32 {
         let now = Instant::now();
         let undo = self.rows.undo(now).map_or(0., |(_, f)| f);
         rack_height_for(self.rows.tile_rows(self.rack.tiles(), now), undo)
+            + self.sections_height(now)
     }
 
     /// Notes the rows that changed since the last frame, so they grow in or shrink out.
@@ -1007,6 +1049,8 @@ impl RackView {
 
     // The rack slides into the edge it was held against, and the strip takes its place.
     fn begin_dock(&mut self, side: Side) {
+        // The docked strip shows nothing of tasks, so docking closes an open list.
+        self.open_list = None;
         self.press = None;
         self.drag = None;
         self.vel = (0., 0.);
@@ -1347,6 +1391,26 @@ impl RackView {
             return;
         }
         self.show_card(id, folder, &spot, cx);
+    }
+
+    /// Gives the showcase's tile `id` the made-up task list, open, as if you last opened the
+    /// session 30 minutes ago.
+    pub(crate) fn showcase_tasks(&mut self, id: TileId, cx: &mut Context<Self>) {
+        let now = SystemTime::now();
+        let Some((session, folder, key)) = self.rack.tile(id).and_then(|t| {
+            let s = t.session()?;
+            let key = crate::task_list::list_key(t)?.to_string();
+            Some((s.id.clone(), s.folder.clone(), key))
+        }) else {
+            return;
+        };
+        let seen = SessionEvent::Seen {
+            at: now - Duration::from_secs(30 * 60),
+        };
+        self.rack.apply(&session, &folder, seen, now);
+        self.task_lists.insert(key, crate::showcase::task_list(now));
+        self.open_list = Some(Open::new(id));
+        cx.notify();
     }
 
     /// Opens a tile's card for the showcase's picture, with no pointer resting on the tile.

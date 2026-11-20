@@ -33,20 +33,14 @@ pub fn load(path: &Path) -> Option<Place> {
     })
 }
 
-/// Writes a new file beside the old one and renames it over the old one, as rack.json's save
-/// does, so a crash mid-save leaves the old place whole.
+/// Writes the rack's place to `path`, so a crash mid-save leaves the old place whole.
 pub fn save(place: Place, path: &Path) -> io::Result<()> {
     let docked = place.docked.map(|side| match side {
         Side::Left => "left",
         Side::Right => "right",
     });
     let body = json!({ "x": place.x.round(), "y": place.y.round(), "docked": docked });
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let temp = path.with_extension("json.new");
-    fs::write(&temp, body.to_string())?;
-    fs::rename(&temp, path)
+    plates_core::store::write_whole(path, body.to_string().as_bytes())
 }
 
 #[cfg(test)]

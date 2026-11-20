@@ -382,15 +382,20 @@ impl Rack {
                 set_state(s, &mut tile.timer, to);
             }
             // Only a look after the turn ended reads it: one from before is the look the app
-            // last recorded, while the turn ran.
-            SessionEvent::Seen { at } if at >= s.state_since => match s.state {
-                SessionState::Unread => set_state(s, &mut tile.timer, SessionState::Done),
-                SessionState::YourTurn => {
-                    look(s, &mut tile.timer);
+            // last recorded, while the turn ran. Either way, the look is the latest visit.
+            SessionEvent::Seen { at } if at >= s.state_since => {
+                s.seen_at = Some(s.seen_at.map_or(at, |old| old.max(at)));
+                match s.state {
+                    SessionState::Unread => set_state(s, &mut tile.timer, SessionState::Done),
+                    SessionState::YourTurn => {
+                        look(s, &mut tile.timer);
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
-            SessionEvent::Seen { .. } => {}
+            }
+            SessionEvent::Seen { at } => {
+                s.seen_at = Some(s.seen_at.map_or(at, |old| old.max(at)));
+            }
             // hooks::apply handles these with `follow` and `set_app_session`, and never passes
             // them on.
             SessionEvent::Continued { .. } | SessionEvent::AppChanged => {}
@@ -2057,6 +2062,25 @@ mod tests {
         assert_eq!(s.summary.as_deref(), Some("github asks: Pick a repository"));
         apply(&mut rack, "a", SessionEvent::InputGiven, 2);
         assert_eq!(session(&rack, id).state, SessionState::Working);
+    }
+
+    #[test]
+    fn every_look_records_the_latest_visit_whatever_the_turn() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Go"), 0);
+        assert_eq!(session(&rack, id).seen_at, None);
+        apply(&mut rack, "a", SessionEvent::Seen { at: at(5) }, 5);
+        assert_eq!(
+            session(&rack, id).seen_at,
+            Some(at(5)),
+            "a look while working"
+        );
+        apply(&mut rack, "a", SessionEvent::Seen { at: at(3) }, 6);
+        assert_eq!(
+            session(&rack, id).seen_at,
+            Some(at(5)),
+            "an older look doesn't move the visit back"
+        );
     }
 
     #[test]

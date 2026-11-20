@@ -69,6 +69,13 @@ Step 7 runs its macOS half, which measures whether `CGEventSourceSecondsSinceLas
 Done when a timer that runs out while you type in another app, or while you read a reply in the Claude app, turns its tile time-up in silence.
 It rings and brightens once you've gone 30s without typing and left the Claude app, or 3s after you send Claude a prompt.
 
+## 10. Task lists
+
+The `plates-tasks` server, its install, and the task list inside a session's tile, as [01-task-list](../tasks/01-task-list.md) designs them.
+Before this step is done on Windows, we'll register the probe server there to learn whether a server for an app session gets `CLAUDE_CODE_HOST_SESSION_ID`.
+Done when, on Windows, after `plates hooks install`, a session in the Claude desktop app starts a list once you agree on a plan with it, its tile shows the list's bar with its counts, the list opens under the bar and follows Claude's changes, and the list's file is gone once its tile goes for good.
+Step 7's Mac session runs its macOS half.
+
 ## Later
 
 Plates looking for its own updates while it runs, and the questions [01-window](../rack/01-window.md#left-open) leaves open.

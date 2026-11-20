@@ -5050,6 +5050,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "plates-tasks"
+version = "0.3.0"
+dependencies = [
+ "plates-core",
+ "serde_json",
+]
+
+[[package]]
 name = "plotters"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

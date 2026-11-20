@@ -13,6 +13,8 @@ Documentation people write for other people lives in `docs/` instead.
 - [areas/core/01-core.md](areas/core/01-core.md): what `plates-core` holds, and its rules for tiles, timers, and saving.
 - [areas/hooks/01-claude-code-hooks.md](areas/hooks/01-claude-code-hooks.md): how Claude Code's hooks and transcripts tell Plates what each session is doing.
 - [areas/hooks/log.md](areas/hooks/log.md): what we found about Claude Code's hooks and the Claude desktop app.
+- [areas/tasks/01-task-list.md](areas/tasks/01-task-list.md): how Claude keeps each session's task list, and how the rack shows it beside the session's tile.
+- [areas/tasks/log.md](areas/tasks/log.md): what we found about keeping a task list for each session through an MCP server.
 - [areas/build/releasing.md](areas/build/releasing.md): how a release is made, and what files it holds.
 - [areas/build/log.md](areas/build/log.md): what we found about building, versioning, and releasing Plates.
 - [decisions/001-rust-and-gpui.md](decisions/001-rust-and-gpui.md): Plates is written in Rust, with GPUI for its interface.

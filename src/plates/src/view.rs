@@ -22,8 +22,8 @@ pub(crate) const TILE: u32 = 0x1C1D21;
 pub(crate) const TEXT: u32 = 0xECEDEF;
 pub(crate) const TEXT2: u32 = 0xA3A6AE;
 pub(crate) const MUTED: u32 = 0x8B8E97;
-const BLUE: u32 = 0x74AEFF;
-const AMBER: u32 = 0xF2B441;
+pub(crate) const BLUE: u32 = 0x74AEFF;
+pub(crate) const AMBER: u32 = 0xF2B441;
 const HOT: u32 = 0xFF7A45;
 pub(crate) const YELLOW: u32 = 0xF4D35E;
 /// A reminder for tomorrow, apart from yellow's timer running now. It's about as bright as the
@@ -31,7 +31,7 @@ pub(crate) const YELLOW: u32 = 0xF4D35E;
 /// (user, 2026-11-16).
 pub(crate) const VIOLET: u32 = 0xB39DFF;
 const GREEN: u32 = 0x5BCB8A;
-const GRAY: u32 = 0x5E626B;
+pub(crate) const GRAY: u32 = 0x5E626B;
 /// The text colors of a working tile, a your-turn tile, and an approval.
 pub(crate) const WORKING_TEXT: u32 = 0x9CC4FF;
 pub(crate) const YOUR_TURN_TEXT: u32 = 0xF2C46A;
@@ -168,7 +168,13 @@ fn runs_on(depths: &[usize]) -> Vec<Vec<bool>> {
 // breaks (user, 2026-11-16). A swipe that moves the tile with an ancestor moves the lines from
 // that ancestor's marker and the ones below it with them: the levels past `fixed`, `shift` px
 // sideways.
-fn nested_row(tile: AnyElement, runs_on: &[bool], shift: f32, fixed: usize) -> AnyElement {
+fn nested_row(
+    tile: AnyElement,
+    runs_on: &[bool],
+    shift: f32,
+    fixed: usize,
+    row_h: f32,
+) -> AnyElement {
     let depth = runs_on.len();
     let color = white(0.16);
     let mut lines: Vec<Div> = Vec::new();
@@ -180,9 +186,9 @@ fn nested_row(tile: AnyElement, runs_on: &[bool], shift: f32, fixed: usize) -> A
         let own = k + 1 == depth;
         if on {
             // A border on a box with no width draws nothing, so these lines are filled 1px boxes
-            // (record/areas/rack/log.md, 2026-11-16). The row is ROW_H tall, the tile and the gap
-            // below it, so the line reaches the next row.
-            let down = div().w(px(1.)).h(px(ROW_H)).left(px(x)).top_0();
+            // (record/areas/rack/log.md, 2026-11-16). The row is the tile and the gap below it,
+            // taller than ROW_H by any task section, so the line reaches the next row.
+            let down = div().w(px(1.)).h(px(row_h)).left(px(x)).top_0();
             lines.push(down.absolute().bg(color));
             if own {
                 let across = div()
@@ -214,7 +220,7 @@ fn nested_row(tile: AnyElement, runs_on: &[bool], shift: f32, fixed: usize) -> A
                 .flex_none()
                 .relative()
                 .w(px(depth as f32 * NEST))
-                .h(px(TILE_H))
+                .h(px(row_h - 6.))
                 .children(lines),
         )
         .child(div().flex_1().min_w_0().child(tile))
@@ -655,20 +661,20 @@ impl RackView {
             .size_full()
         });
 
-        // A swipe slides the tile with the fingers, fading it as it goes, and the row it sits in
-        // cuts it off at the row's edges.
-        let shift = self.swipe_offset(Swiped::Tile(id), !live, Instant::now());
-        div()
-            .id(("tile", id.0))
-            .group(group)
+        // A session that keeps a task list has its section under the tile's 60px top, as tall
+        // as it stands this frame. Hovering lights the top alone, since a click there opens the
+        // session and the section's bar does something else. The tile clips its children to its
+        // rectangle, not to its rounded corners, so the top's hover fill rounds its own corners
+        // (read in gpui-pre 0.3.12, src/window.rs, `ContentMask`, which holds only bounds).
+        let below = self.sections.height(id, Instant::now());
+        let section = self.task_section(t, cx);
+        // A two-finger swipe dismisses the tile only from its top, so swiping across an open task
+        // list, or scrolling it, leaves the tile where it is.
+        let top = div()
             .relative()
-            .left(px(shift))
-            .opacity(1. - 0.7 * (shift.abs() / crate::swipe::OUT).min(1.))
+            .flex_none()
             .h(px(TILE_H))
             .flex()
-            .rounded(px(10.))
-            .overflow_hidden()
-            .bg(rgb(bg))
             .hover(move |s| s.bg(rgb(hover_bg)))
             .on_scroll(cx.listener(move |this, e: &ScrollEvent, _, _| {
                 if live {
@@ -678,7 +684,30 @@ impl RackView {
             .child(main)
             .child(side)
             .children(hg)
-            .children(spot)
+            .children(spot);
+        let top = if below > 0. {
+            top.rounded_t(px(10.))
+        } else {
+            top.rounded(px(10.))
+        };
+
+        // A swipe slides the tile with the fingers, fading it as it goes, and the row it sits in
+        // cuts it off at the row's edges.
+        let shift = self.swipe_offset(Swiped::Tile(id), !live, Instant::now());
+        div()
+            .id(("tile", id.0))
+            .group(group)
+            .relative()
+            .left(px(shift))
+            .opacity(1. - 0.7 * (shift.abs() / crate::swipe::OUT).min(1.))
+            .h(px(TILE_H + below))
+            .flex()
+            .flex_col()
+            .rounded(px(10.))
+            .overflow_hidden()
+            .bg(rgb(bg))
+            .child(top)
+            .children(section)
             .into_any_element()
     }
 
@@ -798,7 +827,7 @@ impl RackView {
                 .group_hover(hg_group.clone(), |s| s.text_color(rgb(TEXT)))
                 .into_any_element(),
         };
-        div()
+        let slot = div()
             .id(("hg", id.0))
             .group(hg_group)
             .flex_none()
@@ -807,11 +836,17 @@ impl RackView {
             .items_center()
             .justify_center()
             .border_l_1()
-            .border_color(white(0.06))
-            // The tile clips its children to its rectangle, not to its rounded corners, so the
-            // slot's hover fill rounds its own right corners to the tile's 10px.
-            .rounded_r(px(10.))
-            .hover(|s| s.bg(white(0.06)))
+            .border_color(white(0.06));
+        // The tile clips its children to its rectangle, not to its rounded corners, as `tile` says,
+        // so the slot's
+        // hover fill rounds its own right corners to the tile's 10px, or only the top one over a
+        // task section.
+        let slot = if self.sections.height(id, Instant::now()) > 0. {
+            slot.rounded_tr(px(10.))
+        } else {
+            slot.rounded_r(px(10.))
+        };
+        slot.hover(|s| s.bg(white(0.06)))
             .child(icon)
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if !*hovered && this.hourglass_held == Some(id) {
@@ -1071,13 +1106,14 @@ impl RackView {
             .into_iter()
             .zip(lines)
             .map(|((el, id, leaving, depth, factor), lines)| {
+                let row_h = ROW_H + self.sections.height(id, at);
                 let el = if depth > 0 {
                     let shift = self.branch_offset(id, leaving, at);
-                    nested_row(el, &lines, shift, fixed)
+                    nested_row(el, &lines, shift, fixed, row_h)
                 } else {
                     el
                 };
-                grown(el, ROW_H, factor)
+                grown(el, row_h, factor)
             })
             .collect();
         let undo = self.undo_row(at, cx);
@@ -1440,7 +1476,10 @@ impl RackView {
 impl Render for RackView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.scale = native::scale(window);
+        // The rows learn which tiles left before the sections read them, so a tile shrinking out
+        // keeps its task section's height.
         self.track_rows();
+        self.track_sections();
         self.step(cx);
         self.place(cx);
         self.remember_place();

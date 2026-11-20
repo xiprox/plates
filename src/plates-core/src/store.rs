@@ -16,6 +16,27 @@ use crate::{
     timer::Timer,
 };
 
+/// Plates' data folder, `%APPDATA%\Plates\` on Windows and
+/// `~/Library/Application Support/Plates/` on macOS, as record/areas/rack/02-tiles.md gives it.
+/// Both the rack and the `plates-tasks` server find their files here.
+pub fn data_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Plates")
+}
+
+/// Writes `bytes` to the JSON file at `path` through a new file beside it, which it renames over
+/// the old one, so a crash mid-save, or a reader mid-read, finds the old file whole rather than
+/// half the new one.
+pub fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let temp = path.with_extension("json.new");
+    fs::write(&temp, bytes)?;
+    fs::rename(&temp, path)
+}
+
 /// The version `rack.json` is written in, which a later format checks before reading.
 const VERSION: u32 = 1;
 
@@ -46,8 +67,6 @@ pub struct Loaded {
 }
 
 /// Writes your own tiles to `path`.
-/// It writes a new file beside the old one and renames it over the old one, so a crash mid-save
-/// leaves the old file whole.
 pub fn save(rack: &Rack, path: &Path) -> io::Result<()> {
     let saved = Saved {
         version: VERSION,
@@ -65,12 +84,7 @@ pub fn save(rack: &Rack, path: &Path) -> io::Result<()> {
             .collect(),
     };
     let json = serde_json::to_vec_pretty(&saved).map_err(io::Error::other)?;
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let temp = path.with_extension("json.new");
-    fs::write(&temp, json)?;
-    fs::rename(&temp, path)
+    write_whole(path, &json)
 }
 
 /// Reads your own tiles from `path`.
@@ -155,7 +169,8 @@ struct SavedSession {
     dismissed_at: Option<u64>,
 }
 
-fn ms(t: SystemTime) -> u64 {
+/// A time in milliseconds since 1970, as Plates' files hold it.
+pub fn ms(t: SystemTime) -> u64 {
     t.duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as u64)
 }
@@ -200,12 +215,7 @@ pub fn save_sessions(rack: &Rack, path: &Path) -> io::Result<()> {
         sessions,
     };
     let json = serde_json::to_vec_pretty(&saved).map_err(io::Error::other)?;
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let temp = path.with_extension("json.new");
-    fs::write(&temp, json)?;
-    fs::rename(&temp, path)
+    write_whole(path, &json)
 }
 
 /// Puts the session tiles saved in `path` back on the rack, and returns where a file that didn't

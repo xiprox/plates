@@ -5,7 +5,8 @@
 //! - `plates listen` runs the hook receiver and prints what each event does to a rack, and
 //!   `--log <file>` also appends each event's JSON to that file, one per line.
 //! - `plates showcase` opens the rack on made-up tiles, and `--capture <file.png>` saves a picture
-//!   of it and quits, in a build with the `capture` feature.
+//!   of it and quits, in a build with the `capture` feature. `--tasks` gives a tile a made-up
+//!   task list and opens it, in place of a hover card.
 
 use std::{
     fs,
@@ -37,7 +38,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 .position(|a| a == "--capture")
                 .map(|i| args.get(i + 1).map(PathBuf::from).ok_or_else(usage))
                 .transpose()?;
-            crate::app::showcase(capture);
+            crate::app::showcase(capture, flag("--tasks"));
             Ok(())
         }
         Some("listen") => {
@@ -53,7 +54,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "Usage: plates | plates hooks install [--yes] | plates hooks uninstall [--yes] | plates listen [--log <file>] | plates showcase [--capture <file.png>]"
+    "Usage: plates | plates hooks install [--yes] | plates hooks uninstall [--yes] | plates listen [--log <file>] | plates showcase [--capture <file.png>] [--tasks]"
         .to_string()
 }
 

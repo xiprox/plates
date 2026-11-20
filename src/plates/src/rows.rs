@@ -148,7 +148,7 @@ fn progress(now: Instant, since: Instant, over: Duration) -> f32 {
 
 // Cubic easing: a row that grows in starts fast and settles, and one that shrinks out starts and
 // ends gently, so it leaves without a snap at either end.
-fn ease_out(t: f32) -> f32 {
+pub(crate) fn ease_out(t: f32) -> f32 {
     1. - (1. - t).powi(3)
 }
 

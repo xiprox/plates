@@ -1,0 +1,42 @@
+The probe's first session: the prompt the user sent in a new Claude desktop app session, and
+Claude's two replies, copied from the session's transcript on 2026-11-20. The names of the
+other MCP servers the session had, the user's own connectors, are left out.
+
+Prompt, 11:43:32Z:
+
+  This is a probe of an MCP server named plates-tasks. Without calling any tool yet: 1) quote
+  the probe marker from the plates-tasks server's instructions, or say you can't see one; 2) say
+  whether the plates-tasks tools are listed with full schemas or only by name as deferred tools.
+  Then call tasks_get, loading it with ToolSearch first if it's deferred, and show me what it
+  returns.
+
+First reply, 11:43:45Z:
+
+  1. Probe marker: I can't see one. The server instructions I have come from five servers:
+     <the user's other servers>. None of them is from plates-tasks. The system lists
+     plates-tasks as still connecting, so its instructions haven't reached me.
+  2. Tool listing: Neither form. No plates-tasks tools appear in my full schemas or in the list
+     of deferred tools. They should show up once the server finishes connecting, and
+     ToolSearch waits for servers that are still connecting.
+
+  Searching for tasks_get now.
+
+Then Claude called ToolSearch with "plates-tasks tasks_get" at 11:43:45Z, and
+mcp__plates-tasks__tasks_get at 11:43:47Z.
+
+Second reply, 11:43:53Z:
+
+  tasks_get returned an empty list: {"declined": false, "next_id": 1, "tasks": [],
+  "replaced": null}
+
+  The server finished connecting during the ToolSearch call, and that changes two of my
+  earlier answers:
+
+  - Probe marker: I can see it now. The plates-tasks instructions say "Probe marker:
+    lantern-47." They weren't in my context when you asked.
+  - Tool listing: The plates-tasks tools came in as deferred tools. ToolSearch had to load
+    their schemas before I could call them. The five tools are tasks_get, task_add,
+    task_update, tasks_replace, and tasks_decline.
+
+The server's log, server-log.jsonl beside this file, shows that server's start at 11:43:32.575Z,
+its initialize at 11:43:32.738Z, and its tools/list at 11:43:32.807Z.
