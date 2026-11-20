@@ -1,8 +1,5 @@
 # Tasks: the task list
 
-> **Note**
-> On Windows, the server's saves land in the Claude desktop app's package folder, where the rack can't read them, so [Saving](#saving) holds only on macOS ([tasks log](log.md#2026-11-20-on-windows-the-task-servers-saves-land-in-the-claude-apps-package-where-the-rack-cant-read-them)).
-
 ```text
 Purpose:     Each session's list of planned work, which Claude keeps and the session's tile shows.
 Depends on:  02-tiles (../rack/02-tiles.md), for the tile the list sits in; 01-window
@@ -101,11 +98,16 @@ If a rewind in a terminal starts a new Claude Code session, that session's list 
 
 ### Saving
 
-The server saves each list as `tasks/<id>.json` in Plates' data folder ([02-tiles](../rack/02-tiles.md#saving)), where `<id>` is the ID it took its session from, such as `tasks/local_fb415057-61af-40ba-a31c-ad4367a426e1.json`.
-It writes a new file beside the list and renames it over the list, so Plates never reads half a list (unverified on Windows while Plates holds the list open, as [Left open](#left-open) says).
+The server saves each list as `<id>.json` in the tasks folder, where `<id>` is the ID it took its session from, such as `local_fb415057-61af-40ba-a31c-ad4367a426e1.json`.
+The tasks folder is `%USERPROFILE%\.plates\tasks\` on Windows, and `tasks` in Plates' data folder ([02-tiles](../rack/02-tiles.md#saving)) on macOS.
+The server writes a new file beside the list and renames it over the list, so Plates never reads half a list (unverified on Windows while Plates holds the list open, as [Left open](#left-open) says).
 The file holds the tasks, the next `id`, whether you declined a list, and the last list replaced, with when.
 
-Plates reads the `tasks` folder once a second, and rereads only the files whose modified time or length changed.
+Inside the Claude desktop app's package, Windows sends a new file under `%APPDATA%`, or a rename over an existing one, to the package's own folder, where the rack can't read it (measured on Windows 11 25H2, 2026-11-20, [tasks log](log.md#2026-11-20-on-windows-the-task-servers-saves-land-in-the-claude-apps-package-where-the-rack-cant-read-them)).
+A session's commands run inside the package, and the server Claude Code starts for an app session may too (unverified), so on Windows the tasks folder is outside `%APPDATA%`.
+The same saves under the home folder reached the real folder, and the rack showed the list (measured on Windows 11 25H2, 2026-11-20, [tasks log](log.md#2026-11-20-on-windows-a-list-saved-under-the-home-folder-from-inside-the-claude-apps-package-reaches-the-rack)).
+
+Plates reads the tasks folder once a second, and rereads only the files whose modified time or length changed.
 It shows each list on the tile that holds the file's ID: the app's `sessionId`, or for a session in a terminal, its Claude Code session ID.
 So a change Claude makes shows on the tile within about 1s.
 
@@ -117,17 +119,22 @@ Dismissing a session keeps its file, and so does forgetting it in the archive wi
 `plates hooks install` registers the server with Claude Code for every project, under the name `plates`, and `plates hooks uninstall` removes it (user, 2026-11-20).
 The name sets the tools' names that Plates reads from the hooks ([02-waits-and-pings](02-waits-and-pings.md#how-plates-learns-of-a-call)).
 Claude Code keeps the servers registered for every project in `~/.claude.json`, and the app's sessions load them (measured on macOS 26.5.2, 2026-11-20, [tasks log](log.md#2026-11-20-each-claude-app-session-starts-its-own-mcp-server-which-knows-the-apps-session-and-claude-keeps-a-task-list-by-its-instructions)).
-With `CLAUDE_CONFIG_DIR` set, the file is in the folder it names instead.
+With `CLAUDE_CONFIG_DIR` set, `claude mcp add` writes the file in the folder it names instead (measured with Claude Code 2.1.284 on Windows 11 25H2, 2026-11-20, [tasks log](log.md#2026-11-20-claude-mcp-add---scope-user-registers-the-task-server-for-every-project-and-fails-on-a-server-already-there)).
 
 The install runs Claude Code's own command, `claude mcp add --scope user plates -- <path to plates-tasks>`, and the uninstall runs `claude mcp remove --scope user plates`.
-Plates doesn't write `~/.claude.json` itself, because Claude Code writes the file while its sessions run, and whether it keeps a change another program made there is unverified ([tasks log](log.md#2026-11-20-claude-mcp-add---scope-user-registers-the-task-server-for-every-project-and-fails-on-a-server-already-there)).
-Each command fails on a server that's already there, or one that isn't (same entry), so the install reads the file first to choose them:
+Plates doesn't write `~/.claude.json` itself, because a change it made could be lost to another program's write: the file changed while Claude Code's sessions ran and no Plates program wrote it (measured on Windows 11 25H2, 2026-11-20, same entry).
+We take Claude Code to be the writer, and whether it keeps a change another program made to the file is unverified.
 
-- With no `plates` server registered, the install adds it.
-- With the `plates-tasks` beside the running `plates` registered, it changes nothing.
-- With a `plates-tasks` at another path registered, as after Plates moved, it removes that one and adds this one.
-- With a `plates` server that runs another program registered, it refuses, and says how to remove that server.
+`claude mcp add` fails when a `plates` server is already registered, and `claude mcp remove` fails when none is (same entry), so Plates reads the file first to choose which to run:
 
+| Registered as `plates` | What the install does |
+| --- | --- |
+| nothing | adds the server |
+| the `plates-tasks` beside the running `plates` | nothing |
+| a `plates-tasks` at another path, as after Plates moved | removes it, then adds this one |
+| another program | refuses, and says how to remove that server |
+
+The uninstall removes a `plates-tasks` registered as `plates`, and leaves a `plates` server that runs another program as it is.
 Like the hooks' change, the install shows you the commands and runs them only once you confirm.
 If it can't run `claude`, it prints the commands left for you to run.
 
@@ -226,9 +233,10 @@ A drag moves the rack from where it shows, and then the rack is where you put it
 
 ## Left open
 
-- Whether a server started for an app session on Windows finds `CLAUDE_CODE_HOST_SESSION_ID` in its environment, as the session's commands do ([tasks log](log.md#2026-11-20-on-windows-the-task-servers-saves-land-in-the-claude-apps-package-where-the-rack-cant-read-them)).
-  Registering the probe server, `experiments/areas/tasks/mcp-server/probe-server.py`, on Windows and reading its log would settle it.
-- Whether an update of Plates on Windows can replace `plates-tasks.exe` while sessions run it, since Windows doesn't let a program that's running be replaced (unverified for Velopack's update, which might wait or fail).
+- Whether an app session on Windows starts the server that `plates hooks install` registers, and whether the server finds `CLAUDE_CODE_HOST_SESSION_ID` in its environment, as the session's commands do ([tasks log](log.md#2026-11-20-on-windows-the-task-servers-saves-land-in-the-claude-apps-package-where-the-rack-cant-read-them)).
+  Running `plates hooks install`, agreeing on a plan in a new app session, and finding a `local_<id>.json` in the tasks folder would settle both.
+- Whether an update of Plates on Windows can replace `plates-tasks.exe` while sessions run it, since Windows doesn't let a running program's file be replaced.
+  Other running instances of an app could make a Velopack update fail or be terminated (documented, [Velopack: integrating](https://docs.velopack.io/integrating/overview), as of 2026-11-20), and whether Velopack treats `plates-tasks` that way is unverified.
   Updating an installed Plates while an app session runs its server would settle it.
 - Whether Claude Code asks you to approve the server's tools in each permission mode, and so whether the install needs to allow them.
   In the probe, the app didn't ask before `tasks_get` in the one session where we noted it, and we didn't record that session's permission mode.

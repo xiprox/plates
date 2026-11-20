@@ -1,0 +1,36 @@
+Whether saves under the home folder from inside the Claude app's package reach the rack
+Windows 11 25H2 (10.0.26200), 2026-11-20. Paths have the user's folder as <user>.
+"Inside" is a Claude desktop app session's shell, which runs inside the app's package;
+"outside" is a .cmd started with explorer.exe.
+
+1. PowerShell, inside, in %USERPROFILE%\.plates-probe\
+   [IO.File]::WriteAllText  new.json            {"state":"new"}
+   [IO.File]::WriteAllText  renamed.json        {"state":"old"}
+   [IO.File]::WriteAllText  renamed.json.new    {"state":"renamed"}
+   Move-Item -Force renamed.json.new renamed.json
+
+   Outside:
+     dir /s /b:  C:\Users\<user>\.plates-probe\new.json
+                 C:\Users\<user>\.plates-probe\renamed.json
+     new.json:      {"state":"new"}
+     renamed.json:  {"state":"renamed"}
+   The package's LocalCache held no file named for the probe.
+
+2. plates-tasks, built with --release with tasks::folder at %USERPROFILE%\.plates\tasks\, inside
+   CLAUDE_CODE_HOST_SESSION_ID=probe-home
+   task_add "Probe task"                                  isError false
+   task_update id 1, state done, status "renamed over"    isError false
+
+   Outside:
+     dir /s /b:  C:\Users\<user>\.plates\tasks
+                 C:\Users\<user>\.plates\tasks\probe-home.json
+     probe-home.json:  "state": "done",  "status": "renamed over",
+   The package's LocalCache held no probe-home file.
+
+3. The rack, plates.exe started outside with explorer.exe
+   plates-tasks, inside, with the session's own CLAUDE_CODE_HOST_SESSION_ID:
+     task_add "Probe: list on Windows", waiting on "you", status "Saved from the package"
+     task_add "Probe: second task", doing
+   3s later, a capture of the rack's window, 304x405px: the session's tile showed the bar
+   "1 on you  1 doing" under its top.
+   tasks_replace with an empty list, then 3s later a capture: 304x376px, no bar.

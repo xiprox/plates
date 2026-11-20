@@ -1,7 +1,7 @@
 //! A session's task list: the planned work that runs past the request at hand, which Claude keeps
 //! through the `plates-tasks` server and the rack shows inside the session's tile, as
 //! record/areas/tasks/01-task-list.md designs it. Each list is a JSON file of its own in the
-//! `tasks` folder of Plates' data folder, named for the session.
+//! folder `tasks::folder` returns, named for the session.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -429,9 +429,19 @@ impl TaskList {
     }
 }
 
-/// The folder of every session's list, `tasks` in Plates' data folder.
-pub fn folder(data_dir: &Path) -> PathBuf {
-    data_dir.join("tasks")
+/// The folder of every session's list, which the task server writes and the rack reads:
+/// `%USERPROFILE%\.plates\tasks\` on Windows, and `tasks` in Plates' data folder on macOS.
+///
+/// On Windows, the folder is outside `%APPDATA%` so that a list reaches the rack when the server
+/// runs inside the Claude desktop app's package, as a session's commands do. When a program in
+/// the package writes a new file under `%APPDATA%`, or renames one over an existing file, Windows
+/// puts the result in the package's own folder, where the rack never sees it. The same writes to
+/// the home folder go through (measured on Windows 11 25H2, record/areas/tasks/log.md).
+pub fn folder() -> PathBuf {
+    match dirs::home_dir() {
+        Some(home) if cfg!(windows) => home.join(".plates").join("tasks"),
+        _ => crate::store::data_dir().join("tasks"),
+    }
 }
 
 /// The file of `session`'s list in `folder`, or none for an ID that isn't safe as a file name.

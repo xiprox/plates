@@ -18,7 +18,7 @@ use crate::{
 
 /// Plates' data folder, `%APPDATA%\Plates\` on Windows and
 /// `~/Library/Application Support/Plates/` on macOS, as record/areas/rack/02-tiles.md gives it.
-/// Both the rack and the `plates-tasks` server find their files here.
+/// The task lists are in `tasks::folder`, which is here only on macOS.
 pub fn data_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(std::env::temp_dir)

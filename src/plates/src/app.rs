@@ -183,7 +183,7 @@ pub fn run() {
                 .into_iter()
                 .map(|(id, folder)| (id, Look::new(folder)))
                 .collect();
-            let mut watch = tasks::Watch::new(tasks::folder(&data_dir()));
+            let mut watch = tasks::Watch::new(tasks::folder());
             let mut polled = Instant::now();
             loop {
                 let mut messages = Vec::new();

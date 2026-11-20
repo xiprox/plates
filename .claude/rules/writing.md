@@ -243,6 +243,7 @@ Where a name has its own casing rules, Plates takes these forms:
 | --- | --- |
 | Crates, the program, and folders in the repository | `plates`, as in `plates-core` |
 | Types, and the app's folders on Windows and macOS | `Plates`, as in `%APPDATA%\Plates\` |
+| Dot-folders in the home folder | `.plates`, as in `%USERPROFILE%\.plates\` |
 | Environment variables | `PLATES`, as in `PLATES_<NAME>` |
 
 ## Words and patterns to cut

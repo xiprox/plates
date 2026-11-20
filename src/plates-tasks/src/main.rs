@@ -19,10 +19,7 @@ use std::{
     time::SystemTime,
 };
 
-use plates_core::{
-    store,
-    tasks::{self, Change, Field, State, Task, TaskList},
-};
+use plates_core::tasks::{self, Change, Field, State, Task, TaskList};
 use serde_json::{Value, json};
 
 /// What Claude Code puts in the session's system prompt. The limits come from `Field::max`, which
@@ -65,7 +62,7 @@ The tools are tasks_get, task_add, task_update, tasks_replace, tasks_decline, wa
 }
 
 fn main() {
-    let folder = tasks::folder(&store::data_dir());
+    let folder = tasks::folder();
     let session = session_id();
     let mut stdout = std::io::stdout().lock();
     for line in std::io::stdin().lock().lines() {

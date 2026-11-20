@@ -28,7 +28,8 @@ Paths have the user's folder as <user>.
         inside the package:   "state": "done",  "status": "renamed over",
         outside the package:  "state": "doing", "status": "",
         the package's LocalCache\Roaming\Plates\tasks: probe-existing.json, 259 bytes
-   b. PowerShell's [IO.File]::WriteAllText over probe-inplace.json, "doing" changed to "dropped":
+   b. PowerShell's [IO.File]::WriteAllText, run inside the package from the same shell, over
+      probe-inplace.json, "doing" changed to "dropped":
         inside the package:   "state": "dropped",
         outside the package:  "state": "dropped",
 
