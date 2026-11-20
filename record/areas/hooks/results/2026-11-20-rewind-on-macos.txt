@@ -1,0 +1,57 @@
+Two rewinds of one Claude desktop app session, recorded on macOS 26.5.2, Claude desktop app
+5.11492.5, 2026-11-20.
+
+A script polled three things every 0.25s and logged what changed: Plates' saved tiles in
+~/Library/Application Support/Plates/sessions.json, the app's session files under
+~/Library/Application Support/Claude/claude-code-sessions/, and the transcripts under
+~/.claude/projects/. The times are UTC and mark when the recorder saw each file change. Only
+the throwaway session's lines are kept, and the rest of the rack's tiles are left out.
+
+The session, local_74b0fdcf, was a new one. The user sent a prompt, then a second prompt, then
+rewound to before the second and sent a third. Later the user sent a prompt meant to make Claude
+write a long reply, and edited that prompt and sent it again. Claude's reply had already ended, at
+11:06:56.059Z by its transcript's end_turn record, so both rewinds came between turns.
+
+A tile line reads (Claude Code session, app session, state). "-" means the tile doesn't hold the
+app's session yet.
+
+The first session starts:
+
+  11:01:53.789Z  tile added    (7dc9bfe8, -, working), 5th on the rack
+  11:01:56.114Z  transcript    7dc9bfe8.jsonl appears
+  11:02:01.277Z  app file      cliSessionId 7dc9bfe8
+  11:02:08.798Z  tile          (7dc9bfe8, local_74b0fdcf, working)
+  11:02:11.775Z  tile          (7dc9bfe8, local_74b0fdcf, your-turn)
+
+Rewind 1, between turns:
+
+  11:02:13.843Z  tile          (7dc9bfe8, local_74b0fdcf, ended), with ended_at set, which only
+                               SessionEnd sets
+  11:02:21.151Z  tile added    (652bb18f, -, working), 6th on the rack
+  11:02:22.179Z  transcript    652bb18f.jsonl appears
+  11:02:25.014Z  tile          (652bb18f, -, your-turn)
+  11:02:27.352Z  app file      cliSessionId 7dc9bfe8 -> 652bb18f
+                               priorCliSessionIds [] -> [7dc9bfe8]
+                               rewindEdges [] -> [7dc9bfe8 -> 652bb18f]
+                               priorCliSessionLeftAt gains 7dc9bfe8
+  11:02:28.127Z  tile          (652bb18f, local_74b0fdcf, your-turn); tile 7dc9bfe8 removed
+
+Rewind 2, also between turns:
+
+  11:06:49.407Z  tile          (652bb18f, local_74b0fdcf, working)
+  11:06:57.421Z  tile          (652bb18f, local_74b0fdcf, your-turn)
+  11:07:07.527Z  tile          (652bb18f, local_74b0fdcf, ended), with ended_at set
+  11:07:08.557Z  tile added    (003e74e2, -, working), 6th on the rack
+  11:07:10.103Z  transcript    003e74e2.jsonl appears
+  11:07:12.933Z  app file      cliSessionId 652bb18f -> 003e74e2
+                               priorCliSessionIds gains 652bb18f
+                               rewindEdges gains 652bb18f -> 003e74e2
+  11:07:13.713Z  tile          (003e74e2, -, your-turn)
+  11:07:14.743Z  tile          (003e74e2, local_74b0fdcf, your-turn); tile 652bb18f removed
+
+After the run, the session's one tile, 003e74e2, was 5th on the rack, the place the first tile
+had held.
+
+The transcript 652bb18f.jsonl holds 69 records, and every record with a sessionId names
+652bb18f, including the ones copied from 7dc9bfe8. The text 7dc9bfe8 appears in two places, both
+inside the scratchpad path from a copied attachment.

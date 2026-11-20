@@ -136,7 +136,8 @@ The turn counts only if that record's `timestamp` is later than the tile's last 
 ## Sessions the app moves
 
 The Claude desktop app can move one of its sessions to a new Claude Code session, and the hooks then carry the new session's `session_id` (measured on Windows 11 25H2, 2026-11-16, [hooks log](log.md#2026-11-16-a-rewind-moves-a-desktop-session-to-a-new-claude-code-session)).
-It did so after what the app's file records as a rewind, which nobody watched happen, and whether the app does the same on macOS is unmeasured.
+It did so after what the app's file records as a rewind, which nobody watched happen.
+On macOS the app does the same after a rewind, and the old Claude Code session sends `SessionEnd` before the new one's first event (measured on macOS 26.5.2, 2026-11-20, [hooks log](log.md#2026-11-20-on-macos-a-rewind-splits-a-sessions-tile-for-about-6s-before-it-merges-back)).
 The app's file for the session keeps its `sessionId`, names the new session as `cliSessionId`, and lists the earlier one in `priorCliSessionIds`.
 
 In the once-a-second read of each session's file that [Events](#events) describes for `lastFocusedAt`, when the file's `cliSessionId` names another Claude Code session, the tile follows the session to it, in the same place on the rack.
@@ -228,4 +229,4 @@ If a client's walk is what makes the app build the tree, the app keeps it built 
 - What Plates does when another program holds port 47231, which `receiver::PORT` sets.
 - Sessions that started while Plates was closed, whose tiles appear only at their next event, since Plates restores only the sessions it had.
 - Whether the app's file for a desktop session names the session a `/clear` starts as its `cliSessionId`. If it does, the new session's tile takes the ended tile's place, as [Sessions the app moves](#sessions-the-app-moves) says, rather than an ended tile staying beside a new one, as [Events](#events) says; typing `/clear` in a desktop session and reading the app's file for it would settle it.
-- Whether the old Claude Code session sends any event after the app moves its session, which Plates drops while a tile holds the app's session ([Sessions the app moves](#sessions-the-app-moves)); running `plates listen --log <file>` with Plates closed, while rewinding a session that's running, would settle it.
+- Whether the old Claude Code session sends any event after the app's file names the new one, which Plates drops while a tile holds the app's session ([Sessions the app moves](#sessions-the-app-moves)); its `SessionEnd` comes before ([hooks log](log.md#2026-11-20-on-macos-a-rewind-splits-a-sessions-tile-for-about-6s-before-it-merges-back)), and running `plates listen --log <file>` with Plates closed, while rewinding a session as Claude replies, would settle the rest.

@@ -2,6 +2,32 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-20: On macOS, a rewind splits a session's tile for about 6s before it merges back
+
+**Asked:** after a rewind in the Claude desktop app on macOS, does the session keep one tile?
+The user had seen the old tile end beside a new one.
+
+**Expected:** the tile follows the session to its new Claude Code session, as [Sessions the app moves](01-claude-code-hooks.md#sessions-the-app-moves) says, which we had measured only on Windows.
+
+**Found:** the tile split in two for 7.0s and 6.2s, then merged back into one tile in the old tile's place (measured on macOS 26.5.2, Claude desktop app 5.11492.5, 2026-11-20, [results](results/2026-11-20-rewind-on-macos.txt)).
+The user rewound a throwaway session twice, both times between turns, while a script recorded each change to Plates' saved tiles and to the app's file for the session.
+Each rewind ran in the same order:
+
+1. The old tile moved to ended, which Plates does only on `SessionEnd`, so the old Claude Code session sent one.
+2. The new Claude Code session's first event added a second tile at the end of the rack, 7.3s and 1.0s later, a gap that includes the time the user took to send the edited prompt.
+3. The app's file named the new session as its `cliSessionId`, and added the old one to `priorCliSessionIds` and `rewindEdges`, 6.2s and 4.4s after that.
+4. Within 0.8s and 1.8s, Plates merged the two tiles into one tile that holds the new session.
+
+The new session's transcript names the old session only inside a scratchpad path, in an attachment copied from the old transcript, so the app's file is the first sign Plates gets that the new session belongs to the old tile.
+
+So the split the user had seen is the wait for the app's file, and the tile does follow its session on macOS.
+We haven't measured a rewind made while Claude is still replying, the case the [Windows entry](#2026-11-16-a-rewind-moves-a-desktop-session-to-a-new-claude-code-session) inferred.
+
+**Changed:** nothing in Plates.
+Anything Plates hands a session about its tile, such as a path in a `SessionStart` hook's output, can't depend on the app's file at the session's first event, since the file names a rewound session about 4s to 6s later.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#sessions-the-app-moves), which left macOS unmeasured, and its [Left open](01-claude-code-hooks.md#left-open) item on whether the old session sends an event after a move.
+
 ## 2026-11-17: On Windows, the Claude desktop app's Claude.exe is the only process named claude with a window
 
 **Asked:** how can Plates tell that the Claude desktop app is the app in front, to hold its pings while you read a reply?
