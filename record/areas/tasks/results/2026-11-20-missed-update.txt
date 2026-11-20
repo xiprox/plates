@@ -1,0 +1,69 @@
+One Claude desktop app session's tool calls around a task it left waiting on the user, read
+from the session's transcript on 2026-11-20 (macOS 26.5.2, Claude desktop app 5.11492.5 with
+Claude Code 2.1.325). The session worked on another of the user's projects, so this file keeps
+only the times, the tool names, and the inputs to Plates' task tools and the app's plan, with
+the plan's items left out. The task is task 9 of the session's list. update_plan and wrap_up
+are the app's mcp__ccd_turn__update_plan and mcp__ccd_turn__wrap_up. A last section covers
+restarting the session's server, with the server names from the transcript's
+mcp_instructions_delta events.
+
+The session's plates-tasks server sent its instructions at 14:24:46Z, and they held the line
+"Update a task when its state changes or there's news on it, not at every step."
+
+Times are UTC.
+
+  15:21:24  a subagent's report arrives
+  15:21:42  task_update {"id": 9, "state": "waiting", "status": "Strategy proposed; your call", "waiting_on": "you"}
+  15:21:42  update_plan {"done": [1, 2, 3]}
+  15:21:44  wrap_up, and the turn ends
+  15:29:53  the user's message
+  15:30:27  a reply with no tool calls
+  15:35:09  the user's message
+  15:35:29  Bash
+  15:36:24  task_update {"id": 9, "status": "Fresh concept list, waiting on your picks"}, which
+            the server refused, since the status is 41 characters, one over the limit
+  15:36:25  wrap_up
+  15:36:27  task_update {"id": 9, "status": "New idea list, waiting on your picks"}, and the turn ends
+  15:42:19  the user's message, which gives the picks
+  15:42:47  Bash
+  15:42:49  update_plan with 5 new items, the first in progress
+  15:42:52  to 15:47:41, Edit, Read, and Bash calls, update_plan {"advance": true} at 15:45:05,
+            and SendUserFile
+  15:47:42  update_plan {"done": [2, 3]}
+  15:47:44  wrap_up, and the turn ends
+  15:50:11  the user's message
+  15:50:44  a reply with no tool calls
+  15:55:39  the user's message
+  15:59:05  update_plan with 4 new items, the first in progress
+  15:59:13  to 16:00:51, Bash calls
+
+Every turn from 15:42:19 on worked on task 9: the user's messages and Claude's replies in those
+turns are about the picks.
+
+From 15:42:19 to 16:00:51, the session made no call to a Plates task tool, and the list file
+kept task 9 as waiting on the user, last changed at 15:36:28Z.
+
+
+Delivering the new instructions to the same session, from its transcript and the process list.
+We stopped the session's server process at 16:32Z.
+Its binary, <repo>/target/debug/plates-tasks, was built at 16:25:02Z and holds the two new lines.
+
+  16:33:12  tasks_get
+  16:33:15  a new plates-tasks process starts for the session, and the call returns the list
+  16:34:24  task_update {"id": 9, "status": "Back on round D; detail rules next", "waiting_on": "you"}
+  16:34:42  the user's message asks whether Claude got the updated instructions
+  16:34:54  Claude replies that it can't tell whether its copy is the updated version
+
+Every mcp_instructions_delta event in the transcript that day, with the servers it added and
+removed, by name:
+
+  09:59:49  added claude-in-chrome, computer-use, a plugin's server; right after an automatic
+            compaction
+  10:04:00  removed the plugin's server
+  10:04:11  added the plugin's server
+  14:24:46  added plates, removed the plugin's server
+  14:25:15  added the plugin's server
+  16:03:15  added claude-in-chrome, computer-use, the plugin's server, plates; right after an
+            automatic compaction
+
+None came after the server restarted at 16:33:15, up to 16:34:54.

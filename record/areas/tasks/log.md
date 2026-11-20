@@ -2,6 +2,54 @@
 
 What we found about keeping a task list for each session, for Plates to show in its tile, newest entry first.
 
+## 2026-11-20: A running session didn't get its restarted server's new instructions
+
+**Asked:** does a running session's Claude get the server's new instructions once the session's server restarts?
+
+**Expected:** the new lines, since a server sends its instructions in its reply to `initialize`, and Claude Code starts a new server when the old one is gone.
+
+**Found:** we restarted the server of the session in the [entry below](#2026-11-20-claude-updated-a-task-when-it-handed-the-task-back-to-the-user-but-not-when-the-users-answer-set-it-moving), after the server's instructions gained two lines (measured on macOS 26.5.2, Claude desktop app 5.11492.5 with Claude Code 2.1.325, 2026-11-20, [results](results/2026-11-20-missed-update.txt)).
+
+- The session's Claude didn't get the new lines when its server restarted.
+  We stopped the session's server at 16:32Z, Claude Code started a new one at 16:33:15Z when Claude next called `tasks_get`, and up to 16:34:54Z the transcript held no `mcp_instructions_delta` event.
+- In that transcript, Claude Code wrote that event only when a server was added or removed, and after each compaction, when it sent every server's instructions again.
+
+So the new lines reach a running session at its next compaction (unverified: compacting this session, then asking Claude to quote the two lines, would settle it), and a new session from its start ([the server entry](#2026-11-20-each-claude-app-session-starts-its-own-mcp-server-which-knows-the-apps-session-and-claude-keeps-a-task-list-by-its-instructions)).
+
+**Changed:** nothing in Plates.
+
+**Affects:** [01-task-list](01-task-list.md#left-open), whose test of the new lines needs a session that has them: a new one, or one compacted since the change.
+
+## 2026-11-20: Claude updated a task when it handed the task back to the user, but not when the user's answer set it moving
+
+**Asked:** why did a session's tile keep showing a task as on the user for 18 minutes after the user answered?
+
+**Expected:** Claude to set the task to doing once the user answered, since the server's instructions say "Update a task when its state changes or there's news on it, not at every step."
+
+**Found:** we read the transcript of a Claude desktop app session on another of the user's projects (measured on macOS 26.5.2, Claude desktop app 5.11492.5 with Claude Code 2.1.325, 2026-11-20, [results](results/2026-11-20-missed-update.txt)).
+
+- Claude called `task_update` as it ended two turns.
+  At 15:21Z it set the task to wait on the user, with the status "Strategy proposed; your call".
+  At 15:36Z it rewrote the status twice, ending on "New idea list, waiting on your picks", after the server refused the first status as 41 characters, one over the 40-character limit.
+- The user's message at 15:42Z gave the picks.
+  Claude's first tool calls were a command and the app's own plan, `mcp__ccd_turn__update_plan`, which the app tells Claude to send with a turn's first tool call for a request that edits files or runs more than one command (read in the system prompt the app gives Claude, Claude desktop app 5.11492.5 on macOS 26.5.2, as of 2026-11-20).
+  It worked on the picks from then to at least 16:00:51Z, across three turns, with three more `update_plan` calls and no call to a Plates task tool.
+- When the first of those turns ended at 15:47:44Z, after Claude had sent the user a file, the task still had the status "New idea list, waiting on your picks".
+- The session's server had sent the instructions quoted above at 14:24Z, before any of these turns.
+
+Our reading, unverified because a transcript shows what Claude did and not why: the instructions named no moment to update a task once the user's answer moves it, and at that moment the app has Claude send its own plan instead.
+Nor did they have Claude bring its tasks up to date before ending a turn.
+
+**Changed:** the server's instructions, in `instructions()` in `src/plates-tasks/src/main.rs`, gained three lines.
+One has Claude update a task in the same message as the first tool call of its work on the task, once the user's answer or Claude's own start sets that work going.
+Another has it update each task it worked on that the list shows wrong before it ends a turn.
+The third has Claude, when an update is due before it has seen the list, call `tasks_get` in the message the update was due in and send the update in its next message, since `task_update` needs a task's ID from the list.
+The fix is in the instructions because no Plates hook adds to the prompt the user sends: each is an async command hook, which Claude Code starts and doesn't wait for (documented, [hooks](https://code.claude.com/docs/en/hooks.md), as of 2026-11-15, [hooks log](../hooks/log.md#2026-11-15-desktop-sessions-fire-the-hooks-and-an-http-hook-would-stall-2s-per-event-while-plates-is-closed)).
+Whether Claude follows the new lines is unmeasured: a session with them, in which the user answers a task waiting on them, would settle it.
+A running session doesn't get the new lines when its server restarts ([the restart entry](#2026-11-20-a-running-session-didnt-get-its-restarted-servers-new-instructions)).
+
+**Affects:** [01-task-list](01-task-list.md#how-claude-keeps-a-list).
+
 ## 2026-11-20: A running task server holds about 1MB of memory
 
 **Asked:** what does each session's `plates-tasks` server cost to keep running, beside the rack?

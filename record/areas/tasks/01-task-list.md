@@ -41,7 +41,7 @@ The tile groups tasks by who holds each one:
 ## How Claude keeps a list
 
 Claude follows the instructions the server sends in its `initialize` reply, which Claude Code passes on to Claude (measured on macOS 26.5.2, 2026-11-20, [tasks log](log.md#2026-11-20-each-claude-app-session-starts-its-own-mcp-server-which-knows-the-apps-session-and-claude-keeps-a-task-list-by-its-instructions)).
-They give these rules, all chosen by the user on 2026-11-20:
+They give these rules, all chosen by the user on 2026-11-20, and `instructions()` in `src/plates-tasks/src/main.rs` holds their text:
 
 - Claude starts a list without being asked once it and you agree on work that runs past the current request: at least two pieces of work, or one piece that's waiting on someone.
   The steps of the request it's working on don't count.
@@ -54,8 +54,13 @@ They give these rules, all chosen by the user on 2026-11-20:
   It never repeats the title, and it stays empty when the title says enough.
 - A task waiting on you has a `waiting_on` of "you", and one waiting on someone else names them there, such as "Dana", rather than in its status.
 - Claude updates a task when its state changes or there's news on it, and not at every step, and it marks a task dropped rather than leaving it stale.
+- When your message answers what a task waits on, or Claude starts work on a task, Claude updates the task, such as setting it to doing, in the same message as that work's first tool call.
+  Before it ends a turn, Claude updates each task it worked on that the list shows wrong.
+  For a request that edits files or runs more than one command, the Claude desktop app has Claude send its own plan with the turn's first tool call (read in the system prompt the app gives Claude, Claude desktop app 5.11492.5 on macOS 26.5.2, as of 2026-11-20).
+  In a session whose instructions named neither moment, Claude sent that plan after you answered, but left the task showing on you for 18 minutes, through a turn that ended without updating it ([tasks log](log.md#2026-11-20-claude-updated-a-task-when-it-handed-the-task-back-to-the-user-but-not-when-the-users-answer-set-it-moving)).
 - Claude replaces the whole list only when you ask it to start over or to replace the list.
 - Claude calls `tasks_get` before changing a list it hasn't seen in this conversation.
+  If an update is due before it has seen the list, Claude calls `tasks_get` in the message the update was due in, and sends the update in its next message.
 - Claude keeps no other copy of the list, such as in its memory, because the probe's Claude copied the list into its memory at every change (same entry).
 
 The limits on a title and a status are what fits on one line of a tile at the rack's 304px width ([01-window](../rack/01-window.md)).
@@ -216,6 +221,8 @@ A drag moves the rack from where it shows, and then the rack is where you put it
   Sending [the second session's prompts](../../../experiments/areas/tasks/mcp-server/results/session-2-prompts.txt) in such a project would settle it.
 - Whether Claude stops copying the list into its memory, since that instruction went in after the probe's run ([tasks log](log.md#2026-11-20-each-claude-app-session-starts-its-own-mcp-server-which-knows-the-apps-session-and-claude-keeps-a-task-list-by-its-instructions)).
   Changing a list a few times in a session, then reading the project's memory, would settle it.
+- Whether Claude brings a task up to date with its turn's first tool call once you answer what the task waits on, and before it ends a turn, since those instructions went in after the session that prompted them ([tasks log](log.md#2026-11-20-claude-updated-a-task-when-it-handed-the-task-back-to-the-user-but-not-when-the-users-answer-set-it-moving)).
+  In a session started or compacted after the change, answering a task that waits on you, then reading the list file while Claude works and again once its turn ends, would settle both.
 - How you take back a decline, since no tool undoes it.
 - What a server started for a session in a terminal finds in its environment, and whether a rewind in a terminal starts a new Claude Code session, which decides whether a terminal session's list carries on through one.
   Starting `claude` in a terminal with the probe registered, rewinding it, and reading the probe's log would settle both.

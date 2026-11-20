@@ -26,7 +26,8 @@ use plates_core::{
 use serde_json::{Value, json};
 
 /// What Claude Code puts in the session's system prompt. The limits come from `Field::max`, which
-/// the list checks. When you change a tool's name here, change it in `tools` too.
+/// the list checks. When you change a tool's name here, change it in `tools` too. When you change
+/// a rule here, change it in "How Claude keeps a list" in record/areas/tasks/01-task-list.md too.
 fn instructions() -> String {
     format!(
         "\
@@ -41,9 +42,12 @@ Write each title as a few words that name the piece, at most {title} characters,
 Write each status as what's new about the piece, at most {status} characters: where it stands, what's next, or what it waits for, such as \"Needs a session on the PC\". Don't repeat the title, and leave the status empty when the title says enough.
 When a task waits on the user, set waiting_on to \"you\". When it waits on someone else, name them in waiting_on, such as \"Dana\", not in the status.
 Update a task when its state changes or there's news on it, not at every step.
+When the user's message answers what a task waits on, or you start work on a task, update the task, such as setting it to doing, in the same message as that work's first tool call, so the tile shows who holds it while you work.
+Before you end a turn, update each task you worked on that the list shows wrong, such as setting it to wait on the user with a status saying what they need to do, so the tile shows what's on the user while you wait.
 Mark a task dropped rather than leaving it stale.
 Call tasks_replace only when the user asks to start over or to replace the list.
 Call tasks_get before changing a list you haven't seen in this conversation.
+If an update is due before you've seen the list, call tasks_get in the message the update was due in, and send the update in your next message, since task_update needs the task's ID.
 This list is the only copy of the plan's tasks: don't copy it into your memory or any other notes, since a second copy goes stale.
 
 The tools are tasks_get, task_add, task_update, tasks_replace, and tasks_decline, from the plates server.",
@@ -368,6 +372,14 @@ mod tests {
             );
         }
         assert_eq!(names.len(), 5);
+        for word in instructions().split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+            if word.starts_with("task_") || word.starts_with("tasks_") {
+                assert!(
+                    names.contains(&word),
+                    "the instructions name {word}, which isn't listed"
+                );
+            }
+        }
     }
 
     #[test]
