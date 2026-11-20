@@ -16,7 +16,30 @@
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 
+# Each Claude Code session keeps its own plates-tasks, the task server, running, so while a session
+# runs the plates-tasks in target\release, the build couldn't replace it. The script stops those
+# servers, and Claude Code starts the new build's at the session's next call to a task tool
+# (measured on macOS, record/areas/tasks/log.md). Servers an installed Plates runs are left alone.
+# Returns how many it stopped.
+function Stop-TaskServers {
+    $server = Join-Path $root 'target\release\plates-tasks.exe'
+    $running = @(Get-Process plates-tasks -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $server })
+    if ($running.Count -gt 0) {
+        $running | Stop-Process -Force
+        $running | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+        $servers = if ($running.Count -eq 1) { '1 task server' } else { "$($running.Count) task servers" }
+        Write-Host "Stopped $servers running $server."
+    }
+    return $running.Count
+}
+
+Stop-TaskServers | Out-Null
 cargo build --release --workspace
+# A session that called a task tool during the build restarts the old server, which holds the file
+# again, so the build stops it once more and retries.
+if ($LASTEXITCODE -ne 0 -and (Stop-TaskServers) -gt 0) {
+    cargo build --release --workspace
+}
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
