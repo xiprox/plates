@@ -19,7 +19,12 @@ use std::{
     time::Duration,
 };
 
-use objc2::{AllocAnyThread, MainThreadMarker, rc::Retained, runtime::NSObjectProtocol, sel};
+use objc2::{
+    AllocAnyThread, MainThreadMarker, msg_send,
+    rc::Retained,
+    runtime::{AnyObject, NSObjectProtocol},
+    sel,
+};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationOptions, NSApplicationActivationPolicy, NSEvent,
     NSFloatingWindowLevel, NSRunningApplication, NSScreen, NSSound, NSView, NSWindow,
@@ -102,6 +107,31 @@ pub fn take_over(h: isize) {
         w.setHasShadow(true);
         let _ = NSApplication::sharedApplication(mtm())
             .setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+        // The rack resizes its window on every frame while a tile grows or a task list opens,
+        // and some frames reach the screen drawn for the size before. macOS stretches such a
+        // frame to the window's new size, so every tile wobbles by a few pixels for that frame
+        // (measured on macOS 26.5.2, 2026-11-20, record/areas/rack/log.md). Pinning the drawing to
+        // the window's top-left corner shows it unscaled instead, at most a few pixels short at
+        // the rack's bottom edge.
+        if let Some(content) = w.contentView() {
+            pin_top_left(&content);
+            for view in content.subviews().iter() {
+                pin_top_left(&view);
+            }
+        }
+    }
+}
+
+// Sets a view's layer to keep its drawing at its top-left corner when the layer's size changes,
+// rather than stretch it to the new size, which is Core Animation's default. GPUI's view isn't
+// flipped, so the layer's top is the visual top.
+fn pin_top_left(view: &NSView) {
+    unsafe {
+        let layer: *mut AnyObject = msg_send![view, layer];
+        if !layer.is_null() {
+            let gravity = NSString::from_str("topLeft");
+            let _: () = msg_send![layer, setContentsGravity: &*gravity];
+        }
     }
 }
 

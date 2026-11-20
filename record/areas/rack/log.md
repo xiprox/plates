@@ -2,6 +2,27 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-20: On macOS, a frame drawn for the window's old height can show stretched to its new one
+
+**Asked:** why does a tile's task list jitter now and then as it opens and closes?
+
+**Expected:** a smooth animation, since the rack's window only changes height, which moves nothing inside it, as when a tile grows in ([2026-11-15 entry](#2026-11-15-the-racks-window-can-change-height-on-every-frame), measured on Windows only).
+
+**Found:** in a screen recording of four opens and four closes, 5 of 366 frames show the tiles stretched by about 3.5% (measured on macOS 26.5.2, 2026-11-20, [results](results/2026-11-20-resize-stretch.txt)).
+In those frames the tiles below the open list sit 68 to 69px apart instead of 66px, while the window's bottom edge stays where it was the frame before.
+All 5 came while a list closed.
+While a list opened, one frame squeezed the gaps to 65px.
+
+Plates resizes the window on every frame of the animation, through a task that runs after the frame is drawn.
+GPUI sets no contents gravity on the layer it draws into, so when the layer's size changes, Core Animation stretches the drawing to fit, its default (read in gpui-pre-macos 0.3.12, `src/window.rs`, `MacWindow::open`, and gpui-pre-apple 0.3.12, `src/metal_renderer.rs`, `configure_layer`).
+So we take a stretched frame to be one drawn for the window's height before a resize and shown after it (unverified).
+
+**Changed:** on macOS, Plates sets the window's layers to keep their drawing at the top-left corner, a `contentsGravity` of `topLeft`, so such a frame shows unscaled.
+With it, the jitter is gone by eye (user, 2026-11-20), and a recording of the same opens and closes, measured the same way, would confirm it frame by frame.
+Whether Windows stretches such frames too is unmeasured.
+
+**Affects:** [01-task-list](../tasks/01-task-list.md#opening-and-closing), which pins the window's drawing on macOS because of it.
+
 ## 2026-11-17: On Windows, raw input sees typing keys only while you type, in any app, and clicks while you browse too
 
 **Asked:** can Plates tell that you're working at the PC, typing or clicking in any app, from idling at it, scrolling or watching, so a timer that runs out could hold its tone, brighten, and nudge until you're done?
