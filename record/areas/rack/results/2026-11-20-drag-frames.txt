@@ -1,0 +1,123 @@
+The rack's frames while its window moves on every frame, on macOS 26.5.2, 2026-11-20, on a
+MacBook Pro with an Apple M1 Pro. Its built-in display runs at up to 120Hz and is the primary
+screen at 2x, and a 3440x1440 display beside it runs at up to 100Hz at 1x. Every run below
+showed the rack on the built-in display, where a refresh lasts 8.3ms.
+
+The probe was a temporary change to Plates, not kept. `plates showcase` opened the rack on its
+made-up tiles, waited 1.5s for the tiles to grow in, then moved the window around a circle of
+radius 120pt, half a turn a second, on every frame for 4s, with no mouse. The circle puts the
+window at fractions of a point, as a throw's glide does, and as a drag does when the pointer
+moves by fractions of a point (unverified; the last section has one reading at rest).
+Each frame logged when the rack's render began, and each move logged when the task that calls
+setFrame:display: ran and how long the call took. In the 440-frame run before the fix, and in
+every release run after it, a copy of gpui-pre-macos 0.3.12, patched in for the probe, also
+logged GPUI's own events into the same file: each Metal display
+link update, each windowDidMove, each call of setFrameSize on GPUI's view (logged on entry,
+before GPUI's check that the size changed), each displayLayer, and each restart of the display
+link.
+
+The numbers cover 3.8s of the move. "Late" counts the gaps between frames over 9ms, longer than
+one 8.3ms refresh, and over 17ms, longer than two, where at least one refresh got no new frame.
+"Draw" is from the start of a frame's render to the move task running after it, which spans
+GPUI's layout, its paint, and its hand-off of the frame to Metal.
+
+
+Before the fix: set_bounds passed the window's rect to setFrame:display: as computed
+
+  build    frames  gap p99  late >9ms  late >17ms  draw median  draw p90  setFrame median
+  debug    378     27.9ms   133        46          5.17ms       12.83ms   0.42ms
+  debug    395     23.6ms   111        47          4.82ms       12.41ms   0.38ms
+  debug    397     22.1ms   125        37          4.78ms       12.59ms   0.38ms
+  release  460     26.0ms   119        41          0.99ms        9.99ms   0.31ms
+  release  451     25.4ms   129        41          0.90ms        9.90ms   0.29ms
+  release  440     25.7ms   114        45          0.80ms       11.01ms   0.42ms  (GPUI events)
+
+The same release build with the window held still while the rack drew every frame:
+
+  release  455      9.9ms    34         0
+  release  456     10.3ms    26         0
+
+GPUI's events over the same 3.8s of the 440-frame run: 439 moves, 168 setFrameSize
+calls, 163 displayLayer calls, 163 restarts of the display link, and 277 display link updates,
+for 440 frames. A stretch of it, in ms from the rack's first frame:
+
+  2500.05 frame
+  2508.40 start_display_link
+  2508.81 move task runs
+  2509.31 setFrameSize
+  2513.59 displayLayer
+  2513.70 frame
+  2519.09 start_display_link
+  2519.49 move task runs
+  2519.73 windowDidMove
+  2523.10 display link update
+  2523.21 frame
+  ...
+  2540.92 move task runs
+  2541.38 setFrameSize
+  2541.77 displayLayer
+  2541.87 frame
+  2558.57 start_display_link
+  2558.95 move task runs
+
+163 of the 168 moves that called setFrameSize drew a frame at once from displayLayer, outside
+the display link.
+
+
+After the fix: set_bounds rounds the window's rect to whole points before setFrame:display:
+
+  build    frames  gap p99  gap max  late >9ms  late >17ms  draw median  draw p90
+  release  448     16.4ms   27.6ms   11         3           0.65ms       0.74ms
+  release  456      9.4ms   11.5ms    9         0           0.64ms       0.73ms
+
+A first version snapped to half points, the 2x screen's pixels, and measured the same:
+
+  release  454      9.4ms   25.0ms   12         1           0.64ms       0.73ms
+  release  456      8.8ms    9.8ms    4         0           0.64ms       0.70ms
+  debug    436     19.5ms   68.5ms   15         6           4.44ms       4.89ms
+  debug    408     41.7ms   99.5ms   26         8           4.36ms       4.79ms
+
+GPUI's events over each release run of both versions, startup included: 1 displayLayer and 2
+restarts of the display link, all three at startup, and 474 to 482 windowDidMove. A stretch of
+a half-point run:
+
+  2503.90 display link update
+  2504.03 frame
+  2504.70 move task runs
+  2505.08 windowDidMove
+  2512.24 display link update
+  2512.33 frame
+  2513.00 move task runs
+  2513.31 windowDidMove
+  2520.59 display link update
+  2520.68 frame
+
+
+Where AppKit puts a window: Swift scripts, apart from Plates, opened a borderless 304x400pt
+window on the built-in display and moved it with setFrame:display: through runs of 400 rects,
+then read back the window's rect after each move. In the first run, each rect was computed as
+Plates' to_ns computes one, from a rect in pixels whose right edge is its left edge plus 608px
+and whose bottom is its top plus 800px, starting at a left edge of 600px and a top of 300px and
+stepping 0.731px right and 0.377px down each move.
+
+  rects as computed        widths 303.99999999999994 to 304.00000000000006pt, heights
+                           399.99999999999994 to 400.00000000000006pt; 232 of 400 not exactly
+                           304x400pt
+  window sizes afterward   304x400: 272   305x400: 67   304x401: 48   305x401: 13
+  of those                 the 168 rects that asked exactly 304x400pt all kept it; 128 of the other 232
+                           came out a point wider, taller, or both
+  snapped to half points   304x400: 400, every origin a whole point, 300 origins moved from
+                           what was asked
+  snapped to whole points  304x400: 400, every origin a whole point, none moved from what was
+                           asked
+
+Two more runs of 400 moves each, with the size asked another way:
+
+  origin stepping 0.3655pt right and 0.1885pt up a move, size exactly 304x400pt
+                           size changed on 0
+  origin on whole points, size 1e-10pt short of 304x400pt
+                           size changed on 0
+
+
+The pointer: a Swift script read NSEvent.mouseLocation every 5ms for 3s while the pointer lay
+still on the external display, and read it at 2116.54296875, 1079.44921875 points.

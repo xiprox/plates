@@ -154,8 +154,26 @@ pub fn window_rect(h: isize) -> Rect {
 
 pub fn set_bounds(h: isize, r: Rect) {
     if let Some(w) = window(h) {
-        unsafe { w.setFrame_display(to_ns(r), true) };
+        unsafe { w.setFrame_display(snap(to_ns(r)), true) };
     }
+}
+
+// Without this, the rack's frames come late on macOS while it sits at fractions of a point, as it
+// does through a throw, and through a drag when the pointer moves by fractions (unverified). A
+// window rect there asks a width or height a hair off its real one, since to_ns computes each
+// from two edges, and AppKit, which puts a window on whole points, can then make the window a
+// point wider or taller. GPUI takes that as a resize: it draws the window at once, outside its
+// display link, and restarts the link, which leaves gaps of two refreshes or more between frames.
+// Rounding the rect to whole points keeps the window's size the same on every move. The rack
+// grows down from its top, where take_over pins its drawing, so the top edge is the one rounded
+// and the bottom follows from it: rounding AppKit's bottom edge and the height on their own would
+// move the top by a point from frame to frame while the rack grows from a top at a fraction of a
+// point. (measured on macOS 26.5.2, 2026-11-20, record/areas/rack/log.md, "On macOS, a window
+// placed at fractions of a point can change size")
+fn snap(r: NSRect) -> NSRect {
+    let size = NSSize::new(r.size.width.round(), r.size.height.round());
+    let top = (r.origin.y + r.size.height).round();
+    NSRect::new(NSPoint::new(r.origin.x.round(), top - size.height), size)
 }
 
 pub fn cursor_pos() -> (f64, f64) {
@@ -561,4 +579,34 @@ pub fn play_sound(wav: &'static [u8]) -> bool {
     }
     PLAYING.with(|p| *p.borrow_mut() = Some(sound));
     played
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NSPoint, NSRect, NSSize, snap};
+
+    #[test]
+    fn a_rack_growing_from_a_fractional_top_keeps_its_top_on_one_point() {
+        // AppKit's y runs up from the screen's bottom, so the top edge is origin.y + height.
+        let tops: Vec<f64> = (0..25)
+            .map(|i| {
+                let height = 400. + i as f64 * 2.4;
+                let r = snap(NSRect::new(
+                    NSPoint::new(10.3, 681.55 - height),
+                    NSSize::new(304., height),
+                ));
+                r.origin.y + r.size.height
+            })
+            .collect();
+        assert!(tops.iter().all(|&top| top == 682.), "{tops:?}");
+    }
+
+    #[test]
+    fn a_size_a_hair_off_comes_out_whole() {
+        let r = snap(NSRect::new(
+            NSPoint::new(300.36, 200.18),
+            NSSize::new(303.99999999999994, 400.00000000000006),
+        ));
+        assert_eq!((r.size.width, r.size.height), (304., 400.));
+    }
 }

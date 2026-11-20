@@ -2,6 +2,37 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-20: On macOS, a window placed at fractions of a point can change size, and the moving rack's frames came late
+
+**Asked:** why do dragging and throwing the rack feel slow and laggy on macOS, when they're smooth on Windows?
+
+**Expected:** the cause to be the debug build the Mac ran, whose GPUI layout and paint are unoptimized (unverified), or the refresh rate: the Windows display runs at 240Hz ([2026-11-15 entry](#2026-11-15-on-windows-gpuis-popup-window-moves-on-every-frame-at-240hz-once-a-subclass-removes-its-frame-and-keeps-clicks-from-activating-it)), and this Mac's displays at up to 120Hz and 100Hz.
+
+**Found:** a temporary probe in Plates moved the window of the rack `plates showcase` opens around a 120pt circle on every frame for 4s, and logged each frame (measured on macOS 26.5.2, 2026-11-20, on the 120Hz built-in display of an M1 Pro MacBook Pro, [results](results/2026-11-20-drag-frames.txt)).
+Separate Swift scripts moved a plain AppKit window through runs of 400 rects, the first computed as Plates' `to_ns` computes them, and read where macOS reports the pointer.
+
+- Before the fix, the release build drew a frame in 0.80 to 0.99ms at the median against the debug build's 4.78 to 5.17ms, but its frames came late about as often: in each run of either build, 111 to 133 gaps between frames ran over 9ms and 37 to 47 over 17ms.
+- With the window held still and the rack drawing every frame, the release build drew 455 and 456 frames in 3.8s, one per 8.3ms refresh, and no gap ran over 17ms, though 34 and 26 ran over 9ms.
+- In the one release run before the fix that logged GPUI's events, 168 of the window's 439 moves called `setFrameSize` on GPUI's view.
+  GPUI answered 163 of them by drawing the window at once from `displayLayer`, outside its display link, and restarting the link.
+  Of that run's 440 frames, 163 came from `displayLayer` and 277 from the display link, and 45 gaps ran over 17ms, against none with the window held still.
+- `to_ns` computes the window's width and height by subtracting one edge from another, so 232 of the first Swift script's 400 rects, all at fractions of a point, asked a size off by float error, from 303.99999999999994 to 304.00000000000006pt wide.
+  AppKit puts a window on whole points, even on a 2x screen, and 128 of those 232 came out a point wider, taller, or both.
+  In our runs, the size changed only when the origin sat at fractions of a point and the size was off: the 168 rects that asked exactly 304x400pt kept their size, and so did 400 moves at fractional origins with an exact size and 400 at whole-point origins with a size 1e-10pt short, though no run tried a size long at a whole-point origin.
+- With the pointer at rest on the external 1x display, macOS reported it at 2116.54296875, 1079.44921875pt.
+  A drag moves the rack by the pointer's movement since the press, so it puts the rack at fractions of a point when the pointer moves by fractions, which that reading suggests but doesn't show (unverified; logging `NSEvent::mouseLocation` through a drag on the built-in display would settle it).
+  A throw's glide puts the rack at fractions of a point regardless.
+  On Windows, `GetCursorPos` reports whole pixels and Plates rounds the rect before `SetWindowPos`.
+
+**Changed:** on macOS, Plates rounds the window's rect to whole points before it moves the window.
+In two release runs, 11 and 9 gaps then ran over 9ms and 3 and 0 over 17ms, and GPUI drew no frame outside its display link during the move.
+A first version snapped to half points, the 2x screen's pixels, and measured the same in release, but in the Swift script AppKit moved 300 of 400 half-point origins to whole points and none of the whole-point ones, so Plates rounds to whole points.
+The debug build, measured with half points only, had 15 and 26 gaps over 9ms and 6 and 8 over 17ms, with gaps up to 99.5ms, so a debug build isn't a fair test of how the rack feels.
+The probe moved the window on its own, and a drag by hand is unmeasured.
+The Windows display's 240Hz still moves the rack twice as often as this Mac's 120Hz, which no change to Plates can match.
+
+**Affects:** nothing in the design docs, since [01-window](01-window.md#drag-and-throw) sets the drag and throw, not the points the window lands on.
+
 ## 2026-11-20: On macOS, a frame drawn for the window's old height can show stretched to its new one
 
 **Asked:** why does a tile's task list jitter now and then as it opens and closes?
