@@ -96,10 +96,17 @@ From the top, the card shows:
 
 | State | The scrolling part shows |
 | --- | --- |
-| Working | the turn's newest four tools in words, oldest first, in the muted color, each after a check, or a cross for one that failed, and then the summary line in the working text color, after three dots that light in turn every 400ms (user, 2026-11-16) |
 | Working, with background agents running | Claude's last message, the agents it waits on, and then the summary line |
+| Working, with the Claude desktop app's plan and no background agents running | the plan's steps, one line each, in order, and the summary line, as the bullets below describe (user, 2026-11-21) |
+| Working | the turn's newest four tools in words, oldest first, in the muted color, each after a check, or a cross for one that failed, and then the summary line in the working text color, after three dots that light in turn every 400ms (user, 2026-11-16) |
 | Needs approval | the summary line, and below it the whole command, for a shell command |
 | Your turn, unread, done, waiting, or ended | Claude's last message, or for a turn with neither a message nor a wrap-up, the summary line |
+
+- The app's plan is the list of steps the Claude desktop app has Claude keep for a request, which the app shows under Claude's latest message, and Plates follows it from the hooks ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#the-apps-plan)).
+  It says which step of the request the work is on, and the turn's newest tools, such as "Editing card.rs", don't (user, 2026-11-21).
+- A completed step has a Done task's mark, the step in progress a Doing task's, and a pending step a To do task's, as [01-task-list](../tasks/01-task-list.md#the-open-list) draws them.
+  The step in progress is in the text color, and the others in the muted color.
+- The summary line and its three dots follow the last step, as they follow the tools in a turn with no plan, since under the step in progress they read as squeezed into the list (user, 2026-11-21).
 
 - The card shows at most 12,000 characters of Claude's last message, cut at a space, with "…" where it stops, and draws it as paragraphs: a heading loses its #s and is 12.5px semibold, and a fenced code block is in the monospace font.
 - A list item's marker, a • for a `-`, `*`, or `+` item, or the item's number, such as "2.", sits in a gutter of its own, so the item's wrapped lines line up with its text, as the Claude desktop app draws a list (user, 2026-11-16).

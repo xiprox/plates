@@ -9,8 +9,8 @@ use std::{
 use crate::{
     desktop::AppSession,
     session::{
-        COMPACTED, RECENT_TOOLS, Recent, Session, SessionEvent, SessionState, first_line,
-        prompt_title,
+        COMPACTED, RECENT_TOOLS, Recent, Session, SessionEvent, SessionState, Step, finished,
+        first_line, prompt_title,
     },
     timer::{DEFAULT_MINUTES, Timer},
 };
@@ -58,6 +58,11 @@ fn begin_turn(s: &mut Session) {
     s.wait = None;
     s.ping = None;
     s.recent.clear();
+    // A plan with a step still pending carries on into the turn, where Claude can advance it.
+    // `transcript::plan` drops a plan at each turn's start the same way.
+    if finished(&s.plan) {
+        s.plan.clear();
+    }
     s.background.clear();
     s.status = None;
     s.activity = None;
@@ -302,6 +307,7 @@ impl Rack {
             event,
             SessionEvent::ToolPending { .. }
                 | SessionEvent::WrappedUp(_)
+                | SessionEvent::PlanChanged(_)
                 | SessionEvent::WaitCalled { .. }
                 | SessionEvent::PingCalled { .. }
                 | SessionEvent::InputAsked { .. }
@@ -336,6 +342,12 @@ impl Rack {
             SessionEvent::WrappedUp(wrap_up) => {
                 s.asks = Some(wrap_up.asks());
                 s.wrap_up = Some(wrap_up);
+            }
+            // Claude calls the app's tool only while it works, so like any tool, a plan's change
+            // ends a compaction whose PostCompact never came.
+            SessionEvent::PlanChanged(change) => {
+                change.apply(&mut s.plan);
+                s.compacting = false;
             }
             SessionEvent::WaitCalled { on } => s.wait = Some(on),
             SessionEvent::PingCalled { message } => s.ping = Some(message),
@@ -720,6 +732,13 @@ impl Rack {
     }
 
     /// Sets where a session's transcript is.
+    /// Gives a session the app's plan read back from its transcript.
+    pub fn set_plan(&mut self, session_id: &str, plan: Vec<Step>) {
+        if let Some(s) = self.session_mut(session_id) {
+            s.plan = plan;
+        }
+    }
+
     pub fn set_transcript(&mut self, session_id: &str, path: &Path) {
         if let Some(s) = self.session_mut(session_id) {
             s.transcript = Some(path.to_path_buf());
@@ -1495,6 +1514,60 @@ mod tests {
             last_message: Some(message.into()),
             background: Vec::new(),
         }
+    }
+
+    fn plan(statuses: &[crate::session::StepStatus]) -> SessionEvent {
+        use crate::session::{PlanChange, Step};
+        SessionEvent::PlanChanged(PlanChange::Replace(
+            statuses
+                .iter()
+                .map(|&status| Step {
+                    text: "Step".into(),
+                    status,
+                })
+                .collect(),
+        ))
+    }
+
+    #[test]
+    fn a_plan_with_a_step_pending_lasts_into_the_next_turn_and_a_finished_one_goes() {
+        use crate::session::StepStatus::{Completed as C, InProgress as I, Pending as P};
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Build it"), 0);
+        apply(&mut rack, "a", plan(&[C, I, P]), 1);
+        assert_eq!(session(&rack, id).plan.len(), 3);
+
+        apply(&mut rack, "a", stop("Which way?"), 2);
+        apply(&mut rack, "a", prompt("The first"), 3);
+        assert_eq!(
+            session(&rack, id).plan.len(),
+            3,
+            "a step was pending, so the answer carries the plan on"
+        );
+
+        apply(&mut rack, "a", plan(&[C, C, I]), 4);
+        apply(&mut rack, "a", stop("Done."), 5);
+        apply(&mut rack, "a", prompt("Thanks"), 6);
+        assert!(session(&rack, id).plan.is_empty());
+    }
+
+    #[test]
+    fn a_plans_change_ends_a_wait() {
+        use crate::session::StepStatus::InProgress;
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Watch the checks"), 0);
+        apply(
+            &mut rack,
+            "a",
+            SessionEvent::WaitCalled {
+                on: "CI checks".into(),
+            },
+            1,
+        );
+        apply(&mut rack, "a", stop("Waiting on the checks."), 2);
+        assert_eq!(session(&rack, id).state, SessionState::Waiting);
+        apply(&mut rack, "a", plan(&[InProgress]), 3);
+        assert_eq!(session(&rack, id).state, SessionState::Working);
     }
 
     #[test]

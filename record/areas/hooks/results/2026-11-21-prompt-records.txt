@@ -1,0 +1,27 @@
+Which transcript records hold a prompt
+Windows 11 25H2, Claude desktop app 6.28899.2.0, Claude Code 2.1.326 and 2.1.328, 2026-11-21.
+Read from the transcript of the Claude desktop app session that built Plates' replay of the app's
+plan, in the plates repository: 11,901,425 bytes, its records written by Claude Code 2.1.326 (1,388
+records) and 2.1.328 (553 records).
+
+user records with a top-level origin whose kind is a string
+  human   27
+  peer    11
+
+user records whose message.content holds a tool_result part
+  559, none with a top-level origin
+
+user records with an origin object only below the top level, with a repository host and no kind
+  130
+
+attachment records that hold an origin, by attachment.type and attachment.origin.kind
+  queued_command  task-notification  12
+  queued_command  peer                2
+  queued_command  human               1
+  Their attachment keys: type, prompt, source_uuid, delivery_id, commandMode, origin, timestamp,
+  and runId (task notifications), isMeta and reminderId (peer), or humanTurn (human).
+
+No user record carried an origin kind of task-notification: each task notification in the session
+came as a queued_command attachment.
+
+Select-String found the 145 lines naming mcp__ccd_turn__update_plan in the whole file in 85ms.

@@ -15,7 +15,7 @@ use std::{
 
 use serde_json::Value;
 
-use crate::session::WrapUp;
+use crate::session::{PlanChange, Step, UPDATE_PLAN, WrapUp, finished};
 
 /// Records past this many lines are left unread, since the first prompt comes near the top.
 const MAX_LINES: usize = 2000;
@@ -142,6 +142,76 @@ pub fn newest_turn(path: &Path) -> io::Result<Option<(Turn, SystemTime)>> {
         Turn::Running
     };
     Ok(Some((turn, at)))
+}
+
+/// The app's plan as the transcript's calls to `update_plan` leave it, for a session whose plan
+/// Plates lost when it closed. A plan can begin many turns back, so this reads the whole
+/// transcript, and JSON-parses only the records that could matter: a call, or a prompt that starts
+/// a turn, which drops a finished plan as `Rack::apply` does when a turn begins live.
+pub fn plan(path: &Path) -> io::Result<Vec<Step>> {
+    let reader = BufReader::new(File::open(path)?);
+    let mut plan = Vec::new();
+    for line in reader.split(b'\n').map_while(Result::ok) {
+        let line = String::from_utf8_lossy(&line);
+        if !line.contains(UPDATE_PLAN)
+            && !line.contains("\"origin\"")
+            && !line.contains("queued_command")
+        {
+            continue;
+        }
+        let Ok(record) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if record.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        if starts_turn(&record) {
+            if finished(&plan) {
+                plan.clear();
+            }
+            continue;
+        }
+        for input in calls(&record, UPDATE_PLAN) {
+            if let Some(change) = PlanChange::read(input) {
+                change.apply(&mut plan);
+            }
+        }
+    }
+    Ok(plan)
+}
+
+// A prompt, which can start a turn: one you typed, a task notification's, or another agent's
+// report. Claude Code writes one as a `user` record whose `origin` has a `kind`, such as `human`
+// or `peer`, while a tool's result is a `user` record with no `origin`, and writes one that waited
+// for Claude, as task notifications do, as an `attachment` record of type `queued_command`
+// (measured on Windows 11 25H2, 2026-11-21, record/areas/hooks/log.md).
+fn starts_turn(record: &Value) -> bool {
+    fn kind(r: &Value) -> Option<&str> {
+        r.get("type").and_then(Value::as_str)
+    }
+    match kind(record) {
+        Some("user") => record
+            .get("origin")
+            .and_then(|o| o.get("kind"))
+            .is_some_and(Value::is_string),
+        Some("attachment") => record.get("attachment").and_then(kind) == Some("queued_command"),
+        _ => false,
+    }
+}
+
+// The inputs of an assistant record's calls to the tool `name`.
+fn calls<'a>(record: &'a Value, name: &'a str) -> impl Iterator<Item = &'a Value> + 'a {
+    record
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(move |p| {
+            p.get("type").and_then(Value::as_str) == Some("tool_use")
+                && p.get("name").and_then(Value::as_str) == Some(name)
+        })
+        .filter_map(|p| p.get("input"))
 }
 
 fn is_marker(record: &Value) -> bool {
@@ -390,6 +460,67 @@ mod tests {
             newest_turn(&running).unwrap().map(|(t, _)| t),
             Some(Turn::Running)
         );
+    }
+
+    #[test]
+    fn the_plan_replays_the_calls_and_a_new_turn_drops_a_finished_one() {
+        use crate::session::StepStatus::{Completed as C, InProgress as I, Pending as P};
+        use serde_json::json;
+        let call = |input: Value, sidechain: bool| {
+            json!({ "type": "assistant", "isSidechain": sidechain,
+                    "message": { "role": "assistant", "content": [
+                        { "type": "tool_use", "name": UPDATE_PLAN, "input": input } ] } })
+        };
+        let items = |statuses: &[&str]| {
+            let items: Vec<Value> = statuses
+                .iter()
+                .enumerate()
+                .map(|(i, s)| json!({ "content": format!("Step {}", i + 1), "status": s }))
+                .collect();
+            call(json!({ "items": items, "scope": "new_task" }), false)
+        };
+        let typed = json!({ "type": "user", "isSidechain": false, "origin": { "kind": "human" },
+                            "message": { "role": "user", "content": "Next" } });
+        let result = json!({ "type": "user", "isSidechain": false,
+                             "message": { "role": "user", "content": [ { "type": "tool_result", "content": "" } ] } });
+        let queued = json!({ "type": "attachment", "isSidechain": false,
+                             "attachment": { "type": "queued_command", "prompt": "<task-notification/>",
+                                             "origin": { "kind": "task-notification" } } });
+        let statuses = |lines: &[Value]| -> Vec<_> {
+            let path = transcript("plan", lines);
+            plan(&path).unwrap().iter().map(|s| s.status).collect()
+        };
+
+        let advanced = [
+            items(&["in_progress", "pending", "pending"]),
+            result.clone(),
+            call(json!({ "advance": true }), false),
+            call(json!({ "advance": true }), true),
+        ];
+        assert_eq!(
+            statuses(&advanced),
+            [C, I, P],
+            "a subagent's call is left out"
+        );
+
+        let carried = [advanced.to_vec(), vec![queued.clone(), typed.clone()]].concat();
+        assert_eq!(
+            statuses(&carried),
+            [C, I, P],
+            "a plan with a step pending lasts into the next turn"
+        );
+
+        let finished = [
+            advanced.to_vec(),
+            vec![call(json!({ "done": [2, 3] }), false), result, queued],
+        ]
+        .concat();
+        assert!(
+            statuses(&finished).is_empty(),
+            "a queued prompt starts a turn too"
+        );
+
+        assert!(statuses(&[typed]).is_empty());
     }
 
     #[test]

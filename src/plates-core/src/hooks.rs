@@ -11,7 +11,10 @@ use serde_json::Value;
 use crate::{
     desktop::AppSession,
     rack::{Rack, TileId},
-    session::{BackgroundTask, SessionEvent, SessionState, Tool, WrapUp, first_line},
+    session::{
+        BackgroundTask, PlanChange, SessionEvent, SessionState, Tool, UPDATE_PLAN, WrapUp,
+        first_line,
+    },
     tasks::{self, Field},
     transcript::{self, Turn},
 };
@@ -112,7 +115,8 @@ pub fn answers_claude(rack: &Rack, message: &HookMessage) -> bool {
 }
 
 /// Brings session tiles restored from `sessions.json` up to date with what each session did while
-/// Plates was closed, which sent its events to no receiver. A turn counts as new when the
+/// Plates was closed, which sent its events to no receiver, and gives each its plan back. A turn
+/// counts as new when the
 /// transcript's record for it is later than the tile's last change, so the records Claude Code
 /// adds after a turn ends, such as its `system` record, don't replay the turn.
 pub fn catch_up(rack: &mut Rack) {
@@ -123,6 +127,24 @@ pub fn catch_up(rack: &mut Rack) {
         .collect();
     for id in ids {
         catch_up_session(rack, &id);
+        restore_plan(rack, &id);
+    }
+}
+
+// Plates keeps no plan in sessions.json, so a restored session's plan comes back from its
+// transcript, which also holds the calls Claude made while Plates was closed. It comes after the
+// catch-up's events, since the transcript's calls already reflect the turns those stand for.
+fn restore_plan(rack: &mut Rack, id: &str) {
+    let Some(path) = rack
+        .session(id)
+        .map(|(_, s)| s)
+        .filter(|s| s.state != SessionState::Ended)
+        .and_then(|s| s.transcript.clone())
+    else {
+        return;
+    };
+    if let Ok(plan) = transcript::plan(&path) {
+        rack.set_plan(id, plan);
     }
 }
 
@@ -346,6 +368,19 @@ pub fn parse(body: &[u8]) -> Result<HookMessage, ParseError> {
         "PreToolUse" if text("tool_name").as_deref() == Some("mcp__ccd_turn__wrap_up") => Some(
             SessionEvent::WrappedUp(WrapUp::read(v.get("tool_input").unwrap_or(&Value::Null))),
         ),
+        // The app's plan isn't one of the turn's tools. Claude sends it in the same message as the
+        // next step's first tool call, so its PostToolUse can come while that tool still runs,
+        // and counting it would mark that tool finished early (unverified,
+        // record/areas/hooks/01-claude-code-hooks.md, "The app's plan").
+        "PreToolUse" if text("tool_name").as_deref() == Some(UPDATE_PLAN) => {
+            PlanChange::read(v.get("tool_input").unwrap_or(&Value::Null))
+                .map(SessionEvent::PlanChanged)
+        }
+        "PostToolUse" | "PostToolUseFailure"
+            if text("tool_name").as_deref() == Some(UPDATE_PLAN) =>
+        {
+            None
+        }
         // Claude asking you a question is a tool too, and the Claude desktop app asks for it
         // through `PermissionRequest`, so without this the tile would ask you to approve it
         // (measured on macOS 26.5.2, 2026-11-16, record/areas/hooks/log.md). The question shows
@@ -586,6 +621,27 @@ mod tests {
             json!({ "on": "the long-running integration suite" }),
         );
         assert!(matches!(refused, Some(SessionEvent::ToolPending { .. })));
+    }
+
+    #[test]
+    fn the_apps_plan_is_read_from_pre_tool_use_and_its_post_tool_use_is_ignored() {
+        let input = json!({ "advance": true });
+        let call = |hook: &str| {
+            event(with(
+                hook,
+                json!({ "tool_name": "mcp__ccd_turn__update_plan", "tool_input": input }),
+            ))
+        };
+        assert_eq!(
+            call("PreToolUse"),
+            Some(SessionEvent::PlanChanged(PlanChange::Update {
+                done: Vec::new(),
+                start: None,
+                advance: true,
+            }))
+        );
+        assert_eq!(call("PostToolUse"), None);
+        assert_eq!(call("PostToolUseFailure"), None);
     }
 
     #[test]
@@ -952,6 +1008,47 @@ mod tests {
         rack.mark_read(id, end_at + Duration::from_secs(5));
         catch_up(&mut rack);
         assert!(rack.tile(id).unwrap().session().unwrap().read);
+    }
+
+    #[test]
+    fn catching_up_gives_a_running_session_its_plan_back() {
+        use crate::{rack::Rack, session::StepStatus};
+        let path = std::env::temp_dir().join(format!(
+            "plates-core-plan-back-{}.jsonl",
+            std::process::id()
+        ));
+        let call = |at: &str, input: Value| {
+            json!({ "type": "assistant", "isSidechain": false, "timestamp": at,
+                    "message": { "role": "assistant", "content": [
+                        { "type": "tool_use", "name": "mcp__ccd_turn__update_plan", "input": input } ] } })
+        };
+        let lines = [
+            json!({ "type": "user", "isSidechain": false, "timestamp": "2026-11-21T10:00:00Z",
+                    "origin": { "kind": "human" }, "message": { "role": "user", "content": "Go" } }),
+            call(
+                "2026-11-21T10:00:01Z",
+                json!({ "scope": "first_task", "items": [
+                    { "content": "Read", "status": "in_progress" },
+                    { "content": "Build", "status": "pending" } ] }),
+            ),
+            call("2026-11-21T10:00:02Z", json!({ "advance": true })),
+        ];
+        let text: Vec<String> = lines.iter().map(Value::to_string).collect();
+        std::fs::write(&path, text.join("\n")).unwrap();
+
+        let mut rack = Rack::new();
+        let started = transcript::parse_timestamp("2026-11-21T10:00:00Z").unwrap();
+        let prompt = SessionEvent::PromptSubmitted {
+            title: None,
+            prompt: None,
+        };
+        let id = rack.apply("a", Path::new("/w"), prompt, started);
+        rack.set_transcript("a", &path);
+        catch_up(&mut rack);
+        let s = rack.tile(id).unwrap().session().unwrap();
+        let statuses: Vec<StepStatus> = s.plan.iter().map(|step| step.status).collect();
+        assert_eq!(statuses, [StepStatus::Completed, StepStatus::InProgress]);
+        assert_eq!(s.state, SessionState::Working);
     }
 
     #[test]

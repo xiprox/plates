@@ -3,7 +3,7 @@
 ```text
 Purpose:     How Plates learns what each Claude Code session is doing, and how it opens and answers one.
 Depends on:  02-tiles (../rack/02-tiles.md), for the states a session tile shows.
-Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, where a tile's title and summary come from, which session started a session, which tile a session keeps when the app moves it to a new Claude Code session, how Plates answers a wrap-up's choice, how the hooks get installed and reach Plates, and what clicking a session tile opens.
+Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, how Plates follows the app's plan for a request, where a tile's title and summary come from, which session started a session, which tile a session keeps when the app moves it to a new Claude Code session, how Plates answers a wrap-up's choice, how the hooks get installed and reach Plates, and what clicking a session tile opens.
 ```
 
 Claude Code runs a small program, `plates-hook`, for each session's hook events, and `plates-hook` forwards each event to a receiver Plates runs on `127.0.0.1`, which turns it into a change to a session tile.
@@ -21,6 +21,7 @@ Sessions in the Claude desktop app send these events, and pick up newly installe
 | `PreToolUse` | keeps the tool's name and input, for the summary line of an approval that follows, and for what a working tile shows Claude doing, and for `mcp__ccd_turn__wrap_up`, what the paragraph below the table says; for `mcp__plates__wait` and `mcp__plates__ping`, their text, as [02-waits-and-pings](../tasks/02-waits-and-pings.md#how-plates-learns-of-a-call) says; and moves a waiting tile to working ([02-waits-and-pings](../tasks/02-waits-and-pings.md#the-waiting-state)) |
 | `PermissionRequest` | moves the tile to needs approval as Claude Code is about to ask you, and starts its timer |
 | `PreToolUse` or `PermissionRequest` for `AskUserQuestion`, Claude's tool for asking you to pick among options | moves the tile to needs approval as a question, which the hover card calls "Needs your input", with "Asks: " and the first line of the first question as its summary line, such as "Asks: Which design?", and starts its timer; the Claude desktop app asks for the tool through `PermissionRequest`, which would otherwise read as an approval ([hooks log](log.md#2026-11-16-the-claude-desktop-app-asks-for-askuserquestion-through-permissionrequest)) |
+| `PreToolUse` for `mcp__ccd_turn__update_plan`, the Claude desktop app's tool for Claude's plan | changes Plates' copy of the plan, as [The app's plan](#the-apps-plan) says, and moves a waiting tile to working, but keeps no tool name, so the call never shows as what Claude is doing |
 | `Notification` with `notification_type` `permission_prompt` | moves the tile to needs approval if it isn't already, which covers an approval that fired no `PermissionRequest` |
 | `PostToolUse`, or `PostToolUseFailure` for a tool that failed | moves a tile that needed approval back to working, and stops its timer, since the tool ran |
 | `Stop` | moves the tile to your turn, working, waiting, or unread, in the order [02-waits-and-pings](../tasks/02-waits-and-pings.md#where-a-turns-end-moves-the-tile) gives (user, 2026-11-15 and 2026-11-20) |
@@ -87,6 +88,32 @@ Claude Code documents 19 more events, and Plates installs no hook for them, beca
 - A `monitor` task doesn't keep the tile working, because what a `monitor` entry is remains unverified: the hooks docs give it the MCP `server` and `tool` fields an `MCP task` has, while the Monitor tool's watch ends within 30 minutes and has Claude take up each line it prints (documented, [tools reference](https://code.claude.com/docs/en/tools-reference.md#monitor-tool), as of 2026-11-15).
   Reading a `Stop` body from a turn that ends with a watch running would settle it.
 - A `cloud session` or `MCP task` entry doesn't keep the tile working either, since whether either reports back into the session is unverified; ending a turn with one running and watching for a turn its result starts would settle it.
+
+## The app's plan
+
+The Claude desktop app has Claude keep a plan for each request that edits files or runs more than one command: a list of steps, each pending, in progress, or completed, which the app shows under Claude's latest message (read in the system prompt the app gives Claude, Claude desktop app 6.28899.2.0 on Windows 11 25H2, as of 2026-11-21).
+Claude keeps it with the app's `mcp__ccd_turn__update_plan` tool, and Plates keeps a copy from each call's `PreToolUse`, for a working tile's [hover card](../rack/02-tiles.md#the-hover-card).
+Each call changes the copy as the app changes its own plan (read in the Claude desktop app 6.28899.2.0, `app.asar`, its handler for `update_plan`):
+
+| The call passes | What it does to the plan |
+| --- | --- |
+| `items`, a list of items each with a `content` and a `status`, beside a `scope` of `first_task`, `continuation`, or `new_task` | replaces it with the first 12 items that have text in their `content`, each pending unless its `status` is `completed` or `in_progress`; a call whose `scope` is missing or another value, or whose `items` holds no such item, clears it |
+| `done`, a list of step numbers counted from 1 | marks each of those steps completed |
+| `start`, a step number | marks that step in progress |
+| `advance` of `true` or `"true"` | marks the first step in progress completed, then marks in progress the first pending step after it; with no step in progress, or no pending step after it, it marks in progress the first pending step in the plan |
+
+- A call that passes `items` ignores any `done`, `start`, or `advance` beside it.
+  A call without `items` applies `done`, then `start`, then `advance`, and changes nothing if a number it passes names no step, such as 0, or 9 in a plan of 8 steps.
+- Plates ignores the call's `PostToolUse` and `PostToolUseFailure`.
+  Claude sends the call in the same message as the next step's first tool call (read in the system prompt the app gives Claude, Claude desktop app 6.28899.2.0 on Windows 11 25H2, as of 2026-11-21), so the call's `PostToolUse` can arrive while that tool still runs, and counting it would mark that tool finished early (unverified; logging the hooks of a message that pairs the call with a long `Bash` command would settle it).
+- When a turn begins, Plates keeps a plan that still has a pending step, so Claude can carry it on with `advance`, and drops a plan with none.
+  The app's instructions have Claude finish a request with no step pending: Claude passes `advance` beside its wrap-up after the last step, or, in another wording of the instructions, leaves the last step in progress for the app to check off as the turn ends (read in the system prompt the app gives Claude, Claude desktop app 6.28899.2.0 on Windows 11 25H2, as of 2026-11-21).
+  Whether the app keeps a plan from one turn to the next is unverified; a turn that advances the plan left by the turn before it, watched in the app, would settle it.
+- Plates doesn't save the plan in `sessions.json`.
+  When Plates starts, it replays each session's calls to `update_plan` from the session's transcript, which brings back the calls Claude made while Plates was closed too, and leaves out a subagent's calls.
+  At each prompt the transcript holds, the replay drops a plan with no pending step, as a turn's start does; a prompt that came while Claude was busy, as a task notification does, is a `queued_command` attachment rather than a `user` record ([hooks log](log.md#2026-11-21-a-transcript-records-a-prompt-that-waited-for-claude-as-a-queued_command-attachment)).
+  Whether such a prompt starts a turn of its own or joins the running one is unverified, and if it joins, the replay can drop a finished plan while its turn still runs.
+- A session whose tile Plates adds while its plan runs, such as one you cleared from the rack, shows the turn's newest tools until Claude's next call with `items`, since only startup replays a transcript.
 
 ## Titles and summaries
 

@@ -2,8 +2,8 @@
 //! `plates showcase` opens it, writing none of Plates' data files. Its tiles come from a few
 //! weeks of real Claude Code sessions with the names of projects, clients, and people taken out,
 //! so it shows at once the states record/areas/rack/02-tiles.md describes: a session asking for
-//! approval, one at your turn with a question and a task list, one working with a sub-session under
-//! it, your own tile whose timer runs beside one whose reminder is due, and two snoozed tiles
+//! approval, one at your turn with a question and a task list, one working with the app's plan for
+//! its request and a sub-session under it, your own tile whose timer runs beside one whose reminder is due, and two snoozed tiles
 //! behind the moon. It leaves out a finished turn you haven't read, so the rack stays short enough
 //! to read at a glance (user, 2026-11-20).
 
@@ -15,6 +15,7 @@ use std::{
 use plates_core::{
     Rack, SessionEvent, TileId, Timer, Tool, WrapUp,
     desktop::AppSession,
+    session::{PlanChange, Step, StepStatus},
     tasks::{Change, State, TaskList},
 };
 
@@ -218,6 +219,23 @@ pub fn rack(now: SystemTime) -> (Rack, TileId) {
             at(
                 28,
                 start("The portal's page stops scrolling on phones after a swipe on the list"),
+            ),
+            at(
+                27,
+                vec![SessionEvent::PlanChanged(PlanChange::Replace(
+                    [
+                        ("Reproduce the stuck scroll", StepStatus::Completed),
+                        ("Find what holds the page", StepStatus::Completed),
+                        ("Fix the list's touch handler", StepStatus::InProgress),
+                        ("Test the fix on Android", StepStatus::Pending),
+                    ]
+                    .into_iter()
+                    .map(|(text, status)| Step {
+                        text: text.to_string(),
+                        status,
+                    })
+                    .collect(),
+                ))],
             ),
             at(6, vec![did("Reading EmbedFrame.tsx")]),
             at(

@@ -103,6 +103,9 @@ pub enum SessionEvent {
     /// `PreToolUse` for the Claude desktop app's `mcp__ccd_turn__wrap_up`, which Claude calls at
     /// the end of a turn.
     WrappedUp(WrapUp),
+    /// `PreToolUse` for the Claude desktop app's `mcp__ccd_turn__update_plan`, which changes the
+    /// plan Claude keeps for a request.
+    PlanChanged(PlanChange),
     /// `PreToolUse` for the plates server's `wait`: the turn ends waiting on `on`.
     WaitCalled { on: String },
     /// `PreToolUse` for the plates server's `ping`: the turn ends with news you requested a ping
@@ -142,6 +145,7 @@ impl SessionEvent {
             | SessionEvent::CompactFinished { .. }
             | SessionEvent::InputGiven
             | SessionEvent::WrappedUp(_)
+            | SessionEvent::PlanChanged(_)
             | SessionEvent::WaitCalled { .. }
             | SessionEvent::PingCalled { .. }
             | SessionEvent::Seen { .. }
@@ -232,6 +236,147 @@ impl WrapUp {
     /// Whether a decision waits for you.
     pub fn asks(&self) -> bool {
         self.ask.is_some() || self.blocked
+    }
+}
+
+/// The most steps the Claude desktop app keeps in a plan.
+pub const PLAN_STEPS: usize = 12;
+
+/// The Claude desktop app's tool for the plan Claude keeps for a request.
+pub const UPDATE_PLAN: &str = "mcp__ccd_turn__update_plan";
+
+/// Whether a plan has no step pending, so a new turn drops it: a finished request leaves none
+/// pending (record/areas/hooks/01-claude-code-hooks.md, "The app's plan").
+pub fn finished(plan: &[Step]) -> bool {
+    !plan.iter().any(|step| step.status == StepStatus::Pending)
+}
+
+/// One step of the plan the Claude desktop app has Claude keep for a request, which the app shows
+/// under Claude's latest message (record/areas/hooks/01-claude-code-hooks.md, "The app's plan").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Step {
+    pub text: String,
+    pub status: StepStatus,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+/// A call to the app's `update_plan`. Plates changes its copy of the plan the way the app changes
+/// its own, so the hover card shows the steps the app does (read in the Claude desktop app
+/// 6.28899.2.0, app.asar, its handler for `update_plan`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PlanChange {
+    /// `items`: the whole plan, which is empty for an `items` the app refuses, since the app
+    /// clears its plan before it checks one.
+    Replace(Vec<Step>),
+    /// `done`, `start`, and `advance`, whose step numbers count from 1. A number that isn't a
+    /// whole number of at least 1 is kept as 0, which names no step.
+    Update {
+        done: Vec<usize>,
+        start: Option<usize>,
+        advance: bool,
+    },
+}
+
+impl PlanChange {
+    /// Reads `update_plan`'s input, or `None` for a call the app refuses without changing its
+    /// plan, one that passes none of `items`, `done`, `start`, and `advance`.
+    pub fn read(input: &Value) -> Option<PlanChange> {
+        if let Some(items) = input.get("items") {
+            let scoped = matches!(
+                input.get("scope").and_then(Value::as_str),
+                Some("first_task" | "continuation" | "new_task")
+            );
+            // Claude can pass the list as a JSON string rather than a list, as with the wrap-up's
+            // `actions`.
+            let items = match items {
+                Value::String(s) => serde_json::from_str(s).unwrap_or(Value::Null),
+                v => v.clone(),
+            };
+            let steps = items
+                .as_array()
+                .filter(|_| scoped)
+                .into_iter()
+                .flatten()
+                .filter_map(|item| {
+                    let text = first_line(item.get("content")?.as_str()?);
+                    let status = match item.get("status").and_then(Value::as_str) {
+                        Some("completed") => StepStatus::Completed,
+                        Some("in_progress") => StepStatus::InProgress,
+                        _ => StepStatus::Pending,
+                    };
+                    (!text.is_empty()).then_some(Step { text, status })
+                })
+                .take(PLAN_STEPS)
+                .collect();
+            return Some(PlanChange::Replace(steps));
+        }
+        let number = |v: &Value| {
+            v.as_f64()
+                .filter(|n| n.fract() == 0.0 && *n >= 1.0)
+                .map_or(0, |n| n as usize)
+        };
+        let done: Vec<usize> = input
+            .get("done")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(number)
+            .collect();
+        let start = input.get("start").map(number);
+        let advance = matches!(input.get("advance"), Some(Value::Bool(true)))
+            || input.get("advance").and_then(Value::as_str) == Some("true");
+        (advance || !done.is_empty() || start.is_some()).then_some(PlanChange::Update {
+            done,
+            start,
+            advance,
+        })
+    }
+
+    /// Changes `plan` as the app changes its own: `done`, then `start`, then `advance`, and
+    /// nothing at all when a number names no step.
+    pub fn apply(self, plan: &mut Vec<Step>) {
+        let (done, start, advance) = match self {
+            PlanChange::Replace(steps) => {
+                *plan = steps;
+                return;
+            }
+            PlanChange::Update {
+                done,
+                start,
+                advance,
+            } => (done, start, advance),
+        };
+        let len = plan.len();
+        if !done.iter().chain(&start).all(|n| (1..=len).contains(n)) {
+            return;
+        }
+        for n in done {
+            plan[n - 1].status = StepStatus::Completed;
+        }
+        if let Some(n) = start {
+            plan[n - 1].status = StepStatus::InProgress;
+        }
+        if advance {
+            let current = plan.iter().position(|s| s.status == StepStatus::InProgress);
+            if let Some(i) = current {
+                plan[i].status = StepStatus::Completed;
+            }
+            let pending = |from: usize| {
+                plan.iter()
+                    .skip(from)
+                    .position(|s| s.status == StepStatus::Pending)
+                    .map(|i| from + i)
+            };
+            if let Some(next) = pending(current.map_or(0, |i| i + 1)).or_else(|| pending(0)) {
+                plan[next].status = StepStatus::InProgress;
+            }
+        }
     }
 }
 
@@ -337,6 +482,9 @@ pub struct Session {
     pub pinged_at: Option<SystemTime>,
     /// The turn's newest tools, oldest first, at most `RECENT_TOOLS` of them.
     pub recent: Vec<Recent>,
+    /// The app's plan for the request, which a working tile's hover card shows in place of
+    /// `recent`, or empty for none.
+    pub plan: Vec<Step>,
     /// The tasks still running when the turn ended.
     pub background: Vec<BackgroundTask>,
     /// The first line of the newest text Claude wrote in the turn.
@@ -405,6 +553,7 @@ impl Session {
             ping: None,
             pinged_at: None,
             recent: Vec::new(),
+            plan: Vec::new(),
             background: Vec::new(),
             status: None,
             status_at: now,
@@ -554,6 +703,113 @@ mod tests {
         assert_eq!(
             tool("mcp__ccd_turn__update_plan", None, None).activity(),
             "Using update_plan"
+        );
+    }
+
+    fn plan_of(statuses: &[StepStatus]) -> Vec<Step> {
+        statuses
+            .iter()
+            .enumerate()
+            .map(|(i, &status)| Step {
+                text: format!("Step {}", i + 1),
+                status,
+            })
+            .collect()
+    }
+
+    fn statuses(plan: &[Step]) -> Vec<StepStatus> {
+        plan.iter().map(|s| s.status).collect()
+    }
+
+    fn change(plan: &mut Vec<Step>, input: serde_json::Value) {
+        PlanChange::read(&input)
+            .expect("the input should be a change")
+            .apply(plan);
+    }
+
+    #[test]
+    fn items_replace_the_plan_with_their_steps_and_ignore_an_update_beside_them() {
+        let mut plan = plan_of(&[StepStatus::Completed]);
+        let input = serde_json::json!({
+            "items": [
+                { "content": " Read how the card works ", "status": "completed" },
+                { "content": "Draw the plan", "status": "in_progress" },
+                { "content": "   ", "status": "pending" },
+                { "content": "Test it", "status": "blocked" },
+                "not a step",
+            ],
+            "scope": "continuation",
+            "advance": true,
+        });
+        change(&mut plan, input);
+        let texts: Vec<&str> = plan.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            ["Read how the card works", "Draw the plan", "Test it"],
+            "a step with no text is left out"
+        );
+        assert_eq!(
+            statuses(&plan),
+            [
+                StepStatus::Completed,
+                StepStatus::InProgress,
+                StepStatus::Pending
+            ],
+            "a status the app doesn't know is pending, and the advance changed nothing"
+        );
+
+        let many: Vec<_> = (0..15)
+            .map(|i| serde_json::json!({ "content": format!("Step {i}"), "status": "pending" }))
+            .collect();
+        change(
+            &mut plan,
+            serde_json::json!({ "items": many, "scope": "new_task" }),
+        );
+        assert_eq!(plan.len(), PLAN_STEPS);
+
+        change(
+            &mut plan,
+            serde_json::json!({ "items": [{ "content": "Go", "status": "pending" }] }),
+        );
+        assert!(
+            plan.is_empty(),
+            "the app refuses items with no scope, and has cleared its plan by then"
+        );
+    }
+
+    #[test]
+    fn an_update_marks_steps_as_the_app_does() {
+        use StepStatus::{Completed as C, InProgress as I, Pending as P};
+        let mut plan = plan_of(&[I, P, P, P]);
+        change(&mut plan, serde_json::json!({ "advance": true }));
+        assert_eq!(statuses(&plan), [C, I, P, P]);
+
+        change(&mut plan, serde_json::json!({ "done": [2, 3], "start": 4 }));
+        assert_eq!(statuses(&plan), [C, C, C, I]);
+
+        // With the last step in progress, advance finishes it and wraps to the first pending one.
+        let mut plan = plan_of(&[P, C, I]);
+        change(&mut plan, serde_json::json!({ "advance": "true" }));
+        assert_eq!(statuses(&plan), [I, C, C]);
+
+        // A number that names no step changes nothing, not even the steps the others name.
+        let mut plan = plan_of(&[I, P]);
+        change(&mut plan, serde_json::json!({ "done": [1, 3] }));
+        assert_eq!(statuses(&plan), [I, P]);
+        change(&mut plan, serde_json::json!({ "done": [1], "start": 1.5 }));
+        assert_eq!(statuses(&plan), [I, P]);
+
+        let mut none = Vec::new();
+        change(&mut none, serde_json::json!({ "advance": true }));
+        assert!(
+            none.is_empty(),
+            "an update with no plan has nothing to change"
+        );
+
+        assert_eq!(PlanChange::read(&serde_json::json!({ "done": [] })), None);
+        assert_eq!(
+            PlanChange::read(&serde_json::json!({ "advance": false })),
+            None
         );
     }
 

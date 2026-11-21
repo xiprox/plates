@@ -2,6 +2,24 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-21: A transcript records a prompt that waited for Claude as a queued_command attachment
+
+**Asked:** which transcript records hold a prompt, so that Plates, replaying the app's plan from a transcript at startup, can drop a finished plan where a turn began?
+
+**Expected:** a `user` record whose `origin` has a `kind` for every prompt, as for a prompt you type ([the origin.kind human entry](#2026-11-15-a-desktop-sessions-transcript-marks-a-typed-prompt-with-originkind-human-after-a-system-reminder)).
+
+**Found:** (measured on Windows 11 25H2, Claude desktop app 6.28899.2.0 with Claude Code 2.1.326 and 2.1.328, 2026-11-21, [results](results/2026-11-21-prompt-records.txt))
+
+- Prompts you typed and other agents' reports came as `user` records whose `origin` has a `kind`: `human` 27 times and `peer` 11 times.
+- None of the 559 `user` records that hold a tool's result has an `origin`.
+- Every task notification came as an `attachment` record whose `attachment` has the `type` `queued_command` and the same `origin`, with a `kind` of `task-notification`, 12 times.
+  2 agents' reports and 1 prompt you typed came that way too.
+- Reading the whole 11.9MB transcript for its calls to `update_plan` took 85ms with `Select-String`, so a replay can read a whole transcript at startup.
+
+**Changed:** `transcript::plan` counts both kinds of record as a prompt.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#the-apps-plan).
+
 ## 2026-11-20: Claude Code fired a PreCompact in an idle session, with no compaction and no PostCompact after it
 
 **Asked:** why did a session's tile show "Compacting session…" while the session sat idle, and keep showing it through the session's next turn?

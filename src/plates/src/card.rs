@@ -13,7 +13,7 @@ use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::*;
 use plates_core::{
     Session, SessionState, Tile, TileId, WrapUp, desktop, git,
-    session::Recent,
+    session::{Recent, StepStatus},
     timer::{MENU_HOURS, MENU_MINUTES, SNOOZE_HOURS, Timer},
 };
 
@@ -23,9 +23,9 @@ use crate::{
     native,
     rack_view::RackView,
     view::{
-        APPROVAL_TEXT, MONO, MUTED, SANS, TEXT, TEXT2, TILE, VIOLET, WORKING_TEXT, YELLOW,
-        YOUR_TURN_TEXT, marker, minutes, session_words, styled_line, styled_line_weighted, text,
-        white,
+        APPROVAL_TEXT, BLUE, GRAY, MONO, MUTED, SANS, TEXT, TEXT2, TILE, VIOLET, WORKING_TEXT,
+        YELLOW, YOUR_TURN_TEXT, marker, minutes, session_words, styled_line, styled_line_weighted,
+        text, white,
     },
 };
 
@@ -634,6 +634,12 @@ fn body(s: &Session) -> (Vec<AnyElement>, bool) {
                 out.push(working_line(line).into_any_element());
             }
         }
+        SessionState::Working if !s.plan.is_empty() => {
+            out.push(plan_steps(s).into_any_element());
+            if let Some(line) = &s.line {
+                out.push(working_line(line).into_any_element());
+            }
+        }
         // The turn's earlier tools read as a log: a check for each one that finished, a cross for
         // one that failed, and the stepping dots beside what Claude does now (user, 2026-11-16).
         SessionState::Working => {
@@ -702,6 +708,66 @@ fn body(s: &Session) -> (Vec<AnyElement>, bool) {
         }
     }
     (out, boxed)
+}
+
+// The app's plan for the request, which says where the work stands in it where the turn's newest
+// tools don't (user, 2026-11-21). Each step has the mark the task list gives a task in the same
+// state.
+fn plan_steps(s: &Session) -> Div {
+    let mut rows = div().flex().flex_col().gap(px(3.));
+    for step in &s.plan {
+        let (mark, color) = match step.status {
+            StepStatus::Completed => (
+                svg()
+                    .path("plates/check.svg")
+                    .size(px(11.))
+                    .text_color(rgb(GRAY))
+                    .into_any_element(),
+                MUTED,
+            ),
+            StepStatus::InProgress => (
+                div()
+                    .size(px(7.))
+                    .rounded_full()
+                    .bg(rgb(BLUE))
+                    .into_any_element(),
+                TEXT,
+            ),
+            StepStatus::Pending => (
+                div()
+                    .size(px(7.))
+                    .rounded_full()
+                    .border(px(1.5))
+                    .border_color(rgb(GRAY))
+                    .into_any_element(),
+                MUTED,
+            ),
+        };
+        rows = rows.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(MARK_W))
+                        .flex()
+                        .justify_center()
+                        .child(mark),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(px(11.5))
+                        .text_color(rgb(color))
+                        .truncate()
+                        .child(styled_line(&step.text, rgb(color))),
+                ),
+        );
+    }
+    rows
 }
 
 // A background task's `type` in words, such as "Subagent" for `subagent`.
