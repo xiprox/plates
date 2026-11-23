@@ -86,7 +86,7 @@ The waiting time counts up, so a wait that no turn ends shows how long it has go
 Waiting ends when the session's next turn begins:
 
 - at `UserPromptSubmit`, which moves the tile to working
-- at the turn's first `PreToolUse`, which moves the tile to working, in case the turn fires no `UserPromptSubmit` ([Left open](#left-open))
+- at the turn's first `PreToolUse`, which moves the tile to working, in case the turn fires no `UserPromptSubmit`, as it might on Windows ([Left open](#left-open))
 - at a `PreCompact` for a `/compact` you typed, which moves the tile to working, and at an MCP server's `Elicitation`, which moves it to needs approval
 - at `Stop`, for a turn that fired none of these, which moves the tile as [Where a turn's end moves the tile](#where-a-turns-end-moves-the-tile) says
 - at `SessionEnd`, which moves the tile to ended
@@ -121,9 +121,8 @@ That list names no new turn for checks that pass, so Claude watches for those wi
 
 ## Left open
 
-- Whether a task notification that arrives after its turn has ended fires `UserPromptSubmit`.
-  On Windows a task notification fired `UserPromptSubmit` ([hooks log](../hooks/log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)), but we haven't seen one that arrived after its turn had ended.
-  Running `plates listen --log` while a background command exits after its turn would settle it.
+- Whether a background command's notification that arrives after its turn has ended fires `UserPromptSubmit` on Windows, as it did on macOS ([hooks log](../hooks/log.md#2026-11-23-on-macos-a-background-commands-notification-that-arrives-after-its-turn-has-ended-fires-userpromptsubmit)).
+  Running `plates listen --log <file>` with Plates closed, while a background command in a Windows desktop session exits a minute after its turn has ended, would settle it.
 - Whether a watching command that fails or is stopped starts a turn, since the one we measured completed.
   Ending a turn with a background command that fails a minute later, and reading the transcript, would settle it.
 - Whether Claude calls `wait` and `ping` when it should.

@@ -300,9 +300,9 @@ impl Rack {
         let mut turned = false;
 
         // A waiting tile waits until its session's next turn begins. A turn that a background
-        // command's exit starts may fire no UserPromptSubmit (record/areas/tasks/
-        // 02-waits-and-pings.md, "Left open"), so the turn's first tool, question, or `/compact`
-        // ends the wait too.
+        // command's exit starts fired UserPromptSubmit on macOS, and whether it does on Windows is
+        // unmeasured, so the turn's first tool, question, or `/compact` ends the wait too
+        // (record/areas/tasks/02-waits-and-pings.md, "Left open").
         let starts_turn = matches!(
             event,
             SessionEvent::ToolPending { .. }
@@ -1791,8 +1791,8 @@ mod tests {
         assert_eq!(rack.tile(id).unwrap().timer, Timer::Idle);
         assert_eq!(rack.tile(id).unwrap().need, None);
 
-        // The watching command's exit starts a turn that may fire no UserPromptSubmit, so its
-        // first tool ends the wait.
+        // Whether a turn the watching command's exit starts fires UserPromptSubmit on Windows is
+        // unmeasured, so its first tool ends the wait too.
         apply(&mut rack, "a", bash("gh pr view 12"), 300);
         let s = session(&rack, id);
         assert_eq!(s.state, SessionState::Working);

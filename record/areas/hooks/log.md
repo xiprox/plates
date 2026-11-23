@@ -2,6 +2,28 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-23: On macOS, a background command's notification that arrives after its turn has ended fires `UserPromptSubmit`
+
+**Asked:** when a background command exits after its session's turn has ended, does the turn its notification starts fire `UserPromptSubmit`?
+[02-waits-and-pings](../tasks/02-waits-and-pings.md#the-waiting-state) also ends a wait at the turn's first `PreToolUse` in case it doesn't.
+
+**Expected:** it does, as a task notification fired one on Windows ([2026-11-15 entry](#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)), though that entry doesn't say whether its turn had ended.
+
+**Found:** the turn the notification started fired `UserPromptSubmit`, with the notification as its `prompt` (measured on macOS 26.5.2, Claude desktop app 5.11492.5 with Claude Code 2.1.325, 2026-11-23, [results](results/2026-11-20-late-notification-prompt.txt)).
+The session ran the test on itself, starting a background command, calling `wait`, and ending its turn.
+
+- On 2026-11-20, the turn ended at 18:10:12Z, the 45s command's notification reached the transcript at 18:10:50.544Z, Plates' `sessions.json` gives 18:10:50.552Z as the time the tile moved to working, and Claude's first tool call came at 18:11:04.125Z.
+  A `PreCompact` with no compaction behind it could also have moved the tile ([the idle PreCompact entry](#2026-11-20-claude-code-fired-a-precompact-in-an-idle-session-with-no-compaction-and-no-postcompact-after-it)), and neither `sessions.json` nor the timing tells the two apart.
+- On 2026-11-23, `plates listen --log` ran in Plates' place and logged each hook payload as it arrived.
+  Between the turn's `Stop` and the next turn's first `PreToolUse`, it logged one event: `UserPromptSubmit`, whose `prompt` began with the 30s command's `<task-notification>`.
+  It logged no `PreCompact`.
+
+The 2026-11-20 run doesn't record what the tile drew between the two turns, or after the turn that called `ping` ended, and the 2026-11-23 run had Plates closed.
+
+**Changed:** nothing in Plates; the first `PreToolUse` still ends a wait, since whether Windows fires `UserPromptSubmit` for such a turn is unmeasured.
+
+**Affects:** [02-waits-and-pings](../tasks/02-waits-and-pings.md#left-open) and [01-claude-code-hooks](01-claude-code-hooks.md#background-tasks), which left it open.
+
 ## 2026-11-21: A transcript records a prompt that waited for Claude as a queued_command attachment
 
 **Asked:** which transcript records hold a prompt, so that Plates, replaying the app's plan from a transcript at startup, can drop a finished plan where a turn began?
