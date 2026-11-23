@@ -47,7 +47,9 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) says which hook event starts each state.
 
 - A turn that ends with background agents still running keeps its tile working, unless its wrap-up, the `mcp__ccd_turn__wrap_up` call the Claude desktop app has Claude make at a turn's end, asks you something (user, 2026-11-15).
-  It stays working because an agent's report starts a new turn ([hooks log](../hooks/log.md#2026-11-15-stop-lists-the-tasks-still-running-and-a-background-agents-report-starts-a-new-turn)), and its summary line counts the agents, as in "Waiting on 2 background tasks".
+  It stays working because an agent's report starts a new turn ([hooks log](../hooks/log.md#2026-11-15-stop-lists-the-tasks-still-running-and-a-background-agents-report-starts-a-new-turn)).
+  Its summary line names what runs: for one task, its `type` and `description`, such as "Agent: Review the diff", and for several, how many, such as "2 agents running", or "3 tasks running" when their types differ (user, 2026-11-23).
+  It never says "Waiting on", which is the [waiting state](../tasks/02-waits-and-pings.md#the-waiting-state)'s summary line.
   [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#background-tasks) says which tasks count.
 - On Windows, clicking a session tile opens that session in the Claude desktop app, and clicking the tile of a session the app doesn't keep, such as one in a terminal, does nothing ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session)).
 - Right-clicking the text of a tile at your turn, unread, or done opens a menu with one item, in a popup at the pointer like the timer's menu (user, 2026-11-16).

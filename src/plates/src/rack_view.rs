@@ -15,7 +15,7 @@ use plates_core::{
     Rack, Removed, SessionEvent, SessionState, Tile, TileId, desktop,
     hooks::{self, HookMessage},
     store,
-    tasks::TaskList,
+    tasks::{self, TaskList},
     timer::{DEFAULT_MINUTES, MENU_HOURS, MENU_MINUTES, Timer},
 };
 
@@ -550,6 +550,10 @@ impl RackView {
             self.set_peek(false, cx);
         }
         let changed = self.rack.tick(now);
+        // A session whose tile went for good leaves its task list behind in the tasks folder,
+        // so the list goes with the tile (record/areas/tasks/01-task-list.md, "Saving").
+        let gone = self.rack.take_gone();
+        self.forget_lists(gone);
         // A timer that ran out since the last tick rings the tone, once however many ran out
         // (user, 2026-11-17), as one of the pings `give_held` gives, which wait while you're busy.
         // The tiles it ran out on started needing you at `now`, in the rack's tick above. A
@@ -585,7 +589,7 @@ impl RackView {
             .as_ref()
             .is_some_and(|t| t.until <= Instant::now())
         {
-            self.toast = None;
+            self.drop_toast();
         }
         if self.sessions_dirty && !self.showcase {
             self.sessions_dirty = false;
@@ -868,7 +872,7 @@ impl RackView {
                         Swiped::Tile(id) => self.take_off(id, cx),
                         // Swiping the Undo row away keeps the removal, as waiting it out does.
                         Swiped::Undo => {
-                            self.toast = None;
+                            self.drop_toast();
                             self.after_change(cx);
                         }
                     }
@@ -1125,7 +1129,7 @@ impl RackView {
                 }
                 self.login_changed();
             }
-            tray::Command::Quit => cx.quit(),
+            tray::Command::Quit => self.quit(cx),
         }
     }
 
@@ -1757,16 +1761,48 @@ impl RackView {
         let back = |t: &Tile| t.session().is_none_or(|s| s.state != SessionState::Ended);
         if back(&removed.tile) || removed.family.iter().any(back) {
             let title = removed.tile.title();
+            self.drop_toast();
             self.toast = Some(Toast {
                 title: format!("Archived \u{201c}{title}\u{201d}"),
                 removed,
                 until: Instant::now() + TOAST_FOR,
             });
+        } else {
+            self.forget_lists(removed.ended_lists());
         }
         if own {
             self.save();
         }
         self.after_change(cx);
+    }
+
+    /// Quits Plates. An Undo row that's up ends first, as waiting it out would, so the task lists
+    /// of the ended sessions it took off don't outlive it.
+    pub(crate) fn quit(&mut self, cx: &mut Context<Self>) {
+        self.drop_toast();
+        cx.quit();
+    }
+
+    // Ends the Undo, keeping the removal, and with it the task lists of the ended sessions it
+    // took off, which nothing can bring back now.
+    fn drop_toast(&mut self) {
+        if let Some(toast) = self.toast.take() {
+            self.forget_lists(toast.removed.ended_lists());
+        }
+    }
+
+    // Deletes the task lists of sessions whose tiles went for good. The showcase's made-up
+    // sessions have no lists of their own, and their IDs mustn't touch real ones.
+    fn forget_lists(&self, keys: Vec<String>) {
+        if self.showcase {
+            return;
+        }
+        let folder = tasks::folder();
+        for key in keys {
+            if let Err(e) = tasks::delete(&folder, &key) {
+                eprintln!("Couldn't delete the task list of {key}: {e}");
+            }
+        }
     }
 
     pub(crate) fn undo_remove(&mut self, cx: &mut Context<Self>) {

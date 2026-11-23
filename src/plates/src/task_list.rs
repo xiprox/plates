@@ -123,12 +123,9 @@ impl Sections {
     }
 }
 
-/// The key of a session tile's list in the tasks folder: the Claude desktop app's ID for the
-/// session, or its Claude Code ID for a session in a terminal, as the `plates-tasks` server names
-/// the file.
+/// The key of a session tile's list in the tasks folder (`Session::list_key`).
 pub(crate) fn list_key(t: &Tile) -> Option<&str> {
-    let s = t.session()?;
-    Some(s.app_id.as_deref().unwrap_or(&s.id))
+    Some(t.session()?.list_key())
 }
 
 const fn heading(holder: Holder) -> &'static str {

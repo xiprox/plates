@@ -470,6 +470,18 @@ pub fn save(list: &TaskList, path: &Path) -> io::Result<()> {
     crate::store::write_whole(path, &json)
 }
 
+/// Deletes `session`'s list from `folder`, once its tile has gone for good
+/// (record/areas/tasks/01-task-list.md, "Saving"). A list that isn't there is already gone.
+pub fn delete(folder: &Path, session: &str) -> io::Result<()> {
+    let Some(path) = path(folder, session) else {
+        return Ok(());
+    };
+    match fs::remove_file(path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 /// Every session's list in the tasks folder, for the rack, which shows each on its session's tile.
 /// The rack reads the folder once a second, so a read rereads only the files that changed.
 pub struct Watch {
@@ -777,5 +789,18 @@ mod tests {
         assert_eq!(iso(1_795_174_931_000), "2026-11-20T11:42:11Z");
         // A leap day.
         assert_eq!(iso(951_782_400_000), "2000-02-29T00:00:00Z");
+    }
+
+    #[test]
+    fn deleting_a_list_removes_its_file_and_a_missing_one_is_already_gone() {
+        let dir = std::env::temp_dir().join(format!("plates-tasks-delete-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let file = path(&dir, "local_a").unwrap();
+        save(&TaskList::default(), &file).unwrap();
+        delete(&dir, "local_a").unwrap();
+        assert!(!file.exists());
+        delete(&dir, "local_a").unwrap();
+        delete(&dir, "../escape").unwrap();
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

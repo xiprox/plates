@@ -179,6 +179,20 @@ impl BackgroundTask {
     pub fn reports_back(&self) -> bool {
         matches!(self.kind.as_str(), "subagent" | "workflow" | "teammate")
     }
+
+    /// The task's `type` in words, such as "Agent" for `subagent`.
+    pub fn kind_name(&self) -> String {
+        match self.kind.as_str() {
+            "subagent" => "Agent".to_string(),
+            kind => {
+                let mut chars = kind.chars();
+                chars
+                    .next()
+                    .map(|c| c.to_uppercase().chain(chars).collect())
+                    .unwrap_or_default()
+            }
+        }
+    }
 }
 
 /// What Claude passed the Claude desktop app's wrap-up tool at the end of a turn: a recap, and a
@@ -577,11 +591,9 @@ impl Session {
     pub fn refresh_line(&mut self, now: SystemTime) -> bool {
         let within =
             |at: SystemTime, hold: Duration| now.duration_since(at).is_ok_and(|d| d < hold);
-        let waiting = self.waiting_on();
         let line = match (&self.status, &self.activity) {
             _ if self.compacting => COMPACTING.to_string(),
-            _ if waiting == 1 => "Waiting on 1 background task".to_string(),
-            _ if waiting > 1 => format!("Waiting on {waiting} background tasks"),
+            _ if self.waiting_on() > 0 => self.background_line(),
             (Some(status), _) if within(self.status_at, STATUS_HOLDS) => status.clone(),
             (_, Some(activity)) if self.tool_running || within(self.activity_at, TOOL_HOLDS) => {
                 activity.clone()
@@ -594,10 +606,41 @@ impl Session {
         changed
     }
 
+    /// What a working tile shows while tasks that report back run: the task's own words for one,
+    /// such as "Agent: Review the diff", and how many run for several, such as "2 agents running".
+    /// It says what's running rather than "Waiting on", which a tile in the waiting state says
+    /// (record/areas/tasks/02-waits-and-pings.md).
+    fn background_line(&self) -> String {
+        let running: Vec<&BackgroundTask> = self
+            .background
+            .iter()
+            .filter(|t| t.reports_back())
+            .collect();
+        match running.as_slice() {
+            [one] if one.description.trim().is_empty() => format!("{} running", one.kind_name()),
+            [one] => format!("{}: {}", one.kind_name(), first_line(&one.description)),
+            many => {
+                let kind = many[0].kind_name().to_lowercase();
+                if many.iter().all(|t| t.kind == many[0].kind) {
+                    format!("{} {kind}s running", many.len())
+                } else {
+                    format!("{} tasks running", many.len())
+                }
+            }
+        }
+    }
+
     /// How many of the tasks still running at the turn's end Claude waits on to take the
     /// session up again.
     pub fn waiting_on(&self) -> usize {
         self.background.iter().filter(|t| t.reports_back()).count()
+    }
+
+    /// The name of the session's task list in the tasks folder: the Claude desktop app's ID for
+    /// the session, or its Claude Code ID for a session in a terminal, as the `plates-tasks`
+    /// server names the file.
+    pub fn list_key(&self) -> &str {
+        self.app_id.as_deref().unwrap_or(&self.id)
     }
 
     /// The title the Claude desktop app shows for the session, or else its custom title, or else

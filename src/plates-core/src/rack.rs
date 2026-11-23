@@ -168,6 +168,19 @@ pub struct Removed {
     pub family: Vec<Tile>,
 }
 
+impl Removed {
+    /// The list keys of the ended sessions among the removed tiles, whose tiles go for good once
+    /// no Undo can bring them back.
+    pub fn ended_lists(&self) -> Vec<String> {
+        std::iter::once(&self.tile)
+            .chain(&self.family)
+            .filter_map(Tile::session)
+            .filter(|s| s.state == SessionState::Ended)
+            .map(|s| s.list_key().to_string())
+            .collect()
+    }
+}
+
 /// How many of your own removed tiles the archive keeps, dropping the oldest past it.
 pub const ARCHIVE_KEEPS: usize = 50;
 
@@ -197,6 +210,9 @@ pub struct Rack {
     /// The sessions you dismissed are in the archive too, from `hidden`.
     archive: Vec<Archived>,
     next_id: u64,
+    /// The list keys of sessions whose tiles went for good since the app last took them, so the
+    /// app deletes their task lists.
+    gone: Vec<String>,
 }
 
 /// A dismissed session that leaves `hidden` for the rack leaves the archive with it.
@@ -223,6 +239,14 @@ impl Rack {
 
     pub fn tiles(&self) -> &[Tile] {
         &self.tiles
+    }
+
+    /// The list keys of sessions whose tiles went for good since the last call: an ended tile the
+    /// rack cleared, and a dismissed or snoozed session that ended. An ended tile you remove
+    /// yourself isn't among them, since an Undo can bring it back, so the app takes it from the
+    /// `Removed` once the Undo is gone (`Removed::ended_lists`).
+    pub fn take_gone(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.gone)
     }
 
     pub fn tile(&self, id: TileId) -> Option<&Tile> {
@@ -573,7 +597,9 @@ impl Rack {
                 self.tiles.insert(index, tile);
             }
             Place::Hidden(i) if state == SessionState::Ended => {
-                self.hidden.remove(i);
+                let tile = self.hidden.remove(i);
+                self.gone
+                    .extend(tile.session().map(|s| s.list_key().to_string()));
             }
             Place::Hidden(_) => {}
         }
@@ -650,13 +676,20 @@ impl Rack {
         let before = self.tiles.len();
         // An ended tile with a reminder for tomorrow, or one that's run out and you haven't
         // clicked, stays until you have (user, 2026-11-16).
-        self.tiles.retain(|t| {
+        let stays = |t: &Tile| {
             t.timer.is_tomorrow()
                 || t.timer.is_time_up()
                 || t.session()
                     .and_then(|s| s.ended_at)
                     .is_none_or(|ended| now < ended + ENDED_CLEARS_AFTER)
-        });
+        };
+        let cleared = self.tiles.iter().filter(|t| !stays(t));
+        self.gone.extend(
+            cleared
+                .filter_map(|t| t.session())
+                .map(|s| s.list_key().to_string()),
+        );
+        self.tiles.retain(stays);
         let mut changed = self.tiles.len() != before;
         // A snoozed tile, or a dismissed session with a reminder for tomorrow, comes back when
         // its time runs out, time-up, as one that needs you does.
@@ -1746,7 +1779,7 @@ mod tests {
         );
         let s = session(&rack, id);
         assert_eq!(s.state, SessionState::Working);
-        assert_eq!(s.line.as_deref(), Some("Waiting on 2 background tasks"));
+        assert_eq!(s.line.as_deref(), Some("2 agents running"));
         assert_eq!(rack.tile(id).unwrap().need, None);
 
         // An agent's result starts a turn, which ends with nothing left running.
@@ -2008,6 +2041,41 @@ mod tests {
         assert_eq!(s.state, SessionState::NeedsApproval);
         assert!(s.recent.is_empty());
         assert_eq!(s.message, None);
+    }
+
+    #[test]
+    fn a_session_whose_tile_goes_for_good_is_reported_once_for_its_task_list() {
+        let mut rack = Rack::new();
+        // An ended tile the rack clears after its time.
+        apply(&mut rack, "cleared", prompt("Go"), 0);
+        apply(&mut rack, "cleared", SessionEvent::Ended, 1);
+        rack.tick(at(1) + ENDED_CLEARS_AFTER - Duration::from_secs(1));
+        assert!(rack.take_gone().is_empty());
+        rack.tick(at(1) + ENDED_CLEARS_AFTER);
+        assert_eq!(rack.take_gone(), vec!["cleared".to_string()]);
+        assert!(rack.take_gone().is_empty());
+
+        // A dismissed session that ends.
+        let dismissed = apply(&mut rack, "dismissed", prompt("Go"), 0);
+        rack.remove(dismissed, at(1));
+        assert!(rack.take_gone().is_empty());
+        apply(&mut rack, "dismissed", SessionEvent::Ended, 2);
+        assert_eq!(rack.take_gone(), vec!["dismissed".to_string()]);
+
+        // An ended tile you remove, which an Undo could bring back, goes through `Removed`.
+        let ended = apply(&mut rack, "ended", prompt("Go"), 0);
+        apply(&mut rack, "ended", SessionEvent::Ended, 1);
+        let removed = rack.remove(ended, at(2)).unwrap();
+        assert!(rack.take_gone().is_empty());
+        assert_eq!(removed.ended_lists(), vec!["ended".to_string()]);
+    }
+
+    #[test]
+    fn a_session_in_the_app_keeps_its_list_under_the_apps_id() {
+        let mut s = Session::new("cli-id", Path::new(FOLDER), at(0));
+        assert_eq!(s.list_key(), "cli-id");
+        s.app_id = Some("local_abc".into());
+        assert_eq!(s.list_key(), "local_abc");
     }
 
     #[test]
@@ -2583,7 +2651,7 @@ mod tests {
         let s = session(&rack, c);
         assert_eq!(s.state, SessionState::Working);
         assert!(!s.compacting);
-        assert_eq!(s.line.as_deref(), Some("Waiting on 1 background task"));
+        assert_eq!(s.line.as_deref(), Some("Agent: Review the diff"));
         apply(
             &mut rack,
             "c",
@@ -2592,7 +2660,7 @@ mod tests {
         );
         let s = session(&rack, c);
         assert!(!s.compacting);
-        assert_eq!(s.line.as_deref(), Some("Waiting on 1 background task"));
+        assert_eq!(s.line.as_deref(), Some("Agent: Review the diff"));
     }
 
     #[test]

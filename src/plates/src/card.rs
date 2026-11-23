@@ -626,7 +626,7 @@ fn body(s: &Session) -> (Vec<AnyElement>, bool) {
                             .text_size(px(11.5))
                             .text_color(rgb(MUTED))
                             .truncate()
-                            .child(format!("{} · {}", task_kind(&t.kind), t.description))
+                            .child(format!("{} · {}", t.kind_name(), t.description))
                     }))
                     .into_any_element(),
             );
@@ -768,15 +768,6 @@ fn plan_steps(s: &Session) -> Div {
         );
     }
     rows
-}
-
-// A background task's `type` in words, such as "Subagent" for `subagent`.
-fn task_kind(kind: &str) -> String {
-    let mut chars = kind.chars();
-    chars
-        .next()
-        .map(|c| c.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
 }
 
 // A message as paragraphs: a heading in semibold, and a list item with its marker in a gutter of

@@ -406,7 +406,11 @@ impl MenuView {
                 }))
                 .into_any_element(),
             Self::row("quit", "Quit Plates")
-                .on_click(cx.listener(|_, _: &ClickEvent, _, cx| cx.quit()))
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    if this.rack.update(cx, |rack, cx| rack.quit(cx)).is_err() {
+                        cx.quit();
+                    }
+                }))
                 .into_any_element(),
         ]
     }
