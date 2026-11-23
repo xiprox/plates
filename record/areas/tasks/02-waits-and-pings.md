@@ -126,7 +126,9 @@ That list names no new turn for checks that pass, so Claude watches for those wi
 - Whether a watching command that fails or is stopped starts a turn, since the one we measured completed.
   Ending a turn with a background command that fails a minute later, and reading the transcript, would settle it.
 - Whether Claude calls `wait` and `ping` when it should.
-  Asking a session in a pull request's branch to ping you once the checks pass, then watching its tile, would settle it.
+  After we rewrote the server's rule for `wait`, Claude on Windows still often ended a turn waiting on a background command without calling it ([tasks log](log.md#2026-11-23-on-windows-claude-still-often-ended-a-turn-waiting-on-a-background-command-without-calling-wait)).
+  Reading a day of Windows session transcripts, and counting the turns whose closing message says Claude waits on a background command against those that called `wait`, would settle it for `wait`.
+  Asking a session to ping you once a pull request's checks pass, then watching its tile, would settle it for `ping`.
 - Whether the Claude desktop app starts a turn in a session when its pull request's checks pass.
   Opening a pull request from a session, ending the turn with nothing watching, and waiting for the checks to pass would settle it.
 - Whether a background command's exit starts a new turn in a terminal session.

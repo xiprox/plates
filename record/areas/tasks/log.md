@@ -2,6 +2,19 @@
 
 What we found about keeping a task list for each session, for Plates to show in its tile, newest entry first.
 
+## 2026-11-23: On Windows, Claude still often ended a turn waiting on a background command without calling wait
+
+**Asked:** does Claude call `wait` on its own since the server's rule for it was rewritten ([the no-wait-call entry](#2026-11-20-a-session-ended-a-turn-waiting-on-two-background-commands-without-calling-wait))?
+
+**Expected:** it would, since the rule names the moment: before the closing message of a turn that waits on a background command whose result Claude will act on.
+
+**Found:** in Claude desktop app sessions on Windows through 2026-11-22, the user often saw Claude end a turn waiting on a background command without calling `wait`, and had to tell it to call `wait` several times (user, 2026-11-23).
+We have no count of those turns and no transcript of them.
+
+**Changed:** nothing yet.
+
+**Affects:** [02-waits-and-pings](02-waits-and-pings.md#left-open), whose open question on whether Claude calls `wait` when it should gains this report and stays open.
+
 ## 2026-11-20: A session ended a turn waiting on two background commands without calling wait
 
 **Asked:** why did a session's tile show your turn, rather than waiting, while the session waited on two background commands?

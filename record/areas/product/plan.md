@@ -83,6 +83,8 @@ The `wait` and `ping` tools and the waiting state, as [02-waits-and-pings](../ta
 Done when, on Windows, a session you ask to ping you once a pull request's checks pass shows waiting while they run, and when they pass, its tile moves to your turn with the ping's message and rings at once.
 Step 7's Mac session runs its macOS half.
 
+Done on 2026-11-22.
+
 ## Later
 
 Plates looking for its own updates while it runs, and the questions [01-window](../rack/01-window.md#left-open) leaves open.
