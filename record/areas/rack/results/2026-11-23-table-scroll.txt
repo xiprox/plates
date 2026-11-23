@@ -1,0 +1,38 @@
+Why a table in the hover card didn't scroll sideways under a trackpad swipe, on 2026-11-23
+(macOS 26.5.2, Plates' debug build from the working tree on commit 3e9c9f4, in `plates showcase`
+with sample tables in the V2 landing redesign tile's card).
+
+The table was a div with an id, `overflow_x_scroll()`, and `restrict_scroll_to_axis()`, holding a
+flex row of columns that was `flex_none()` and `min_w_full()`.
+
+Run 1: a temporary `on_scroll_wheel` listener on the table's scroller and one on the card's root
+each printed every scroll event they got, while the user swiped sideways on the first table,
+whose text ran past the card's right edge. The table didn't move.
+
+Events each listener got: 273 to the table and 273 to the card, the same events. Of the table's,
+68 moved more sideways than vertically and 205 more vertically, from swipes up and down over
+the card that the user also made.
+
+The first 10 events, in order:
+  table scroll Pixels(Point { x: -1px, y: 0px }) Started at Point { x: 235.41797px, y: 158.47656px }
+  card scroll Pixels(Point { x: -1px, y: 0px }) Started at Point { x: 235.41797px, y: 158.47656px }
+  table scroll Pixels(Point { x: -10px, y: 0px }) Moved at Point { x: 235.41797px, y: 158.47656px }
+  card scroll Pixels(Point { x: -10px, y: 0px }) Moved at Point { x: 235.41797px, y: 158.47656px }
+  table scroll Pixels(Point { x: -12px, y: -1px }) Moved at Point { x: 235.41797px, y: 158.47656px }
+  card scroll Pixels(Point { x: -12px, y: -1px }) Moved at Point { x: 235.41797px, y: 158.47656px }
+  table scroll Pixels(Point { x: -4px, y: -1px }) Moved at Point { x: 235.41797px, y: 158.47656px }
+  card scroll Pixels(Point { x: -4px, y: -1px }) Moved at Point { x: 235.41797px, y: 158.47656px }
+  table scroll Pixels(Point { x: -15px, y: 0px }) Moved at Point { x: 235.41797px, y: 158.47656px }
+  card scroll Pixels(Point { x: -15px, y: 0px }) Moved at Point { x: 235.41797px, y: 158.47656px }
+
+Run 2: the scroller also got `flex()`, and a temporary `on_children_prepainted` on it printed
+its child's width on every frame of `plates showcase --capture`, built with the `capture`
+feature. The card's three sample tables printed, 112 frames each:
+
+  565px   the first table, 3 columns
+  322px   a 3-column table narrower than the card, whose last column takes the rest of the width
+  636px   a 5-column table
+
+The narrow table's 322px is the scroller's own width, since `min_w_full()` holds the content to
+at least that. The user then swiped sideways on the first table in `plates showcase`, and it
+scrolled. Run 1 printed no widths.

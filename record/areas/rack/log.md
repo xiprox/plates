@@ -2,6 +2,22 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-23: A GPUI div that scrolls sideways has to be a flex container, or its content never overflows it
+
+**Asked:** why didn't a table in the hover card scroll under a sideways trackpad swipe, when its text ran past the card's edge?
+
+**Expected:** the swipe's events not to reach the table, either because the card's vertical scroller took them or because the card's window got none.
+
+**Found:** a temporary listener on the table's scroller printed all 273 of the swipe's scroll events, 68 of them more sideways than vertical, and the table still didn't move (measured on macOS 26.5.2, 2026-11-23, [results](results/2026-11-23-table-scroll.txt)).
+GPUI lays out a div as a block unless it's told to be a flex container (read in gpui-pre 0.3.12, src/style.rs, `Style::default`).
+As a block, the scroller stretched the table's row of columns to its own width, so the columns ran past the row instead of widening it.
+GPUI clamps a scroller's offset to how far its children's bounds reach past it (read in gpui-pre 0.3.12, src/elements/div.rs, `Div::prepaint` and `Interactivity::prepaint`), and the row reached no further than the scroller, so there was nothing to scroll.
+With `flex()` on the scroller, the row took its own width: 565px and 636px for two tables in a 322px scroller, and a sideways swipe scrolled the first.
+
+**Changed:** the card's table scroller is a flex row, as gpui-component's horizontal scroll area is.
+
+**Affects:** [02-tiles](02-tiles.md#the-hover-card), whose table rule now cites this measurement.
+
 ## 2026-11-20: On Windows, `plates showcase --capture` can't draw the rack
 
 **Asked:** can we take the README's picture again on Windows, with a third rack that shows a session's task list open?
