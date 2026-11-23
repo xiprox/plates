@@ -2,6 +2,19 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-23: The Mac drew the README's three-rack picture at the sizes read from the code
+
+**Asked:** does `plates showcase --capture` on the Mac draw the three-rack picture that [the Windows capture entry](#2026-11-20-on-windows-plates-showcase---capture-cant-draw-the-rack) laid out, at the sizes it read from the code?
+
+**Expected:** a canvas of 1,514 by 946 logical pixels, the plain rack 537 logical pixels tall, and the rack with the task list open 770.
+
+**Found:** the picture is 3,027 by 1,892px at the display's 2x scale, so 1,513.5 by 946 logical pixels, and its racks are 537 and 770 logical pixels tall, counted from their dark rows (measured on macOS 26.5.2, 2026-11-23).
+The canvas is half a logical pixel narrower than read, and we haven't traced why.
+
+**Changed:** `.github/readme/rack.png` is the three-rack picture, and README.md's description of it names the task list.
+
+**Affects:** [the plan's step 7](../product/plan.md#7-macos), which no longer waits on the picture.
+
 ## 2026-11-23: A GPUI div that scrolls sideways has to be a flex container, or its content never overflows it
 
 **Asked:** why didn't a table in the hover card scroll under a sideways trackpad swipe, when its text ran past the card's edge?

@@ -54,7 +54,6 @@ Done when clicking a session tile opens that session, or else brings the Claude 
 Every step's behavior on the Mac, the window test's macOS half included, run in one session there from the macOS installer on step 8's release, as [CLAUDE.md](../../../CLAUDE.md) and [decision 002](../../decisions/002-build-on-windows-first.md) ask.
 Done when every step's "done when" holds on macOS too, with no Dock entry for the rack, the rack on every Space and over a full-screen app, and macOS window tiling leaving it alone.
 If GPUI can't give the rack its window on macOS, we weigh the options then.
-The same session takes the README's picture again with its task list rack, which only macOS can draw, and brings the picture's description in README.md up to date ([rack log](../rack/log.md#2026-11-20-on-windows-plates-showcase---capture-cant-draw-the-rack)).
 
 ## 8. Releases
 
