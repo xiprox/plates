@@ -58,6 +58,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   Right-clicking the text of any other tile opens nothing, and right-clicking the timer slot opens the timer's menu on every tile.
 - A summary line draws text between backticks in a monospace font on a background of 8% white, and text between double asterisks in bold, and leaves out the backticks and asterisks (user, 2026-11-15).
   It draws a markdown link, `[text](target)`, as its text with a 1px underline in the line's color at 45% opacity, and the link can't be clicked (user, 2026-11-15).
+  A line that's a table row, such as `| Width | First row |`, shows its cells joined by " · ", as "Width · First row".
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
 - A session whose task list has any tasks has a bar under the tile's top that counts them by who holds each, and clicking the bar opens the list inside the tile ([01-task-list](../tasks/01-task-list.md)).
 - An ended tile clears itself 30 minutes after the session ends, and its × clears it at once.
@@ -113,6 +114,13 @@ From the top, the card shows:
 - The card shows at most 12,000 characters of Claude's last message, cut at a space, with "…" where it stops, and draws it as paragraphs: a heading loses its #s and is 12.5px semibold, and a fenced code block is in the monospace font.
 - A list item's marker, a • for a `-`, `*`, or `+` item, or the item's number, such as "2.", sits in a gutter of its own, so the item's wrapped lines line up with its text, as the Claude desktop app draws a list (user, 2026-11-16).
   Each two spaces of indent nest an item 14px further in, up to 28px, and an item indented further sits at 28px.
+- A table is a grid of one-line cells, with its header in semibold in the secondary text color over a rule of 14% white, and a rule of 6% white between rows (user, 2026-11-23).
+  It has 6px more room above and below it than a paragraph has, so two tables in a row read as two (user, 2026-11-23).
+  Each column is as wide as its widest cell, and its cells sit left, centered, or right as its rule row says, such as `:-:` for centered.
+  A table wider than the card scrolls sideways under a trackpad swipe or a horizontal wheel, and a vertical swipe or wheel over it scrolls the card, since cells wrapped to fit the card read as a jumble (user, 2026-11-23).
+  A sideways trackpad swipe scrolled a table (measured on macOS 26.5.2, 2026-11-23, [rack log](log.md#2026-11-23-a-gpui-div-that-scrolls-sideways-has-to-be-a-flex-container-or-its-content-never-overflows-it)), and the rest is read in gpui-pre 0.3.12, src/elements/div.rs, `Interactivity::paint_scroll_listener`, with `restrict_scroll_to_axis`.
+  A mouse with only a vertical wheel can't scroll a table sideways, and the card is only a preview of the session, so it goes without (user, 2026-11-23).
+  A cut in a table falls after its last whole row, with a row of "…" under it.
 - The card runs in the order the Claude desktop app draws a session, with what came first at the top, so it reads like the session it opens (user, 2026-11-15).
 - The wrap-up's box holds what the app draws under Claude's last message, in its order: the recap in the secondary text color, then the question in the your-turn text color, then its choices, one for each of the wrap-up's `actions` (user, 2026-11-15; read in the wrap-up tool's own description, Claude desktop app 5.11492.5.0, which says the app draws its box under the message Claude writes after the call).
   It sits below the scrolling part, so the question stays in view however far the message scrolls (user, 2026-11-15).

@@ -690,13 +690,49 @@ pub fn prompt_title(prompt: &str) -> String {
     first_line(rest)
 }
 
-/// The first non-empty line of `text`, trimmed.
+/// The first non-empty line of `text`, trimmed. A markdown table row comes back as its cells
+/// joined by " · ", such as "Width · First row" for `| Width | First row |`, since a tile shows
+/// the line without the table around it.
 pub fn first_line(text: &str) -> String {
-    text.lines()
+    let line = text
+        .lines()
         .map(str::trim)
         .find(|l| !l.is_empty())
-        .unwrap_or("")
-        .to_string()
+        .unwrap_or("");
+    match table_cells(line) {
+        Some(cells) => cells
+            .into_iter()
+            .filter(|c| !c.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · "),
+        None => line.to_string(),
+    }
+}
+
+/// The cells of a markdown table row, trimmed, such as `["a", "b|c"]` for `| a | b\|c |`, or None
+/// for a line that doesn't start with |. Claude opens every row with a |, so a line of prose
+/// with a | in it isn't taken for a row. A `\|` is a | inside a cell, even inside `code`, as
+/// GitHub's markdown reads a table (documented, https://github.github.com/gfm/#tables-extension-).
+pub fn table_cells(line: &str) -> Option<Vec<String>> {
+    let inner = line.trim().strip_prefix('|')?;
+    let mut cells = Vec::new();
+    let mut cell = String::new();
+    let mut chars = inner.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if chars.peek() == Some(&'|') => {
+                cell.push('|');
+                chars.next();
+            }
+            '|' => cells.push(std::mem::take(&mut cell).trim().to_string()),
+            _ => cell.push(c),
+        }
+    }
+    // A row's closing | leaves nothing after it, and a row without one ends in its last cell.
+    if !cell.trim().is_empty() || cells.is_empty() {
+        cells.push(cell.trim().to_string());
+    }
+    Some(cells)
 }
 
 #[cfg(test)]
@@ -920,5 +956,33 @@ mod tests {
         assert_eq!(s.title(), "Dock tuning");
         s.app_title = Some("Tune the dock".into());
         assert_eq!(s.title(), "Tune the dock");
+    }
+
+    #[test]
+    fn a_table_row_splits_into_its_cells() {
+        let cells = |line: &str| table_cells(line).map(|c| c.join("/"));
+        assert_eq!(cells("| a | b |").as_deref(), Some("a/b"));
+        assert_eq!(
+            cells("| a | b").as_deref(),
+            Some("a/b"),
+            "a row may leave out its closing |"
+        );
+        assert_eq!(
+            cells("| a | |").as_deref(),
+            Some("a/"),
+            "an empty last cell stays"
+        );
+        assert_eq!(cells("| `x \\| y` | z |").as_deref(), Some("`x | y`/z"));
+        assert_eq!(cells("a | b"), None, "prose with a | in it is no row");
+    }
+
+    #[test]
+    fn a_table_row_as_a_first_line_joins_its_cells() {
+        assert_eq!(
+            first_line("\n| Width | First row |\n|---|---|"),
+            "Width · First row"
+        );
+        assert_eq!(first_line("| | **Note** |"), "**Note**");
+        assert_eq!(first_line("  Plain line\nnext"), "Plain line");
     }
 }

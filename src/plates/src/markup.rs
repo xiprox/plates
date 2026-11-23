@@ -4,6 +4,8 @@
 
 use std::ops::Range;
 
+use plates_core::session::table_cells;
+
 /// One block of a message as the hover card draws it, with its inline marks still in its text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Block {
@@ -20,19 +22,36 @@ pub enum Block {
     },
     /// The lines of a fenced code block.
     Code(Vec<String>),
+    /// A table: its header's cells, how each column's cells sit, and its rows, each with as many
+    /// cells as the header.
+    Table {
+        header: Vec<String>,
+        align: Vec<Align>,
+        rows: Vec<Vec<String>>,
+    },
+}
+
+/// Where a table column's cells sit, from its rule row: `:-:` centers them, and `-:` puts them on
+/// the right.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Align {
+    Left,
+    Center,
+    Right,
 }
 
 /// The deepest a list item nests, counted from 0 for an item with no indent, so the card draws
 /// items at three indents, and an item indented further sits at the last.
 const MAX_DEPTH: usize = 2;
 
-/// A message's blocks, up to about `budget` characters, cut at a space with "…" after it.
-/// A table's rule rows and blank lines go.
+/// A message's blocks, up to about `budget` characters, cut at a space with "…" after it, or
+/// after a table's last whole row. Blank lines and horizontal rules go.
 pub fn blocks(message: &str, budget: usize) -> Vec<Block> {
     let mut out: Vec<Block> = Vec::new();
     let mut left = budget;
     let mut fenced = false;
-    for line in message.lines() {
+    let mut lines = message.lines().peekable();
+    while let Some(line) = lines.next() {
         let trimmed = line.trim();
         if trimmed.starts_with("```") {
             fenced = !fenced;
@@ -59,10 +78,40 @@ pub fn blocks(message: &str, budget: usize) -> Vec<Block> {
             }
             continue;
         }
+        // A row followed by a rule row with a cell for each of its own starts a table, which
+        // runs to the first line that isn't a row.
+        if let Some(header) = table_cells(trimmed)
+            && let Some(align) = lines.peek().and_then(|next| rule_row(next, header.len()))
+        {
+            lines.next();
+            left = left.saturating_sub(chars(&header));
+            let mut rows = Vec::new();
+            let mut cut = false;
+            while let Some(row) = lines.next_if(|l| l.trim_start().starts_with('|')) {
+                let mut cells = table_cells(row).unwrap_or_default();
+                cells.resize(header.len(), String::new());
+                if chars(&cells) > left {
+                    cut = true;
+                    break;
+                }
+                left -= chars(&cells);
+                rows.push(cells);
+            }
+            out.push(Block::Table {
+                header,
+                align,
+                rows,
+            });
+            if cut {
+                mark_cut(&mut out);
+                break;
+            }
+            continue;
+        }
         let mut block = classify(line);
         let text = match &mut block {
             Block::Text(t) | Block::Heading(t) | Block::Item { text: t, .. } => t,
-            Block::Code(_) => unreachable!("classify makes no code block"),
+            Block::Code(_) | Block::Table { .. } => unreachable!("classify makes only text blocks"),
         };
         let (cut_text, cut) = cut_to(text, left);
         left = left.saturating_sub(cut_text.chars().count());
@@ -110,7 +159,33 @@ fn classify(line: &str) -> Block {
     Block::Text(trimmed.strip_prefix("> ").unwrap_or(trimmed).to_string())
 }
 
-// A table's rule row, such as |---|:--:|, or a horizontal rule, such as ---.
+// A table's rule row with `columns` cells, such as |---|:--:|, as where each column's cells sit.
+fn rule_row(line: &str, columns: usize) -> Option<Vec<Align>> {
+    let cells = table_cells(line)?;
+    if cells.len() != columns {
+        return None;
+    }
+    cells
+        .iter()
+        .map(|c| {
+            let dashes = c.trim_start_matches(':').trim_end_matches(':');
+            if dashes.is_empty() || !dashes.chars().all(|ch| ch == '-') {
+                return None;
+            }
+            Some(match (c.starts_with(':'), c.ends_with(':')) {
+                (true, true) => Align::Center,
+                (false, true) => Align::Right,
+                _ => Align::Left,
+            })
+        })
+        .collect()
+}
+
+fn chars(cells: &[String]) -> usize {
+    cells.iter().map(|c| c.chars().count()).sum()
+}
+
+// A horizontal rule, such as ---, or a table's rule row with no row above it.
 fn is_rule(line: &str) -> bool {
     line.contains(['-', '*'])
         && line
@@ -134,6 +209,11 @@ fn mark_cut(out: &mut [Block]) {
     match out.last_mut() {
         Some(Block::Text(text) | Block::Heading(text) | Block::Item { text, .. }) => text.push('…'),
         Some(Block::Code(lines)) => lines.push("…".to_string()),
+        Some(Block::Table { header, rows, .. }) => {
+            let mut row = vec![String::new(); header.len()];
+            row[0] = "…".to_string();
+            rows.push(row);
+        }
         None => {}
     }
 }
@@ -264,7 +344,11 @@ mod tests {
                 item("•", 0, "grows in"),
                 item("•", 1, "closes on leave"),
                 item("2.", 0, "Then **this**"),
-                Block::Text("| a | b |".into()),
+                Block::Table {
+                    header: vec!["a".into(), "b".into()],
+                    align: vec![Align::Left, Align::Center],
+                    rows: vec![],
+                },
                 Block::Code(vec!["let x = 1;".into()]),
                 Block::Text("quoted".into()),
             ]
@@ -273,6 +357,56 @@ mod tests {
             blocks("2026 was a year.", 500),
             vec![Block::Text("2026 was a year.".into())],
             "digits alone don't make a numbered item"
+        );
+    }
+
+    #[test]
+    fn a_table_keeps_its_rows_and_where_its_columns_sit() {
+        let message = "| Width | Count | Note |\n|---|--:|:-:|\n| 1024px | 7 | `a \\| b` |\n| 768px |\nAfter.";
+        let cells = |c: &[&str]| c.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            blocks(message, 500),
+            vec![
+                Block::Table {
+                    header: cells(&["Width", "Count", "Note"]),
+                    align: vec![Align::Left, Align::Right, Align::Center],
+                    rows: vec![
+                        cells(&["1024px", "7", "`a | b`"]),
+                        cells(&["768px", "", ""])
+                    ],
+                },
+                Block::Text("After.".into()),
+            ],
+            "a short row takes empty cells"
+        );
+        assert_eq!(
+            blocks("| a | b |\nnot a rule row", 500),
+            vec![
+                Block::Text("| a | b |".into()),
+                Block::Text("not a rule row".into())
+            ],
+            "a row with no rule row under it isn't a table"
+        );
+        assert_eq!(
+            blocks("| a | b |\n|---|", 500),
+            vec![Block::Text("| a | b |".into())],
+            "a rule row with too few cells isn't the table's"
+        );
+    }
+
+    #[test]
+    fn a_table_is_cut_after_its_last_whole_row() {
+        let message = "| a | b |\n|---|---|\n| one | two |\n| three | four |";
+        assert_eq!(
+            blocks(message, 12),
+            vec![Block::Table {
+                header: vec!["a".into(), "b".into()],
+                align: vec![Align::Left, Align::Left],
+                rows: vec![
+                    vec!["one".into(), "two".into()],
+                    vec!["…".into(), String::new()]
+                ],
+            }]
         );
     }
 

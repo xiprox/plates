@@ -18,7 +18,7 @@ use plates_core::{
 };
 
 use crate::{
-    markup::{self, Block},
+    markup::{self, Align, Block},
     motion::Rect,
     native,
     rack_view::RackView,
@@ -40,6 +40,8 @@ const BODY_MAX_H: f32 = 300.;
 /// The card shows Claude's last message whole, and lays it out on every frame it's open, so a
 /// message past this many characters is cut.
 const MESSAGE_CHARS: usize = 12_000;
+/// A table cell's height: a line of 12px text at 1.35 times its size, and 5px above and below.
+const TABLE_CELL_H: f32 = 26.;
 
 pub struct CardView {
     rack: WeakEntity<RackView>,
@@ -777,7 +779,8 @@ fn message_blocks(message: &str, color: u32) -> Div {
     div().flex().flex_col().gap(px(6.)).children(
         markup::blocks(message, MESSAGE_CHARS)
             .into_iter()
-            .map(|b| match b {
+            .enumerate()
+            .map(|(i, b)| match b {
                 Block::Text(line) => paragraph(&line, color),
                 Block::Heading(line) => {
                     paragraph_weighted(&line, color, FontWeight::SEMIBOLD).text_size(px(12.5))
@@ -803,7 +806,87 @@ fn message_blocks(message: &str, color: u32) -> Div {
                         .child(div().flex_1().min_w_0().child(paragraph(&text, color)))
                 }
                 Block::Code(lines) => code(&lines),
+                Block::Table {
+                    header,
+                    align,
+                    rows,
+                } => table(i, &header, &align, &rows, color).my(px(6.)),
             }),
+    )
+}
+
+// A table as a grid of one-line cells, each column as wide as its widest cell, and the grid
+// scrolls sideways when it's wider than the card, since cells wrapped to fit the card read as a
+// jumble (user, 2026-11-23). The scroll takes only sideways deltas, so a trackpad swipe or a
+// horizontal wheel moves the table while a vertical wheel scrolls the card past it. The header
+// is in semibold over a rule, with a fainter rule between rows, and a header of empty cells
+// draws nothing. `index`, the block's place in the message, keeps each table's scroll its own.
+fn table(
+    index: usize,
+    header: &[String],
+    align: &[Align],
+    rows: &[Vec<String>],
+    color: u32,
+) -> Div {
+    // Every cell is one line of the same height, so a column's cells line up with the other
+    // columns' without the grid knowing any row's height. A column's gap to the next is padding
+    // inside its cells, so the rules run on across the gap.
+    let last = header.len() - 1;
+    let cell = |text: &str, color: u32, weight: FontWeight, col: usize, rule: Option<f32>| {
+        let c = div()
+            .h(px(TABLE_CELL_H))
+            .flex()
+            .items_center()
+            .whitespace_nowrap()
+            .pr(px(if col < last { 16. } else { 0. }));
+        let c = match align[col] {
+            Align::Left => c,
+            Align::Center => c.justify_center(),
+            Align::Right => c.justify_end(),
+        };
+        let c = match rule {
+            Some(alpha) => c.border_t_1().border_color(white(alpha)),
+            None => c,
+        };
+        if text.is_empty() {
+            c
+        } else {
+            c.child(paragraph_weighted(text, color, weight))
+        }
+    };
+    let headed = header.iter().any(|c| !c.is_empty());
+    let columns = (0..header.len()).map(|col| {
+        let head = headed.then(|| cell(&header[col], TEXT2, FontWeight::SEMIBOLD, col, None));
+        let body = rows.iter().enumerate().map(|(i, row)| {
+            let rule = match (i, headed) {
+                (0, false) => None,
+                (0, true) => Some(0.14),
+                _ => Some(0.06),
+            };
+            cell(&row[col], color, FontWeight::NORMAL, col, rule)
+        });
+        let column = div().flex().flex_col().children(head).children(body);
+        // The last column takes the room the others leave, so a table narrower than the card
+        // draws its rules across the card.
+        if col < last {
+            column.flex_none()
+        } else {
+            column.flex_grow_1()
+        }
+    });
+    // A scroller has something to scroll only when its child reaches past it. GPUI lays out a div
+    // as a block unless told otherwise, and a block stretches its child to its own width, so the
+    // scroller is a flex row, in which the grid keeps its own width (record/areas/rack/log.md,
+    // 2026-11-23).
+    div().flex().child(
+        div()
+            .id(("card-table", index))
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .overflow_x_scroll()
+            .restrict_scroll_to_axis()
+            .child(div().flex().flex_none().min_w_full().children(columns)),
     )
 }
 
