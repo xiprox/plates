@@ -166,7 +166,8 @@ A session tile whose list has at least one task has a section under its 60px top
 
 - The bar counts the open tasks of each group that has any, in the groups' order, each after the group's mark: "2 on you", "1 doing", "2 waiting", "2 to do".
   The counts are 11.5px in the muted color, and "on you" takes the your-turn text color ([02-tiles](../rack/02-tiles.md#colors-and-type)).
-- Once no task is open, the bar counts the done and the dropped ones instead.
+- Once no task is open, the session's work has most likely finished, so the bar shows the done tasks' check and "All done", then the dropped tasks' dash and their count, such as "✓ All done – 3 dropped", in the same muted color (user, 2026-11-23).
+  A list whose tasks were all dropped shows only "3 dropped", and Claude adding or reopening a task brings the counts back.
 - A chevron at the bar's right end points down while the list is closed and up while it's open.
   The counts sit in a box that cuts off at its edge, so the chevron always shows, and with all four groups and a two-digit count, the last count gives way.
   Four single-digit counts fit whole (seen on macOS 26.5.2 in a capture of `plates showcase --tasks` with a `doing` task added for the check, 2026-11-20).
@@ -205,6 +206,7 @@ The time you last opened it is the session's `lastFocusedAt` in the app's file f
 
 The done and dropped tasks fold into one row, such as "1 done · 1 dropped".
 Clicking it unfolds them under it, and scrolls the list until the row sits at the list's top, or as far as the list scrolls.
+A list with no open task opens with them unfolded, since the fold would otherwise be its only row, repeating the bar (user, 2026-11-23).
 
 Every row has a fixed height, so Plates sizes the rack's window from the same numbers it draws at:
 

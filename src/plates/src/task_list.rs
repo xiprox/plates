@@ -302,37 +302,53 @@ fn task_row(task: &Task, seen: Option<u64>) -> Div {
         )
 }
 
-// The counts the bar shows, one per holder with open tasks, in the order the list shows them, or
-// once nothing is open, how many are done and how many dropped.
-fn counts(h: Holders) -> Vec<Div> {
-    let item = |holder: Holder| {
-        let color = if holder == Holder::You {
-            YOUR_TURN_TEXT
-        } else {
-            MUTED
-        };
-        div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .gap(px(4.))
-            .text_color(rgb(color))
-            .child(mark(holder))
-            .child(format!("{} {}", h.of(holder), counted(holder)))
-    };
-    let open: Vec<Div> = Holder::OPEN
+// What the bar says, each after its holder's mark: a count per holder with open tasks, in the
+// order the list shows them, such as "2 on you".
+fn bar_words(h: Holders) -> Vec<(Holder, String)> {
+    let count = |holder: Holder| (holder, format!("{} {}", h.of(holder), counted(holder)));
+    let open: Vec<_> = Holder::OPEN
         .into_iter()
         .filter(|&holder| h.of(holder) > 0)
-        .map(item)
+        .map(count)
         .collect();
     if !open.is_empty() {
         return open;
     }
-    [Holder::Done, Holder::Dropped]
+    // Once nothing is open, the session's work has most likely finished, so the done tasks show as
+    // "All done" rather than a count, and Claude adding or reopening a task brings the counts
+    // back (user, 2026-11-23). The dropped tasks keep their count, since that's work that didn't
+    // happen, and a list with only dropped tasks shows no "All done".
+    let done = (h.done > 0).then(|| (Holder::Done, "All done".to_string()));
+    let dropped = (h.dropped > 0).then(|| count(Holder::Dropped));
+    done.into_iter().chain(dropped).collect()
+}
+
+fn counts(h: Holders) -> Vec<Div> {
+    bar_words(h)
         .into_iter()
-        .filter(|&holder| h.of(holder) > 0)
-        .map(item)
+        .map(|(holder, words)| {
+            let color = if holder == Holder::You {
+                YOUR_TURN_TEXT
+            } else {
+                MUTED
+            };
+            div()
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .text_color(rgb(color))
+                .child(mark(holder))
+                .child(words)
+        })
         .collect()
+}
+
+/// Whether every task in the list is done or dropped.
+fn all_closed(list: &TaskList) -> bool {
+    Holder::OPEN
+        .into_iter()
+        .all(|holder| of(list, holder).next().is_none())
 }
 
 impl RackView {
@@ -413,7 +429,15 @@ impl RackView {
         }
         let closing = self.open_list.take();
         if closing.as_ref().is_none_or(|o| o.tile != id) {
-            self.open_list = Some(Open::new(id));
+            let mut open = Open::new(id);
+            // With no open task, the fold would be the list's only row, repeating the bar and
+            // costing a second click, so the list opens with its done and dropped tasks unfolded.
+            open.finished = self
+                .rack
+                .tile(id)
+                .and_then(|t| self.list_of(t))
+                .is_some_and(all_closed);
+            self.open_list = Some(open);
         }
         if closing.is_some() {
             self.closing_list = closing;
@@ -649,9 +673,10 @@ impl RackView {
 mod tests {
     // Only these, since the glob of GPUI's names above holds a `test` macro of its own.
     use super::{
-        FOLD_H, HEADING_H, LIST_PAD, STATUS_H, TASK_PAD, TITLE_H, list_height, status_line,
+        FOLD_H, HEADING_H, LIST_PAD, STATUS_H, TASK_PAD, TITLE_H, all_closed, bar_words,
+        list_height, status_line,
     };
-    use plates_core::tasks::{Change, State, TaskList};
+    use plates_core::tasks::{Change, Holder, State, TaskList};
     use std::time::UNIX_EPOCH;
 
     fn list(tasks: &[(&str, State, &str, &str)]) -> TaskList {
@@ -687,6 +712,37 @@ mod tests {
             list_height(&l, true),
             closed + 2. * TASK_PAD + TITLE_H,
             "unfolding adds the done task's row"
+        );
+    }
+
+    #[test]
+    fn a_list_with_nothing_open_says_all_done_and_keeps_the_dropped_count() {
+        let words = |tasks: &[(&str, State, &str, &str)]| {
+            let l = list(tasks);
+            (bar_words(l.holders().unwrap()), all_closed(&l))
+        };
+        let done = ("a", State::Done, "", "");
+        let dropped = ("b", State::Dropped, "", "");
+        let todo = ("c", State::Todo, "", "");
+        assert_eq!(
+            words(&[done, done, dropped]),
+            (
+                vec![
+                    (Holder::Done, "All done".to_string()),
+                    (Holder::Dropped, "1 dropped".to_string())
+                ],
+                true
+            )
+        );
+        assert_eq!(
+            words(&[dropped, dropped]),
+            (vec![(Holder::Dropped, "2 dropped".to_string())], true),
+            "with nothing done, there's no \"All done\""
+        );
+        assert_eq!(
+            words(&[done, todo]),
+            (vec![(Holder::Todo, "1 to do".to_string())], false),
+            "an open task brings the counts back"
         );
     }
 
