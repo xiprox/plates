@@ -79,3 +79,7 @@ cargo run --release -p plates
 `src/` holds the Cargo workspace: `plates` is the app, `plates-core` holds its rules for tiles, timers, and saving, `plates-hook` is the program Claude Code's hooks run, and `plates-tasks` is the task list server.
 `record/` holds the design docs, the plan, the logs, and the decisions, which Claude Code agents write as we build Plates.
 [record/index.md](record/index.md) maps them.
+
+## How you may use it
+
+Plates is under the [MIT License](LICENSE): you may use, copy, change, and share it, as long as you keep the license's notice.
