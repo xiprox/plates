@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/xiprox/plates/compare/v0.4.0...v0.5.0) (2026-11-24)
+
+
+### Features
+
+* connect Plates to Claude Code from its menus ([bcf4f34](https://github.com/xiprox/plates/commit/bcf4f344c56ad45b04ca491c09b4a06d856dce9e))
+
+
+### Bug Fixes
+
+* stop the rack showing through a menu on macOS ([589d473](https://github.com/xiprox/plates/commit/589d473a6dbf4f72420e5fcb8e2b91d0ff62c62f))
+
 ## [0.4.0](https://github.com/xiprox/plates/compare/v0.3.0...v0.4.0) (2026-11-23)
 
 
