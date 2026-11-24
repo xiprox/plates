@@ -15,6 +15,23 @@ The canvas is half a logical pixel narrower than read, and we haven't traced why
 
 **Affects:** [the plan's step 7](../product/plan.md#7-macos), which no longer waits on the picture.
 
+## 2026-11-24: On macOS, a menu stayed see-through, so menus open at full opacity there
+
+**Asked:** why do the rack's tiles show through the grip band's menu on macOS?
+
+**Expected:** nothing showing through, since the menu's panel is an opaque color, and the menu fades in by drawing at a rising opacity that reaches full at 120ms.
+
+**Found:** two of the user's screenshots showed a tile's title, its summary line, and its hourglass through the menu's panel and its hovered row (seen on macOS 26.5.2, 2026-11-24).
+In a showcase run that opened the menu by itself and logged each frame, the menu drew 15 frames, the last at 129ms at full opacity, and then no more.
+In a second run it drew a frame about every 8ms for 1.6s, all at full opacity after 120ms.
+We couldn't see which frame macOS put on screen, since `screencapture` needs a Screen Recording permission the Claude app doesn't have.
+So we took the see-through menu for a window that stopped drawing partway through the fade.
+With the fade gone on macOS, the menu was opaque (seen by the user on macOS 26.5.2, 2026-11-24), which fits that reading, though we still haven't seen the frames macOS showed.
+
+**Changed:** on macOS, every menu opens at full opacity, with no fade.
+
+**Affects:** [01-window](01-window.md#launching-and-quitting), which says each menu fades in.
+
 ## 2026-11-23: A GPUI div that scrolls sideways has to be a flex container, or its content never overflows it
 
 **Asked:** why didn't a table in the hover card scroll under a sideways trackpad swipe, when its text ran past the card's edge?

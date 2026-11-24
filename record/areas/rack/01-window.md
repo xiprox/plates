@@ -89,7 +89,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 - On macOS, opening `Plates.app` while it runs makes LaunchServices send the running Plates a reopen rather than start a second one, so the rack stays where it is, and the menu bar's "Show Plates" moves it to the middle (unverified, and opening an installed `Plates.app` while it runs would settle it).
   Plates registers no `on_reopen` callback, and GPUI would call one only while the app has no visible window, which never happens while the rack is open (read in gpui-pre-macos 0.3.12, `src/platform.rs`, `should_handle_reopen`).
 - A menu opens below and to the right of the pointer, to its left where the monitor's work area leaves no room on the right, and above the pointer where it leaves no room below (user, 2026-11-15).
-- Each menu fades in over 120ms.
+- Each menu fades in over 120ms on Windows, and opens at full opacity on macOS, where a menu stayed see-through ([rack log](log.md#2026-11-24-on-macos-a-menu-stayed-see-through-so-menus-open-at-full-opacity-there)).
   On Windows, the menu turns on DWM's shadow only once the fade ends, since DWM draws the shadow at full strength from the moment it's on (unverified; watching a menu open with its shadow on from the start would settle it).
 
 ## Tray and menu bar

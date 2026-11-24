@@ -527,7 +527,15 @@ impl Render for MenuView {
             MenuKind::Snoozed { .. } => self.snoozed_items(cx),
             MenuKind::Archived { .. } => self.archived_items(cx),
         };
-        let shown = (self.opened.elapsed().as_secs_f32() / FADE.as_secs_f32()).min(1.);
+        // On macOS, a menu that faded in stayed see-through, the tiles under it showing through
+        // its panel, which fits a window that stops drawing partway through the fade, as one
+        // showcase run did after 129ms. A menu that opened at full opacity was opaque, so menus
+        // open that way there (seen on macOS 26.5.2, 2026-11-24, record/areas/rack/log.md).
+        let shown = if cfg!(target_os = "macos") {
+            1.
+        } else {
+            (self.opened.elapsed().as_secs_f32() / FADE.as_secs_f32()).min(1.)
+        };
         div()
             .opacity(1. - (1. - shown).powi(3))
             .size_full()
