@@ -1278,8 +1278,10 @@ impl RackView {
         // The grip is a button too, as tall as the moon's badge, and clicking it opens the
         // rack's menu, which a right-click on the band opens as well (user, 2026-11-16).
         // Pressing it and moving drags the rack, as anywhere else on it does.
-        let rack_menu = || MenuKind::Rack {
+        let connection = self.connection;
+        let rack_menu = move || MenuKind::Rack {
             login: native::starts_at_login(),
+            connection,
         };
         let grip = div()
             .id("grip")

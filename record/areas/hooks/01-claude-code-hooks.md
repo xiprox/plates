@@ -195,6 +195,19 @@ It shows you the exact change, backs the file up beside itself, and writes the c
 `plates hooks uninstall` removes only the entries Plates added.
 `plates hooks install` also registers Plates' task server, and `plates hooks uninstall` removes it, as [01-task-list](../tasks/01-task-list.md#installing) describes.
 
+"Connect to Claude Code", in the rack's menu on its grip band and in the menu of Plates' icon in the tray or the menu bar, makes the same change (user, 2026-11-24):
+
+- The item is checked while Claude Code's settings hold every hook this copy of Plates writes, and none other of Plates', and register this copy's task server.
+- While the settings hold Plates' hooks or task server but not as this copy writes them, as after Plates moved or once a newer Plates listens to another event, the rack's menu shows "Update needed" in the your-turn text color where the check would be, and the tray's item reads "Connect to Claude Code (update needed)", still checked.
+- Clicking it opens a dialog that says what changes and asks first, in place of the install's question: Connect, Update, or Disconnect beside Cancel on macOS, and OK and Cancel on Windows.
+- The rack reads the settings every 5s, so the item also follows a change `plates hooks install` makes.
+
+Plates opened from Finder or at login may not have the folder `claude` is in on its `PATH`, so it runs the first `claude` it finds on `PATH`, then in `~/.local/bin`, then on macOS, where an interactive login shell finds it ([hooks log](log.md#2026-11-24-on-macos-a-login-shell-started-from-a-bare-path-didnt-find-claude-and-an-interactive-login-shell-did)).
+If it finds none, Plates still connects the hooks, the dialog that follows lists the `claude` command left to run, and the item reads "update needed" until it runs.
+
+On Windows, uninstalling Plates disconnects it first, from Velopack's uninstall hook, which Velopack runs only on Windows (read in velopack 1.2.161, `src/app.rs`, `on_before_uninstall_fast_callback`).
+On macOS, moving Plates to the Trash runs nothing of Plates', so its hooks stay in Claude Code's settings until you disconnect.
+
 Each hook is an async command hook, which Claude Code starts and doesn't wait for, and which runs `plates-hook` directly, with no shell.
 `plates-hook` reads the event from stdin and forwards it to the receiver on `127.0.0.1:47231`.
 While Plates is closed, `plates-hook` gives up after 300ms, in the background, and exits without an error.
@@ -259,6 +272,8 @@ If a client's walk is what makes the app build the tree, the app keeps it built 
 
 ## Left open
 
+- Whether Plates opened from Finder has `~/.local/bin` on its `PATH`, and whether the interactive shell finds `claude` from there, which the [hooks log](log.md#2026-11-24-on-macos-a-login-shell-started-from-a-bare-path-didnt-find-claude-and-an-interactive-login-shell-did) simulated from a terminal; clicking "Connect to Claude Code" in an installed `Plates.app` would settle it.
+- Whether `claude` is in `~/.local/bin` on Windows, and whether a dialog of Plates' comes to the front there; clicking the item in an installed Plates on Windows would settle both.
 - What Plates does when another program holds port 47231, which `receiver::PORT` sets.
 - Sessions that started while Plates was closed, whose tiles appear only at their next event, since Plates restores only the sessions it had.
 - Whether the app's file for a desktop session names the session a `/clear` starts as its `cliSessionId`. If it does, the new session's tile takes the ended tile's place, as [Sessions the app moves](#sessions-the-app-moves) says, rather than an ended tile staying beside a new one, as [Events](#events) says; typing `/clear` in a desktop session and reading the app's file for it would settle it.

@@ -14,26 +14,27 @@
 use std::{
     fs,
     io::{self, BufRead, Write},
-    path::{Path, PathBuf},
-    process::Command,
+    path::PathBuf,
     sync::mpsc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::SystemTime,
 };
 
 use plates_core::{
     Rack, hooks,
-    install::{self, InstallError, SERVER, ServerStep},
+    install::SERVER,
     receiver::{self, PORT, Received, Receiver},
 };
-use serde_json::{Value, json};
+use serde_json::Value;
+
+use crate::connect::{self, Change, Output, Plan};
 
 /// Runs the command `args` names, or returns the usage when it names none.
 pub fn run(args: &[String]) -> Result<(), String> {
     let flag = |name: &str| args.iter().any(|a| a == name);
     match args.first().map(String::as_str) {
         Some("hooks") => match args.get(1).map(String::as_str) {
-            Some("install") => change_hooks(Change::Install, flag("--yes")),
-            Some("uninstall") => change_hooks(Change::Uninstall, flag("--yes")),
+            Some("install") => change_hooks(Change::Connect, flag("--yes")),
+            Some("uninstall") => change_hooks(Change::Disconnect, flag("--yes")),
             _ => Err(usage()),
         },
         Some("showcase") => {
@@ -62,116 +63,46 @@ fn usage() -> String {
         .to_string()
 }
 
-/// The program named `name` beside this one: `plates-hook`, which each hook runs, or
-/// `plates-tasks`, the task server.
-fn beside(name: &str) -> Result<PathBuf, String> {
-    let exe =
-        std::env::current_exe().map_err(|e| format!("Couldn't find Plates' own path: {e}"))?;
-    let program = exe.with_file_name(format!("{name}{}", std::env::consts::EXE_SUFFIX));
-    if program.exists() {
-        Ok(program)
-    } else {
-        Err(format!(
-            "{} isn't there. Build it with `cargo build -p {name}` first.",
-            program.display()
-        ))
-    }
-}
-
-fn home() -> Result<PathBuf, String> {
-    dirs::home_dir().ok_or_else(|| "Couldn't find your home folder.".to_string())
-}
-
-/// Claude Code's user settings file, `~/.claude/settings.json`.
-fn settings_path() -> Result<PathBuf, String> {
-    Ok(home()?.join(".claude").join("settings.json"))
-}
-
-/// `.claude.json`, which holds the MCP servers registered for every project: in the folder
-/// `CLAUDE_CONFIG_DIR` names when it's set, as `claude mcp add` writes it, and in your home folder
-/// otherwise (measured with Claude Code 2.1.284 on Windows 11 25H2, record/areas/tasks/log.md).
-fn claude_json_path() -> Result<PathBuf, String> {
-    match std::env::var_os("CLAUDE_CONFIG_DIR").filter(|dir| !dir.is_empty()) {
-        Some(dir) => Ok(PathBuf::from(dir).join(".claude.json")),
-        None => Ok(home()?.join(".claude.json")),
-    }
-}
-
-/// A JSON file, or an empty object when there's none.
-fn read_json(path: &Path) -> Result<Value, String> {
-    match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice::<Value>(&bytes)
-            .map_err(|e| format!("{} isn't JSON: {e}", path.display())),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(json!({})),
-        Err(e) => Err(format!("Couldn't read {}: {e}", path.display())),
-    }
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum Change {
-    Install,
-    Uninstall,
-}
-
 // Shows you the change to Claude Code's settings and the `claude mcp` commands for the task
-// server, backs the settings file up beside itself, and makes the change only once you confirm,
-// as record/areas/hooks/01-claude-code-hooks.md asks.
+// server, and makes the change only once you confirm, as record/areas/hooks/01-claude-code-hooks.md
+// asks.
 fn change_hooks(change: Change, yes: bool) -> Result<(), String> {
-    let path = settings_path()?;
-    let current = read_json(&path)?;
-    let describe = |e: InstallError| format!("{}: {e}", path.display());
-    let (next, server) = match change {
-        Change::Install => (
-            install::with(&current, &beside("plates-hook")?).map_err(describe)?,
-            Some(beside("plates-tasks")?),
-        ),
-        Change::Uninstall => (install::without(&current).map_err(describe)?, None),
-    };
-    let claude_json = claude_json_path()?;
-    let step = install::server_step(&read_json(&claude_json)?, server.as_deref())
-        .map_err(|e| format!("{}: {e}", claude_json.display()))?;
-    let commands = server_commands(step, server.as_deref());
-    if next == current && commands.is_empty() {
+    let plan = Plan::new(change)?;
+    if plan.is_empty() {
         let (hooks, registers) = match change {
-            Change::Install => ("has", "registers"),
-            Change::Uninstall => ("has none of", "registers none of"),
+            Change::Connect => ("has", "registers"),
+            Change::Disconnect => ("has none of", "registers none of"),
         };
         println!(
             "{} already {hooks} Plates' hooks, and {} already {registers} Plates' task server, so nothing changes.",
-            path.display(),
-            claude_json.display(),
+            plan.settings_path.display(),
+            plan.claude_json_path.display(),
         );
         return Ok(());
     }
-    if next != current {
-        match change {
-            Change::Install => {
-                println!(
-                    "This adds these hooks to {}, and leaves every other setting and hook as it is:\n",
-                    path.display()
-                );
-                let ours = Value::Object(install::ours(&beside("plates-hook")?));
-                println!(
-                    "{}\n",
-                    serde_json::to_string_pretty(&ours).unwrap_or_default()
-                );
-            }
-            Change::Uninstall => println!(
+    if plan.changes_settings() {
+        match &plan.hooks {
+            Some(hooks) => println!(
+                "This adds these hooks to {}, and leaves every other setting and hook as it is:\n\n{}\n",
+                plan.settings_path.display(),
+                serde_json::to_string_pretty(hooks).unwrap_or_default()
+            ),
+            None => println!(
                 "This takes Plates' hooks out of {}, and leaves every other setting and hook as it is.\n",
-                path.display()
+                plan.settings_path.display()
             ),
         }
     }
-    let (verb, preposition, done) = match change {
-        Change::Install => ("registers", "for", "registered"),
-        Change::Uninstall => ("removes", "from", "removed"),
+    let (verb, preposition) = match change {
+        Change::Connect => ("registers", "for"),
+        Change::Disconnect => ("removes", "from"),
     };
-    if !commands.is_empty() {
+    if !plan.commands.is_empty() {
         println!(
             "This {verb} Plates' task server, `{SERVER}`, {preposition} every project, with these commands:\n"
         );
-        for args in &commands {
-            println!("  {}", shown(args));
+        for args in &plan.commands {
+            println!("  {}", connect::shown(args));
         }
         println!();
     }
@@ -179,79 +110,7 @@ fn change_hooks(change: Change, yes: bool) -> Result<(), String> {
         println!("Nothing was changed.");
         return Ok(());
     }
-    if next != current {
-        if path.exists() {
-            let backup = path.with_extension(format!("json.plates-backup-{}", unix_secs()));
-            fs::copy(&path, &backup)
-                .map_err(|e| format!("Couldn't back up {}: {e}", path.display()))?;
-            println!("Backed up the old file to {}", backup.display());
-        }
-        write_json(&path, &next)?;
-        println!("Wrote {}", path.display());
-    }
-    for (i, args) in commands.iter().enumerate() {
-        claude(args).map_err(|e| {
-            let rest: Vec<String> = commands[i..].iter().map(|a| shown(a)).collect();
-            format!(
-                "{e}\nPlates' task server isn't {done}. To finish, run these in a terminal where `claude` works:\n\n  {}",
-                rest.join("\n  ")
-            )
-        })?;
-    }
-    Ok(())
-}
-
-/// The arguments of the `claude` commands that take `step`, such as `mcp add --scope user plates
-/// -- <program>`. Adding a server that's already registered fails, as does removing one that
-/// isn't, so a server registered with another program is removed first (measured with Claude Code
-/// 2.1.284 on Windows 11 25H2, record/areas/tasks/log.md).
-fn server_commands(step: ServerStep, program: Option<&Path>) -> Vec<Vec<String>> {
-    let remove = || {
-        ["mcp", "remove", "--scope", "user", SERVER]
-            .map(String::from)
-            .to_vec()
-    };
-    let add = |program: &Path| {
-        let mut args = ["mcp", "add", "--scope", "user", SERVER, "--"]
-            .map(String::from)
-            .to_vec();
-        args.push(program.to_string_lossy().into_owned());
-        args
-    };
-    match (step, program) {
-        (ServerStep::Add, Some(p)) => vec![add(p)],
-        (ServerStep::Replace, Some(p)) => vec![remove(), add(p)],
-        (ServerStep::Remove, _) => vec![remove()],
-        _ => Vec::new(),
-    }
-}
-
-/// A `claude` command as you'd type it, with any argument that holds a space in quotes.
-fn shown(args: &[String]) -> String {
-    let quoted = args.iter().map(|a| {
-        if a.contains(' ') {
-            format!("\"{a}\"")
-        } else {
-            a.clone()
-        }
-    });
-    std::iter::once("claude".to_string())
-        .chain(quoted)
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// Runs Claude Code's `claude` command, which prints what it changed.
-fn claude(args: &[String]) -> Result<(), String> {
-    let status = Command::new("claude")
-        .args(args)
-        .status()
-        .map_err(|e| format!("Couldn't run Claude Code's `claude` command: {e}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("`{}` failed with {status}.", shown(args)))
-    }
+    plan.apply(Output::Terminal, |line| println!("{line}"))
 }
 
 fn confirm(question: &str) -> Result<bool, String> {
@@ -263,22 +122,6 @@ fn confirm(question: &str) -> Result<bool, String> {
         .read_line(&mut answer)
         .map_err(|e| e.to_string())?;
     Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
-}
-
-fn write_json(path: &Path, value: &Value) -> Result<(), String> {
-    let mut text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
-    text.push('\n');
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    fs::write(path, text).map_err(|e| format!("Couldn't write {}: {e}", path.display()))
-}
-
-fn unix_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
 }
 
 // Runs the receiver and prints each event with what it did to the session's tile, which is how

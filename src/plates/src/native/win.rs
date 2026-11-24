@@ -58,10 +58,12 @@ use windows::Win32::{
             ASFW_ANY, AllowSetForegroundWindow, CreateWindowExW, DispatchMessageW,
             EVENT_SYSTEM_FOREGROUND, GW_HWNDPREV, GWL_EXSTYLE, GetClassNameW, GetClientRect,
             GetCursorPos, GetForegroundWindow, GetMessageW, GetWindow, GetWindowLongPtrW,
-            GetWindowRect, GetWindowThreadProcessId, HWND_MESSAGE, HWND_TOPMOST, IsWindowVisible,
-            MA_NOACTIVATE, MSG, RI_KEY_BREAK, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-            SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
-            SetWindowLongPtrW, SetWindowPos, WINDOW_EX_STYLE, WINDOW_STYLE, WINEVENT_OUTOFCONTEXT,
+            GetWindowRect, GetWindowThreadProcessId, HWND_MESSAGE, HWND_TOPMOST, IDOK,
+            IsWindowVisible, MA_NOACTIVATE, MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK,
+            MB_OKCANCEL, MB_SETFOREGROUND, MB_TOPMOST, MESSAGEBOX_STYLE, MSG, MessageBoxW,
+            RI_KEY_BREAK, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+            SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
+            SetWindowPos, WINDOW_EX_STYLE, WINDOW_STYLE, WINEVENT_OUTOFCONTEXT,
             WINEVENT_SKIPOWNPROCESS, WM_HOTKEY, WM_INPUT, WM_MOUSEACTIVATE, WM_NCCALCSIZE,
             WS_EX_NOACTIVATE, WS_EX_TOPMOST,
         },
@@ -728,6 +730,46 @@ pub fn open_url(url: &str) {
     if let Err(e) = spawned {
         eprintln!("Couldn't start a thread to open a link: {e}");
     }
+}
+
+/// Asks `question` in a dialog, with `explanation` under it, and says whether you chose OK, which
+/// stands for `action`, rather than Cancel.
+pub async fn confirm(question: &str, explanation: &str, _action: &str) -> bool {
+    message_box(question, explanation, MB_OKCANCEL | MB_ICONQUESTION).await == IDOK.0
+}
+
+/// Tells you `message` in a dialog, with `explanation` under it.
+pub async fn alert(message: &str, explanation: &str) {
+    message_box(message, explanation, MB_OK | MB_ICONINFORMATION).await;
+}
+
+// A message box runs a message loop of its own, which on the rack's thread could hand GPUI a task
+// while GPUI's state is held, as `ShellExecuteW`'s did in `open_url`, so the box runs on a thread
+// with no windows. Its buttons' labels are Windows' own, such as OK and Cancel.
+async fn message_box(message: &str, explanation: &str, style: MESSAGEBOX_STYLE) -> i32 {
+    let text: Vec<u16> = format!("{message}\n\n{explanation}")
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    let (tx, rx) = async_channel::bounded(1);
+    let spawned = std::thread::Builder::new()
+        .name("plates-dialog".into())
+        .spawn(move || {
+            let answer = unsafe {
+                MessageBoxW(
+                    None,
+                    PCWSTR(text.as_ptr()),
+                    w!("Plates"),
+                    style | MB_SETFOREGROUND | MB_TOPMOST,
+                )
+            };
+            let _ = tx.send_blocking(answer.0);
+        });
+    if let Err(e) = spawned {
+        eprintln!("Couldn't start a thread for a dialog: {e}");
+        return 0;
+    }
+    rx.recv().await.unwrap_or(0)
 }
 
 /// Plays a WAV file held in memory, returns while it plays, and says whether it could. With

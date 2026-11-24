@@ -67,7 +67,8 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 - On Windows, starting Plates from Explorer or a shortcut opens no console window, because `tools/build-release.ps1` gives `plates.exe` a console allocation policy of `detached` ([product log](../product/log.md#2026-11-15-the-detached-console-policy-keeps-plates-console-window-away-when-explorer-starts-it)).
   The policy needs Windows 11 24H2 (build 26100) or later (documented, [console allocation policy](https://learn.microsoft.com/en-us/windows/console/console-allocation-policy), as of 2026-11-15).
   That an earlier Windows ignores it and opens the console window is unverified, and starting the release build on Windows 11 23H2 would settle it.
-- Clicking the grip, or right-clicking the grip band at the rack's top, opens a menu with "Start at login" and "Quit Plates", in a popup at the pointer like the timer's menu (user, 2026-11-15 and 2026-11-16).
+- Clicking the grip, or right-clicking the grip band at the rack's top, opens a menu with "Connect to Claude Code", "Start at login", and "Quit Plates" (user, 2026-11-15, 2026-11-16, and 2026-11-24).
+  The menu is 284px wide, for "Connect to Claude Code" and what follows it, so it opens as the moon's list does, 4px under the band with its right edge on the tiles' right edge, rather than at the pointer, from where it reached past the rack's right edge.
   The grip is a button as tall as the moon's badge, and a second click on it closes the menu, as on the moon.
   Pressing it and moving drags the rack, as anywhere else on the rack does.
   While the rack is docked, you click the strip to slide the rack out, and then right-click the grip band.
@@ -94,7 +95,8 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 ## Tray and menu bar
 
 - Plates puts its icon in Windows' notification area and in macOS' menu bar, since the rack has no taskbar or Dock entry, and a rack out of sight has no other way back (user, 2026-11-16).
-- The icon's menu holds "Show Plates", "Start at login", and "Quit Plates".
+- The icon's menu holds "Show Plates", "Connect to Claude Code", "Start at login", and "Quit Plates".
+  [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#installing) says what "Connect to Claude Code" does.
   "Start at login" is the same setting as the grip band's, and changing it in either menu changes the check mark in both.
 - "Show Plates" takes the rack out of any dock and puts it at the middle of the primary monitor's work area, since a rack out of sight can be under another window, docked at the edge of a monitor you're not looking at, or off every monitor.
 - On Windows, clicking the icon does what "Show Plates" does, and right-clicking it opens the menu, as Windows' own tray icons do.

@@ -2,6 +2,21 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-24: On macOS, a login shell started from a bare `PATH` didn't find `claude`, and an interactive login shell did
+
+**Asked:** can Plates, opened from Finder or at login rather than from a terminal, find Claude Code's `claude` command, which registers Plates' task server?
+
+**Expected:** not on its own `PATH`, since an app opened from Finder doesn't get the folders a shell's startup files add (unverified), and maybe through a login shell.
+
+**Found:** with only `/usr/bin:/bin:/usr/sbin:/sbin` on `PATH`, `/bin/zsh -lc 'command -v claude'` printed nothing, and `/bin/zsh -ilc 'command -v claude'` printed `~/.local/bin/claude` (measured on macOS 26.5.2, 2026-11-24).
+The folder joins `PATH` in `~/.zshrc`, which zsh reads only when it's interactive.
+`plates hooks install --yes`, run with that `PATH` and a throwaway home folder whose `.zshrc` adds the same folder, found `claude` through the interactive shell, registered the task server, and took 1.3s.
+We simulated Finder's `PATH` from a terminal, and haven't run an installed `Plates.app`.
+
+**Changed:** Plates runs the first `claude` it finds on `PATH`, then in `~/.local/bin`, then on macOS, where `$SHELL -ilc 'command -v claude'` finds it, giving the shell 5s.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#installing).
+
 ## 2026-11-23: On macOS, a background command's notification that arrives after its turn has ended fires `UserPromptSubmit`
 
 **Asked:** when a background command exits after its session's turn has ended, does the turn its notification starts fire `UserPromptSubmit`?

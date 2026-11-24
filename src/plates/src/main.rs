@@ -8,6 +8,7 @@ mod app;
 mod assets;
 mod card;
 mod cli;
+mod connect;
 mod hold;
 mod markup;
 mod menu;
@@ -35,7 +36,13 @@ use std::{
 fn main() -> ExitCode {
     // Velopack's install, update, and uninstall hooks run here and may exit the process, so this
     // comes before anything else.
-    velopack::VelopackApp::build().run();
+    let mut velopack = velopack::VelopackApp::build();
+    #[cfg(windows)]
+    {
+        velopack =
+            velopack.on_before_uninstall_fast_callback(|_| connect::disconnect_for_uninstall());
+    }
+    velopack.run();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {

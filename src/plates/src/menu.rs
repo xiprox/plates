@@ -6,6 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use gpui_kit::*;
 use plates_core::{
     Tile, TileId,
+    install::Connection,
     timer::{MENU_HOURS, MENU_MINUTES, SNOOZE_HOURS},
 };
 
@@ -13,13 +14,17 @@ use crate::{
     motion::Rect,
     native,
     rack_view::RackView,
-    view::{BORDER, MUTED, TEXT, TILE, marker, white},
+    view::{BORDER, MUTED, TEXT, TILE, YOUR_TURN_TEXT, marker, white},
 };
 
 pub const MENU_W: f32 = 156.;
 
 /// The lists of snoozed and archived tiles are wider than the other menus, for their titles.
 const LIST_W: f32 = 260.;
+
+/// The rack's own menu is wider still, for "Connect to Claude Code" and "Update needed" side by
+/// side, which take 245px with the gap between them, and it still fits inside the 304px rack.
+const RACK_MENU_W: f32 = 284.;
 
 /// How many rows the archive's list shows before it scrolls.
 const ARCHIVE_ROWS: usize = 8;
@@ -33,8 +38,12 @@ pub enum MenuKind {
     /// The timer lengths, from a tile's hourglass.
     Timer(TileId),
     /// Plates itself, from the grip band at the rack's top, with whether Plates starts at login,
-    /// which the rack reads from the registry as it opens the menu.
-    Rack { login: bool },
+    /// which the rack reads from the registry as it opens the menu, and whether Plates is
+    /// connected to Claude Code, as the rack last read it.
+    Rack {
+        login: bool,
+        connection: Option<Connection>,
+    },
     /// A finished session's tile, from its text: whether to mark its turn read or unread, which
     /// the rack works out as it opens the menu, since the menu's first frame is drawn while the
     /// rack is still handling the click. (read in gpui-pre 0.3.12, src/app.rs, App::open_window)
@@ -52,8 +61,8 @@ impl MenuKind {
             // A 6px pad top and bottom, a 23px heading, six 32px rows to remind you in, a 27px
             // heading, three 32px rows to snooze for, and a 1px border.
             MenuKind::Timer(_) => 352.,
-            // A 6px pad top and bottom, two 32px rows, and a 1px border.
-            MenuKind::Rack { .. } => 78.,
+            // A 6px pad top and bottom, three 32px rows, and a 1px border.
+            MenuKind::Rack { .. } => 109.,
             // A 6px pad top and bottom, one 32px row, and a 1px border.
             MenuKind::Tile(..) => 46.,
             // A 6px pad top and bottom, a 23px heading, a 32px row per tile, and a 1px border.
@@ -66,15 +75,20 @@ impl MenuKind {
 
     pub fn width(self) -> f32 {
         match self {
+            MenuKind::Rack { .. } => RACK_MENU_W,
             MenuKind::Snoozed { .. } | MenuKind::Archived { .. } => LIST_W,
             _ => MENU_W,
         }
     }
 
-    /// Whether the menu is one of the grip band's lists, which opens under its button at the
-    /// rack's right rather than at the pointer.
-    pub fn is_band_list(self) -> bool {
-        matches!(self, MenuKind::Snoozed { .. } | MenuKind::Archived { .. })
+    /// Whether the menu opens from the grip band, under the band at the rack's right, rather
+    /// than at the pointer: the snoozed and archived lists, and the rack's own menu, which is as
+    /// wide as they are and would otherwise reach past the rack's right edge from the grip.
+    pub fn opens_under_band(self) -> bool {
+        matches!(
+            self,
+            MenuKind::Rack { .. } | MenuKind::Snoozed { .. } | MenuKind::Archived { .. }
+        )
     }
 }
 
@@ -132,11 +146,13 @@ impl MenuView {
             .flex()
             .items_center()
             .justify_between()
+            .gap(px(12.))
             .rounded(px(6.))
             .text_size(px(13.))
             .text_color(rgb(TEXT))
             .hover(|s| s.bg(rgb(BORDER)))
-            .child(label.to_string())
+            // A label too long for its row ends in an ellipsis, so what follows it stays whole.
+            .child(div().min_w_0().truncate().child(label.to_string()))
     }
 
     // A heading over a menu's rows, 23px tall, or 27px with `top` above it to part it from the
@@ -385,18 +401,49 @@ impl MenuView {
         })
     }
 
-    fn rack_items(&self, login: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        // Plates starts at login only once you turn it on, here or in the tray's menu, since it
-        // adds Plates to what Windows runs when you sign in (user, 2026-11-16).
-        let check = login.then(|| {
+    fn rack_items(
+        &self,
+        login: bool,
+        connection: Option<Connection>,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let check = || {
             svg()
+                .flex_none()
                 .path("plates/check.svg")
                 .size(px(16.))
                 .text_color(rgb(TEXT))
-        });
+                .into_any_element()
+        };
+        // A connection another copy or version of Plates left says so where the check would be,
+        // as the tray's item does in its text.
+        let connected = match connection {
+            Some(Connection::On) => Some(check()),
+            Some(Connection::Stale) => Some(
+                div()
+                    .flex_none()
+                    .text_size(px(11.5))
+                    .text_color(rgb(YOUR_TURN_TEXT))
+                    .child("Update needed")
+                    .into_any_element(),
+            ),
+            Some(Connection::Off) | None => None,
+        };
+        // Plates starts at login only once you turn it on, here or in the tray's menu, since it
+        // adds Plates to what Windows runs when you sign in (user, 2026-11-16).
+        let login_check = login.then(check);
         vec![
+            Self::row("connect", "Connect to Claude Code")
+                .children(connected)
+                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.rack
+                        .update(cx, |rack, cx| rack.connect_from_menu(cx))
+                        .ok();
+                    this.close(window, cx);
+                }))
+                .into_any_element(),
             Self::row("login", "Start at login")
-                .children(check)
+                .children(login_check)
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     if !native::set_start_at_login(!login) {
                         eprintln!("Couldn't change whether Plates starts at login.");
@@ -475,7 +522,7 @@ impl Render for MenuView {
 
         let items = match self.kind {
             MenuKind::Timer(tile) => self.timer_items(tile, cx),
-            MenuKind::Rack { login } => self.rack_items(login, cx),
+            MenuKind::Rack { login, connection } => self.rack_items(login, connection, cx),
             MenuKind::Tile(tile, read) => self.tile_items(tile, read, cx),
             MenuKind::Snoozed { .. } => self.snoozed_items(cx),
             MenuKind::Archived { .. } => self.archived_items(cx),

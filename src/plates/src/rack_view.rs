@@ -14,6 +14,7 @@ use gpui_kit::*;
 use plates_core::{
     Rack, Removed, SessionEvent, SessionState, Tile, TileId, desktop,
     hooks::{self, HookMessage},
+    install::Connection,
     store,
     tasks::{self, TaskList},
     timer::{DEFAULT_MINUTES, MENU_HOURS, MENU_MINUTES, Timer},
@@ -21,6 +22,7 @@ use plates_core::{
 
 use crate::{
     card::{CARD_DELAY, CardView},
+    connect::{self, Change, Output, Plan},
     hold::Hold,
     menu::{MenuKind, MenuView},
     motion::{self, Ease, Rect, Side, Tween},
@@ -213,6 +215,9 @@ pub struct RackView {
     applied: Option<(i32, i32, i32, i32)>,
     /// Plates' icon in the tray or the menu bar, or `None` when the OS wouldn't take it.
     tray: Option<Tray>,
+    /// Whether Plates is connected to Claude Code, as the rack last read it, or `None` before it
+    /// has, or when it can't tell.
+    pub(crate) connection: Option<Connection>,
     /// The tile whose hourglass you just clicked to start a timer, whose fill stays bright until
     /// the pointer leaves it.
     pub(crate) hourglass_held: Option<TileId>,
@@ -409,12 +414,38 @@ impl RackView {
             .flatten();
         let tray_commands = cx.spawn(async move |this, cx| {
             while let Ok(command) = commands.recv().await {
-                if this
+                // The connection's dialogs run here, outside an update, since a dialog's own
+                // event loop could otherwise hand GPUI work while its state is held.
+                if let tray::Command::Connect = command {
+                    change_connection(cx).await;
+                    let connection = connection(cx).await;
+                    if this
+                        .update(cx, |this, _| this.show_connection(connection))
+                        .is_err()
+                    {
+                        break;
+                    }
+                } else if this
                     .update(cx, |this, cx| this.tray_command(command, cx))
                     .is_err()
                 {
                     break;
                 }
+            }
+        });
+        // Whether Plates is connected can change outside Plates, as when you run `plates hooks
+        // install`, so the rack reads it again every 5s, which takes about a millisecond away from
+        // the main thread.
+        let connection_watch = cx.spawn(async move |this, cx| {
+            loop {
+                let connection = connection(cx).await;
+                if this
+                    .update(cx, |this, _| this.show_connection(connection))
+                    .is_err()
+                {
+                    break;
+                }
+                cx.background_executor().timer(Duration::from_secs(5)).await;
             }
         });
 
@@ -462,6 +493,7 @@ impl RackView {
             last_frame: None,
             applied: None,
             tray,
+            connection: None,
             hourglass_held: None,
             swipe: None,
             forced: None,
@@ -484,6 +516,7 @@ impl RackView {
                 raised,
                 on_top,
                 tray_commands,
+                connection_watch,
             ],
         };
         view.rack.tick(SystemTime::now());
@@ -1130,7 +1163,27 @@ impl RackView {
                 self.login_changed();
             }
             tray::Command::Quit => self.quit(cx),
+            // The loop that hands the rack the tray's commands answers this one itself.
+            tray::Command::Connect => {}
         }
+    }
+
+    fn show_connection(&mut self, connection: Option<Connection>) {
+        self.connection = connection;
+        if let Some(tray) = &self.tray {
+            tray.show_connection(connection);
+        }
+    }
+
+    /// What "Connect to Claude Code" in the grip band's menu does, the same as the tray's item.
+    pub(crate) fn connect_from_menu(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            change_connection(cx).await;
+            let connection = connection(cx).await;
+            this.update(cx, |this, _| this.show_connection(connection))
+                .ok();
+        })
+        .detach();
     }
 
     /// Brings the tray's menu up to date after either menu changed whether Plates starts at login.
@@ -1525,7 +1578,9 @@ impl RackView {
     // It opens below and to the right of the pointer, to the left near the screen's right edge,
     // and above it near the screen's bottom (user, 2026-11-15). The list of snoozed tiles opens
     // from the moon at the rack's right edge, so it opens leftward, its right edge on the tiles'
-    // right edge, within the rack's width (user, 2026-11-16).
+    // right edge, within the rack's width (user, 2026-11-16). The archive's list and the rack's own
+    // menu open there too, since at 284px the rack's menu, opened from the grip at the band's
+    // middle, reached past the rack's right edge.
     pub(crate) fn open_menu(&mut self, kind: MenuKind, at: Point<Pixels>, cx: &mut Context<Self>) {
         self.close_menu(cx);
         self.close_card(cx);
@@ -1540,7 +1595,7 @@ impl RackView {
         let menu_w = kind.width();
         let (w, h) = (menu_w as f64 * s, menu_h as f64 * s);
         let right = pointer.0 - 12. * s;
-        let x = if kind.is_band_list() {
+        let x = if kind.opens_under_band() {
             // Its right edge lines up with the moon's badge, inside the panel's 1px border.
             (r.right - f64::from(1. + MOON_INSET) * s - w)
                 .clamp(area.left, (area.right - w).max(area.left))
@@ -1551,11 +1606,10 @@ impl RackView {
         };
         // The list of snoozed tiles opens 4px under the moon's badge, below the panel's 1px border,
         // so the list leaves the badge whole (user, 2026-11-16).
-        let below = match kind {
-            MenuKind::Snoozed { .. } | MenuKind::Archived { .. } => {
-                r.top + f64::from(1. + MOON_INSET + MOON_H + 4.) * s
-            }
-            _ => pointer.1 + 6. * s,
+        let below = if kind.opens_under_band() {
+            r.top + f64::from(1. + MOON_INSET + MOON_H + 4.) * s
+        } else {
+            pointer.1 + 6. * s
         };
         let y = if below + h <= area.bottom {
             below
@@ -1931,5 +1985,98 @@ impl RackView {
         self.field
             .as_ref()
             .is_some_and(|f| f.target == FieldFor::New)
+    }
+}
+
+/// Whether Plates is connected to Claude Code, read away from the main thread, or `None` when
+/// Plates can't tell, as when a settings file isn't JSON.
+async fn connection(cx: &mut AsyncApp) -> Option<Connection> {
+    cx.background_executor()
+        .spawn(async { connect::status().ok() })
+        .await
+}
+
+/// What the tray's "Connect to Claude Code" does: asks before it connects Plates, updates a
+/// connection another copy or version of Plates left, or disconnects it, then makes the change
+/// away from the main thread, since finding and running `claude` can take seconds.
+async fn change_connection(cx: &mut AsyncApp) {
+    let state = connection(cx).await;
+    let connected = state == Some(Connection::On);
+    let stale = state == Some(Connection::Stale);
+    let change = if connected {
+        Change::Disconnect
+    } else {
+        Change::Connect
+    };
+    let planned = cx
+        .background_executor()
+        .spawn(async move { Plan::new(change) })
+        .await;
+    let failed = match change {
+        Change::Connect => "Plates couldn't connect to Claude Code",
+        Change::Disconnect => "Plates couldn't disconnect from Claude Code",
+    };
+    let plan = match planned {
+        Ok(plan) => plan,
+        Err(e) => {
+            native::alert(failed, &e).await;
+            return;
+        }
+    };
+    if plan.is_empty() {
+        return;
+    }
+    let settings = plan.settings_path.display().to_string();
+    let mut steps = Vec::new();
+    if plan.changes_settings() {
+        steps.push(match (change, stale) {
+            (Change::Disconnect, _) => {
+                format!("takes its hooks out of {settings}, after backing the file up")
+            }
+            (Change::Connect, true) => {
+                format!("replaces its hooks in {settings}, after backing the file up")
+            }
+            (Change::Connect, false) => {
+                format!("adds its hooks to {settings}, after backing the file up")
+            }
+        });
+    }
+    if !plan.commands.is_empty() {
+        steps.push(match change {
+            Change::Disconnect => "removes its task list server from Claude Code".to_string(),
+            Change::Connect => "registers its task list server with Claude Code".to_string(),
+        });
+    }
+    let steps = steps.join(", and ");
+    let (question, explanation, action) = match (change, stale) {
+        (Change::Disconnect, _) => (
+            "Disconnect Plates from Claude Code?",
+            format!("Plates {steps}. Claude Code sessions you start after this won't get a tile."),
+            "Disconnect",
+        ),
+        (Change::Connect, true) => (
+            "Update Plates' connection to Claude Code?",
+            format!(
+                "Claude Code's settings hold hooks or a task list server from another copy or version of Plates, so Plates {steps}."
+            ),
+            "Update",
+        ),
+        (Change::Connect, false) => (
+            "Connect Plates to Claude Code?",
+            format!(
+                "Plates {steps}. Claude Code sessions you start after this get a tile on the rack."
+            ),
+            "Connect",
+        ),
+    };
+    if !native::confirm(question, &explanation, action).await {
+        return;
+    }
+    let applied = cx
+        .background_executor()
+        .spawn(async move { plan.apply(Output::Quiet, |_| {}) })
+        .await;
+    if let Err(e) = applied {
+        native::alert(failed, &e).await;
     }
 }

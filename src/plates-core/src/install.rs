@@ -208,6 +208,80 @@ pub fn with(settings: &Value, hook_program: &Path) -> Result<Value, InstallError
     Ok(settings)
 }
 
+/// Plates' hooks in `settings`, in the shape `ours` gives them: for each event, the groups that
+/// hold a hook of Plates', each with only Plates' hooks in it. Comparing the two tells whether
+/// the settings hold this Plates' hooks whatever other hooks sit beside them.
+pub fn installed(settings: &Value) -> Map<String, Value> {
+    let mut events = Map::new();
+    let Some(hooks) = settings.get("hooks").and_then(Value::as_object) else {
+        return events;
+    };
+    for (event, groups) in hooks {
+        let Some(groups) = groups.as_array() else {
+            continue;
+        };
+        let found: Vec<Value> = groups
+            .iter()
+            .filter_map(|group| {
+                let handlers: Vec<Value> = group
+                    .get("hooks")?
+                    .as_array()?
+                    .iter()
+                    .filter(|h| is_ours(h))
+                    .cloned()
+                    .collect();
+                if handlers.is_empty() {
+                    return None;
+                }
+                let mut found = Map::new();
+                if let Some(matcher) = group.get("matcher") {
+                    found.insert("matcher".into(), matcher.clone());
+                }
+                found.insert("hooks".into(), Value::Array(handlers));
+                Some(Value::Object(found))
+            })
+            .collect();
+        if !found.is_empty() {
+            events.insert(event.clone(), Value::Array(found));
+        }
+    }
+    events
+}
+
+/// Whether Claude Code's settings connect it to the Plates whose programs are `plates-hook` at
+/// `hook_program` and `plates-tasks` at `tasks_program`.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Connection {
+    /// No hook or task server of Plates' is there.
+    Off,
+    /// Every hook `ours` gives is there, and nothing else of Plates', and the task server runs
+    /// `tasks_program`.
+    On,
+    /// Some of Plates' hooks or its task server are there, but not as this Plates writes them, as
+    /// after Plates moved, or once a newer Plates listens to another hook event.
+    Stale,
+}
+
+/// How `settings`, Claude Code's user settings, and `claude_json`, the file that registers MCP
+/// servers for every project, stand toward this Plates.
+pub fn connection(
+    settings: &Value,
+    claude_json: &Value,
+    hook_program: &Path,
+    tasks_program: &Path,
+) -> Connection {
+    let hooks = installed(settings);
+    let server_current = server_step(claude_json, Some(tasks_program)) == Ok(ServerStep::Nothing);
+    let server_there = server_step(claude_json, None) == Ok(ServerStep::Remove);
+    if hooks == ours(hook_program) && server_current {
+        Connection::On
+    } else if hooks.is_empty() && !server_there {
+        Connection::Off
+    } else {
+        Connection::Stale
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,6 +385,60 @@ mod tests {
         assert_eq!(
             server_step(&registered("someone-elses-server"), None),
             Ok(ServerStep::Nothing)
+        );
+    }
+
+    #[test]
+    fn the_connection_is_on_only_with_every_hook_and_the_server_this_plates_writes() {
+        let hook = Path::new(PROGRAM);
+        let tasks = Path::new(SERVER_PROGRAM);
+        let on = with(&theirs(), hook).unwrap();
+        let state =
+            |settings: &Value, claude_json: &Value| connection(settings, claude_json, hook, tasks);
+        assert_eq!(state(&theirs(), &json!({})), Connection::Off);
+        assert_eq!(state(&on, &registered(SERVER_PROGRAM)), Connection::On);
+
+        // A hook of the user's added after Plates' leaves it on.
+        let mut theirs_after = on.clone();
+        theirs_after["hooks"]["Stop"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "hooks": [ { "type": "command", "command": "after.sh" } ] }));
+        assert_eq!(
+            state(&theirs_after, &registered(SERVER_PROGRAM)),
+            Connection::On
+        );
+
+        assert_eq!(
+            state(&on, &json!({})),
+            Connection::Stale,
+            "hooks without the server"
+        );
+        assert_eq!(
+            state(&theirs(), &registered(SERVER_PROGRAM)),
+            Connection::Stale,
+            "the server without hooks"
+        );
+        let moved = with(&theirs(), Path::new("/old/place/plates-hook")).unwrap();
+        assert_eq!(
+            state(&moved, &registered(SERVER_PROGRAM)),
+            Connection::Stale,
+            "hooks running a plates-hook that moved"
+        );
+        let mut fewer = on.clone();
+        fewer["hooks"]
+            .as_object_mut()
+            .unwrap()
+            .remove("PostCompact");
+        assert_eq!(
+            state(&fewer, &registered(SERVER_PROGRAM)),
+            Connection::Stale,
+            "hooks from a Plates that listened to fewer events"
+        );
+        assert_eq!(
+            state(&theirs(), &registered("someone-elses-server")),
+            Connection::Off,
+            "someone else's server named plates isn't Plates'"
         );
     }
 

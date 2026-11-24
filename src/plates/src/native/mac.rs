@@ -26,9 +26,10 @@ use objc2::{
     sel,
 };
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationOptions, NSApplicationActivationPolicy, NSEvent,
-    NSFloatingWindowLevel, NSRunningApplication, NSScreen, NSSound, NSView, NSWindow,
-    NSWindowCollectionBehavior, NSWorkspace, NSWorkspaceOpenConfiguration,
+    NSAlert, NSAlertFirstButtonReturn, NSApplication, NSApplicationActivationOptions,
+    NSApplicationActivationPolicy, NSEvent, NSFloatingWindowLevel, NSRunningApplication, NSScreen,
+    NSSound, NSView, NSWindow, NSWindowCollectionBehavior, NSWorkspace,
+    NSWorkspaceOpenConfiguration,
 };
 use objc2_foundation::{NSBundle, NSData, NSPoint, NSRect, NSSize, NSString, NSURL};
 
@@ -515,6 +516,34 @@ pub fn is_active() -> bool {
 pub fn activate_self() {
     #[allow(deprecated)]
     NSApplication::sharedApplication(mtm()).activateIgnoringOtherApps(true);
+}
+
+/// Asks `question` in a dialog, with `explanation` under it, and says whether you chose `action`
+/// rather than Cancel. AppKit's dialogs belong to the main thread, where this runs the dialog
+/// before it returns.
+pub async fn confirm(question: &str, explanation: &str, action: &str) -> bool {
+    show_alert(question, explanation, &[action, "Cancel"]) == NSAlertFirstButtonReturn
+}
+
+/// Tells you `message` in a dialog, with `explanation` under it.
+pub async fn alert(message: &str, explanation: &str) {
+    show_alert(message, explanation, &["OK"]);
+}
+
+// Plates is an app with no Dock icon that's rarely the active app, so it becomes the active app
+// first, or the dialog could open behind the app you're in (unverified).
+fn show_alert(message: &str, explanation: &str, buttons: &[&str]) -> isize {
+    let mtm = mtm();
+    activate_self();
+    unsafe {
+        let alert = NSAlert::new(mtm);
+        alert.setMessageText(&NSString::from_str(message));
+        alert.setInformativeText(&NSString::from_str(explanation));
+        for button in buttons {
+            alert.addButtonWithTitle(&NSString::from_str(button));
+        }
+        alert.runModal()
+    }
 }
 
 /// Opens a link with the app macOS has for its scheme, and hands that app the keyboard.

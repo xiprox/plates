@@ -32,28 +32,15 @@ Plates runs on Windows (x64) and macOS (Apple silicon), with Claude Code in the 
    The installers aren't signed, so Windows SmartScreen or macOS Gatekeeper stops it the first time.
    On Windows, click "More info", then "Run anyway".
    On macOS, open System Settings > Privacy & Security, and click "Open Anyway", as [Safely open apps on your Mac](https://support.apple.com/en-us/102445) describes.
-3. Connect Plates to Claude Code from a terminal.
-   In PowerShell on Windows:
-
-   ```powershell
-   & "$env:LOCALAPPDATA\plates\current\plates.exe" hooks install
-   ```
-
-   On macOS:
-
-   ```bash
-   /Applications/Plates.app/Contents/MacOS/plates hooks install
-   ```
-
-   You'll see the hooks it adds to `~/.claude/settings.json`, and it writes them once you confirm, after backing the file up.
-   It also registers `plates-tasks`, Plates' task list server, with Claude Code.
+3. Click Plates' icon in the tray on Windows or the menu bar on macOS, and choose "Connect to Claude Code".
+   Plates says what it adds to `~/.claude/settings.json` and asks first, then backs the file up, writes it, and registers `plates-tasks`, Plates' task list server, with Claude Code.
+   You'll see the item checked.
 4. Start a Claude Code session.
    You'll see its tile on the rack.
 
-Plates' icon in the tray on Windows, or the menu bar on macOS, shows the rack, starts Plates at login, and quits it.
+The same menu shows the rack, starts Plates at login, and quits it.
+Choosing "Connect to Claude Code" again disconnects Plates, removing only what Plates added.
 On macOS, the hover card's buttons press the Claude desktop app's own buttons, so they need Plates turned on under System Settings > Privacy & Security > Accessibility.
-
-To disconnect Plates, run the same command with `hooks uninstall`, which removes only what Plates added.
 
 ## How it works
 
