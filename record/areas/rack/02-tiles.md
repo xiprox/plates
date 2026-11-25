@@ -270,6 +270,7 @@ When it starts, Plates brings each restored tile up to date with any turn that e
 
 The type is Inter: titles at 13.5px semibold, summary lines and secondary text at 12px, and the hotkey's name on the phantom tile at 11px.
 Code in a summary line is in a monospace font each OS ships with: Consolas on Windows and Menlo on macOS.
+A summary line leaves out the marks the hover card leaves out of the block the line starts, so a heading loses its #s and a quote its >, and a list item takes the card's marker, such as "•" for "- " (user, 2026-11-25).
 On the hover card, Claude's text is 12px with a line height 1.35 times its size, and code blocks are 11.5px.
 
 ## Left open

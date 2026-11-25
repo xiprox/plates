@@ -125,6 +125,17 @@ pub fn blocks(message: &str, budget: usize) -> Vec<Block> {
     out
 }
 
+/// One line as a tile's summary line shows it, without the marks the hover card drops from the
+/// block the line starts: a heading's #s and a quote's >, and a list item's marker as the card
+/// draws it, such as "•" for "- " (user, 2026-11-25).
+pub fn summary_line(line: &str) -> String {
+    match classify(line) {
+        Block::Heading(text) | Block::Text(text) => text,
+        Block::Item { marker, text, .. } => format!("{marker} {text}"),
+        Block::Code(_) | Block::Table { .. } => line.to_string(),
+    }
+}
+
 // What kind of block one line outside a code block is. A list item nests a level for every two
 // spaces of indent, as Claude indents a nested list.
 fn classify(line: &str) -> Block {
@@ -358,6 +369,18 @@ mod tests {
             vec![Block::Text("2026 was a year.".into())],
             "digits alone don't make a numbered item"
         );
+    }
+
+    #[test]
+    fn a_summary_line_drops_its_blocks_marks_as_the_card_does() {
+        assert_eq!(
+            summary_line("## The sync engine in five parts"),
+            "The sync engine in five parts"
+        );
+        assert_eq!(summary_line("> Quoted"), "Quoted");
+        assert_eq!(summary_line("- First **bold**"), "• First **bold**");
+        assert_eq!(summary_line("2. Second"), "2. Second");
+        assert_eq!(summary_line("Plain text."), "Plain text.");
     }
 
     #[test]

@@ -598,7 +598,7 @@ impl RackView {
                     .text_size(px(12.))
                     .text_color(rgb(c))
                     .truncate()
-                    .child(styled_line(&s, rgb(c)))
+                    .child(styled_line(&markup::summary_line(&s), rgb(c)))
             }));
         let mut main = div()
             .id(("main", id.0))
