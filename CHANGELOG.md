@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/xiprox/plates/compare/v0.5.0...v0.6.0) (2026-11-25)
+
+
+### Features
+
+* list the tasks under way first in a session's task list ([83503d2](https://github.com/xiprox/plates/commit/83503d213b59b6699edda5e1857164b0f44b10a5))
+
 ## [0.5.0](https://github.com/xiprox/plates/compare/v0.4.0...v0.5.0) (2026-11-24)
 
 
