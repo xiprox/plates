@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/xiprox/plates/compare/v0.7.0...v0.7.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* drop a heading's #s and a list's dash from a tile's summary line ([f802138](https://github.com/xiprox/plates/commit/f802138aa8bbca10d15d49ec8f163064a7b6b42e))
+
 ## [0.7.0](https://github.com/xiprox/plates/compare/v0.6.0...v0.7.0) (2026-11-25)
 
 
