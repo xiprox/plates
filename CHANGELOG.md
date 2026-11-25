@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/xiprox/plates/compare/v0.6.0...v0.7.0) (2026-11-25)
+
+
+### Features
+
+* update Plates from the rack's menu when a new release is out ([6c33734](https://github.com/xiprox/plates/commit/6c33734bc93522f287c47f94549a890d94228b35))
+
 ## [0.6.0](https://github.com/xiprox/plates/compare/v0.5.0...v0.6.0) (2026-11-25)
 
 
