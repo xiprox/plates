@@ -65,3 +65,8 @@ git grep -inE --untracked "$(whoami)|$(hostname)|$(git config user.email)"
 ```
 
 It can't see inside images or compressed files, so check screenshots and captures by eye before adding them.
+
+## Compacting
+
+When the user says "let's compact", reply with one code block that says what the compaction should keep, and leave out `/compact` itself.
+Claude can't start a compaction, so the user types `/compact` and pastes the block after it.
