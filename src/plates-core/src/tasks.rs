@@ -287,10 +287,10 @@ impl std::fmt::Display for Error {
 /// (record/areas/tasks/01-task-list.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Holder {
-    /// Waiting on you.
-    You,
     /// Under way.
     Doing,
+    /// Waiting on you.
+    You,
     /// Waiting on someone or something else.
     Others,
     /// Not started, and waiting on no one.
@@ -300,8 +300,10 @@ pub enum Holder {
 }
 
 impl Holder {
-    /// The groups open work falls into, in the order the rack shows them.
-    pub const OPEN: [Holder; 4] = [Holder::You, Holder::Doing, Holder::Others, Holder::Todo];
+    /// The groups open work falls into, in the order the rack shows them. Doing comes first,
+    /// since it's what changes from turn to turn, while what's on you changes only when you act
+    /// and can pile up above it (user, 2026-11-21).
+    pub const OPEN: [Holder; 4] = [Holder::Doing, Holder::You, Holder::Others, Holder::Todo];
 }
 
 /// How many of a list's tasks each holder has.

@@ -32,11 +32,14 @@ The tile groups tasks by who holds each one:
 
 | Group | Tasks |
 | --- | --- |
-| On you | `waiting`, with a `waiting_on` of "you", "user", or "the user", in any case |
 | Doing | `doing` |
+| On you | `waiting`, with a `waiting_on` of "you", "user", or "the user", in any case |
 | Waiting on others | `waiting` on anyone or anything else, or on no one named |
 | To do | `todo` |
 | Done and dropped | `done` and `dropped`, folded away |
+
+The tile shows the groups in this order.
+Doing comes first because it changes from turn to turn and says what's happening now, while On you changes only when you act and can pile up above it (user, 2026-11-21).
 
 ## How Claude keeps a list
 
@@ -164,7 +167,7 @@ If it can't run `claude`, it prints the commands left for you to run.
 
 A session tile whose list has at least one task has a section under its 60px top: a 1px divider in 6% white, then a 28px bar.
 
-- The bar counts the open tasks of each group that has any, in the groups' order, each after the group's mark: "2 on you", "1 doing", "2 waiting", "2 to do".
+- The bar counts the open tasks of each group that has any, in the groups' order, each after the group's mark: "1 doing", "2 on you", "2 waiting", "2 to do".
   The counts are 11.5px in the muted color, and "on you" takes the your-turn text color ([02-tiles](../rack/02-tiles.md#colors-and-type)).
 - Once no task is open, the session's work has most likely finished, so the bar shows the done tasks' check and "All done", then the dropped tasks' dash and their count, such as "✓ All done – 3 dropped", in the same muted color (user, 2026-11-23).
   A list whose tasks were all dropped shows only "3 dropped", and Claude adding or reopening a task brings the counts back.
@@ -193,8 +196,8 @@ A task waiting on someone else ends its status line with who, as in "Asked on Tu
 
 | Group | Mark |
 | --- | --- |
-| On you | a dot in the your-turn color |
 | Doing | a dot in the working color |
+| On you | a dot in the your-turn color |
 | Waiting on others | a pause mark in the done color |
 | To do | a ring in the done color |
 | Done | a check in the done color, with the title in the secondary text color |
