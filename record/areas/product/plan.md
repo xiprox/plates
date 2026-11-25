@@ -84,6 +84,12 @@ Step 7's Mac session runs its macOS half.
 
 Done on 2026-11-22.
 
+## 12. Updates
+
+Plates looking for its own updates, and installing one from the rack's menu, as [01-updates](../build/01-updates.md) designs it.
+Done when, on Windows, a copy installed from one release finds the next, shows the teal dot on the grip, and after a click on "Update to …" in the rack's menu, runs the new version.
+Step 7's Mac session runs its macOS half.
+
 ## Later
 
-Plates looking for its own updates while it runs, and the questions [01-window](../rack/01-window.md#left-open) leaves open.
+The questions [01-window](../rack/01-window.md#left-open) leaves open.

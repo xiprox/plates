@@ -24,6 +24,7 @@ mod swipe;
 mod task_list;
 mod tone;
 mod tray;
+mod updates;
 mod view;
 
 use std::{
@@ -36,7 +37,11 @@ use std::{
 fn main() -> ExitCode {
     // Velopack's install, update, and uninstall hooks run here and may exit the process, so this
     // comes before anything else.
-    let mut velopack = velopack::VelopackApp::build();
+    // An update installs only from the rack's menu, after Plates stops its task servers, rather
+    // than the next time any `plates` starts, such as a second one opened while the rack runs, or
+    // `plates hooks install`. Velopack installs a downloaded update as the program starts unless
+    // told not to (read in velopack 1.2.161, src/app.rs, VelopackApp::run).
+    let mut velopack = velopack::VelopackApp::build().set_auto_apply_on_startup(false);
     #[cfg(windows)]
     {
         velopack =

@@ -265,6 +265,7 @@ When it starts, Plates brings each restored tile up to date with any turn that e
 | A running timer's yellow, and your own tile's time-up square | `#F4D35E` |
 | A snooze: the moon and its count, and a reminder for tomorrow's moon, words, and outline | `#B39DFF` |
 | Your own tile's marker | `#5E626B` |
+| An update that's ready: the grip's dot, and the dot in the rack's menu ([01-updates](../build/01-updates.md#what-the-rack-shows)) | `#2DD4BF` |
 | Time-up tints: your own tile, your turn, and approval | `#2B2715`, `#2F2616`, `#321F17` |
 
 The type is Inter: titles at 13.5px semibold, summary lines and secondary text at 12px, and the hotkey's name on the phantom tile at 11px.

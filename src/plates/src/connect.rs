@@ -138,8 +138,9 @@ pub fn disconnect_for_uninstall() {
 }
 
 /// The program named `name` beside this one: `plates-hook`, which each hook runs, or
-/// `plates-tasks`, the task server.
-fn beside(name: &str) -> Result<PathBuf, String> {
+/// `plates-tasks`, the task server, which is the path the install registers and the one an
+/// update stops.
+pub(crate) fn beside(name: &str) -> Result<PathBuf, String> {
     let exe =
         std::env::current_exe().map_err(|e| format!("Couldn't find Plates' own path: {e}"))?;
     let program = exe.with_file_name(format!("{name}{}", std::env::consts::EXE_SUFFIX));

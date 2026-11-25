@@ -373,6 +373,11 @@ pub fn idle_for() -> Duration {
 /// (record/areas/rack/03-holding-pings.md, "Left open").
 pub fn watch_typing() {}
 
+/// On macOS, an update replaces Plates while its task servers run, so there's nothing to stop.
+/// macOS replaces a running program's file, unlike Windows (unverified for an update, as
+/// record/areas/build/01-updates.md, "Installing", says).
+pub fn stop_task_servers(_program: &std::path::Path) {}
+
 /// How long since the last typing key you pressed, which Plates doesn't watch for on macOS.
 pub fn typed_ago() -> Option<Duration> {
     None

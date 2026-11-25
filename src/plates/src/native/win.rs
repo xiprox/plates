@@ -13,7 +13,7 @@ use std::{
 };
 
 use windows::Win32::{
-    Foundation::{CloseHandle, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+    Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
     Graphics::{
         Dwm::{
             DWM_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR, DWMWA_CLOAKED,
@@ -28,14 +28,18 @@ use windows::Win32::{
     Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT},
     System::{
         Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx},
+        Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+            TH32CS_SNAPPROCESS,
+        },
         Registry::{
             HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW,
             RegSetKeyValueW,
         },
         SystemInformation::{GetTickCount, GetTickCount64},
         Threading::{
-            OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-            QueryFullProcessImageNameW,
+            OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+            QueryFullProcessImageNameW, TerminateProcess,
         },
         Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION},
     },
@@ -569,23 +573,76 @@ pub fn claude_app_window(window: HWND) -> bool {
     else {
         return false;
     };
+    let path = program_of(process);
+    unsafe {
+        let _ = CloseHandle(process);
+    }
+    path.is_some_and(|p| p.to_ascii_lowercase().ends_with("\\claude.exe"))
+}
+
+// The full path of the program a process runs, from a handle opened with at least
+// PROCESS_QUERY_LIMITED_INFORMATION.
+fn program_of(process: HANDLE) -> Option<String> {
     let mut path = [0u16; 1024];
     let mut len = path.len() as u32;
-    let read = unsafe {
+    unsafe {
         QueryFullProcessImageNameW(
             process,
             PROCESS_NAME_WIN32,
             PWSTR(path.as_mut_ptr()),
             &mut len,
         )
-    };
-    unsafe {
-        let _ = CloseHandle(process);
     }
-    read.is_ok()
-        && String::from_utf16_lossy(&path[..len as usize])
-            .to_ascii_lowercase()
-            .ends_with("\\claude.exe")
+    .ok()?;
+    Some(String::from_utf16_lossy(&path[..len as usize]))
+}
+
+/// Stops each process that runs `program`, the task server beside Plates, before an update
+/// replaces the folder's files, since Windows won't replace a running program's file and each
+/// Claude Code session keeps a task server running. Claude Code then starts a session's server
+/// again at the session's next call to a task tool, which it did on macOS, and on Windows is
+/// unverified (record/areas/build/01-updates.md, "Installing").
+pub fn stop_task_servers(program: &std::path::Path) {
+    let ours = program.to_string_lossy().to_ascii_lowercase();
+    let Some(file_name) = program
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+    else {
+        return;
+    };
+    let Ok(snapshot) = (unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }) else {
+        return;
+    };
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    let mut more = unsafe { Process32FirstW(snapshot, &mut entry) }.is_ok();
+    while more {
+        let end = entry
+            .szExeFile
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(entry.szExeFile.len());
+        let name = String::from_utf16_lossy(&entry.szExeFile[..end]);
+        let access = PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE;
+        if name.eq_ignore_ascii_case(&file_name)
+            && let Ok(process) = unsafe { OpenProcess(access, false, entry.th32ProcessID) }
+        {
+            if program_of(process).is_some_and(|p| p.to_ascii_lowercase() == ours) {
+                unsafe {
+                    let _ = TerminateProcess(process, 1);
+                }
+            }
+            unsafe {
+                let _ = CloseHandle(process);
+            }
+        }
+        more = unsafe { Process32NextW(snapshot, &mut entry) }.is_ok();
+    }
+    unsafe {
+        let _ = CloseHandle(snapshot);
+    }
 }
 
 /// How long since the last typing key you pressed, in any app, or `None` before the first.

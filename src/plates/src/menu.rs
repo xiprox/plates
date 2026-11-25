@@ -14,7 +14,8 @@ use crate::{
     motion::Rect,
     native,
     rack_view::RackView,
-    view::{BORDER, MUTED, TEXT, TILE, YOUR_TURN_TEXT, marker, white},
+    updates::{State, Updates},
+    view::{BORDER, MUTED, TEAL, TEXT, TILE, YOUR_TURN_TEXT, marker, white},
 };
 
 pub const MENU_W: f32 = 156.;
@@ -61,8 +62,8 @@ impl MenuKind {
             // A 6px pad top and bottom, a 23px heading, six 32px rows to remind you in, a 27px
             // heading, three 32px rows to snooze for, and a 1px border.
             MenuKind::Timer(_) => 352.,
-            // A 6px pad top and bottom, three 32px rows, and a 1px border.
-            MenuKind::Rack { .. } => 109.,
+            // A 6px pad top and bottom, four 32px rows, and a 1px border.
+            MenuKind::Rack { .. } => 141.,
             // A 6px pad top and bottom, one 32px row, and a 1px border.
             MenuKind::Tile(..) => 46.,
             // A 6px pad top and bottom, a 23px heading, a 32px row per tile, and a 1px border.
@@ -106,6 +107,10 @@ pub struct MenuView {
     /// click then, so the read panics and Plates aborts. (read in gpui-pre 0.3.12, src/app.rs,
     /// App::open_window)
     listed: Vec<(Tile, Option<SystemTime>)>,
+    /// Where an update stands. It's an entity of its own, so the menu can read it in its first
+    /// frame while the rack still handles the click, as `listed` explains, and redraw when it
+    /// changes.
+    updates: Entity<Updates>,
 }
 
 impl MenuView {
@@ -114,10 +119,12 @@ impl MenuView {
         kind: MenuKind,
         bounds: Rect,
         listed: Vec<(Tile, Option<SystemTime>)>,
+        updates: Entity<Updates>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let hwnd = native::hwnd_of(window);
+        cx.observe(&updates, |_, _, cx| cx.notify()).detach();
         // DWM draws the shadow at full strength around the whole window, so it waits for the
         // fade to finish rather than outline a menu that isn't there yet.
         cx.spawn(async move |_, cx| {
@@ -135,6 +142,7 @@ impl MenuView {
             armed: false,
             opened: Instant::now(),
             listed,
+            updates,
         }
     }
 
@@ -452,6 +460,7 @@ impl MenuView {
                     this.close(window, cx);
                 }))
                 .into_any_element(),
+            self.update_row(cx),
             Self::row("quit", "Quit Plates")
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     if this.rack.update(cx, |rack, cx| rack.quit(cx)).is_err() {
@@ -460,6 +469,57 @@ impl MenuView {
                 }))
                 .into_any_element(),
         ]
+    }
+
+    // The row for updates says where an update stands, with the version that runs at its right,
+    // or the teal dot once an update is ready. A click looks again, and keeps the menu open while
+    // the row follows the look, or installs a ready update, after which the rack quits for the
+    // updater (record/areas/build/01-updates.md).
+    fn update_row(&self, cx: &mut Context<Self>) -> AnyElement {
+        let (state, version) = {
+            let updates = self.updates.read(cx);
+            (updates.state.clone(), updates.version.clone())
+        };
+        let label = match &state {
+            State::NotInstalled => "Development build".to_string(),
+            State::Idle => "Check for updates".to_string(),
+            State::Checking => "Checking for updates…".to_string(),
+            State::UpToDate => "Up to date".to_string(),
+            State::Failed => "Couldn't check for updates".to_string(),
+            State::Downloading(v) => format!("Downloading {v}…"),
+            State::Ready(v) => format!("Update to {v}"),
+            State::Installing => "Updating…".to_string(),
+        };
+        let right = if matches!(state, State::Ready(_)) {
+            div()
+                .flex_none()
+                .size(px(7.))
+                .rounded_full()
+                .bg(rgb(TEAL))
+                .into_any_element()
+        } else {
+            div()
+                .flex_none()
+                .text_size(px(11.5))
+                .text_color(rgb(MUTED))
+                .child(version)
+                .into_any_element()
+        };
+        Self::row("update", &label)
+            .child(right)
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                let state = this.updates.read(cx).state.clone();
+                match state {
+                    State::Ready(_) => {
+                        this.updates.update(cx, |updates, cx| updates.install(cx));
+                    }
+                    State::Idle | State::UpToDate | State::Failed => {
+                        this.updates.update(cx, |updates, cx| updates.check(cx));
+                    }
+                    _ => {}
+                }
+            }))
+            .into_any_element()
     }
 
     fn tile_items(&self, tile: TileId, read: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {

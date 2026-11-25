@@ -36,6 +36,9 @@ pub(crate) const GRAY: u32 = 0x5E626B;
 pub(crate) const WORKING_TEXT: u32 = 0x9CC4FF;
 pub(crate) const YOUR_TURN_TEXT: u32 = 0xF2C46A;
 pub(crate) const APPROVAL_TEXT: u32 = 0xFF9B6E;
+/// An update that's ready: the grip's dot and the dot in the rack's menu, apart from every
+/// tile state's color so it doesn't read as a session needing you (user, 2026-11-25).
+pub(crate) const TEAL: u32 = 0x2DD4BF;
 
 /// Tiles shrinking out are drawn with indexes from here up, so their group and element names
 /// never match a present tile's.
@@ -1283,8 +1286,12 @@ impl RackView {
             login: native::starts_at_login(),
             connection,
         };
+        // While an update is ready, a teal dot on the grip's top-right corner says the menu has
+        // news before you open it (record/areas/build/01-updates.md).
+        let update_ready = self.updates.read(cx).is_ready();
         let grip = div()
             .id("grip")
+            .relative()
             .h(px(crate::rack_view::MOON_H))
             .px(px(8.))
             .flex()
@@ -1298,6 +1305,15 @@ impl RackView {
                     .h(px(10.))
                     .text_color(rgb(GRAY)),
             )
+            .children(update_ready.then(|| {
+                div()
+                    .absolute()
+                    .top(px(3.))
+                    .right(px(3.))
+                    .size(px(6.))
+                    .rounded_full()
+                    .bg(rgb(TEAL))
+            }))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _: &MouseDownEvent, _, _| {

@@ -37,6 +37,7 @@ Opening a session from its tile and answering its choices work only in the Claud
 4. Start a Claude Code session, and its tile appears on the rack.
 
 The same menu starts Plates at login and quits it, and choosing "Connect to Claude Code" again disconnects Plates.
+Plates updates itself: a teal dot on the grip at the rack's top says an update is ready, and clicking it in the grip's menu installs it.
 On macOS, the hover card's buttons need Plates turned on under System Settings > Privacy & Security > Accessibility.
 
 ## How it works
@@ -44,7 +45,7 @@ On macOS, the hover card's buttons need Plates turned on under System Settings >
 Claude Code runs Plates' hooks at each step of a session, such as a prompt, a tool call, or a turn's end, and each hook passes its event to Plates on `127.0.0.1`.
 Plates reads Claude's messages from the session's transcript, and titles from the Claude desktop app's files.
 Task lists come from `plates-tasks`, a Model Context Protocol (MCP) server that Claude Code starts for each session.
-Plates has no account and sends nothing off your machine.
+Plates has no account, and apart from looking for updates on GitHub, it sends nothing off your machine.
 
 ## How to build it
 

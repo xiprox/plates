@@ -1,5 +1,8 @@
 # 003: Releases come from release-please, packed with Velopack, for Windows and macOS
 
+> **Note**
+> [Decision 004](004-plates-updates-itself.md) reverses the point under "What it commits us to" that Plates ships without an update check of its own: Plates looks for its own updates.
+
 A push to `main` updates release-please's release pull request (PR), merging it creates the GitHub release, and the same workflow builds Windows and macOS, packs each with Velopack, and attaches the installers and update packages to the release.
 Decided by the user on 2026-11-16: they asked to "implement release please with velopack" the way choom-collector does, with "a release on github for both platforms".
 

@@ -34,6 +34,7 @@ use crate::{
     task_list::{Open, Sections},
     tone,
     tray::{self, Tray},
+    updates::{ReadyToQuit, Updates},
 };
 
 pub const RACK_W: f32 = 304.;
@@ -246,6 +247,9 @@ pub struct RackView {
     pub(crate) closing_list: Option<Open>,
     /// How tall each tile's task section stands, easing as lists appear, open, and close.
     pub(crate) sections: Sections,
+    /// Where an update stands, which the grip's teal dot and the rack's menu show. An entity of
+    /// its own, so an open menu can follow it without reading the rack.
+    pub(crate) updates: Entity<Updates>,
     _subs: Vec<Subscription>,
     _tasks: Vec<Task<()>>,
 }
@@ -269,7 +273,11 @@ impl RackView {
     ) -> Self {
         let hwnd = native::hwnd_of(window);
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("Name it"));
+        let updates = cx.new(|cx| Updates::new(!showcase, cx));
         let subs = vec![
+            cx.observe(&updates, |_, _, cx| cx.notify()),
+            // Velopack's updater waits for Plates to quit before it installs the update.
+            cx.subscribe(&updates, |this, _, _: &ReadyToQuit, cx| this.quit(cx)),
             cx.subscribe_in(&input, window, |this, _, ev: &InputEvent, window, cx| {
                 if let InputEvent::PressEnter { .. } = ev {
                     this.finish_field(Ended::Enter, window, cx);
@@ -506,6 +514,7 @@ impl RackView {
             open_list: None,
             closing_list: None,
             sections: Sections::default(),
+            updates,
             _subs: subs,
             _tasks: vec![
                 take_over,
@@ -1644,8 +1653,9 @@ impl RackView {
                 .collect(),
             _ => Vec::new(),
         };
+        let updates = self.updates.clone();
         match cx.open_window(options, |window, cx| {
-            cx.new(|cx| MenuView::new(rack, kind, bounds, listed, window, cx))
+            cx.new(|cx| MenuView::new(rack, kind, bounds, listed, updates, window, cx))
         }) {
             Ok(window) => self.menu = Some(Menu { window, kind }),
             Err(e) => eprintln!("Couldn't open a menu: {e}"),

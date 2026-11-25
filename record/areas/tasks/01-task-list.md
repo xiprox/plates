@@ -243,9 +243,7 @@ A drag moves the rack from where it shows, and then the rack is where you put it
 
 - Whether an app session on Windows starts the server that `plates hooks install` registers, and whether the server finds `CLAUDE_CODE_HOST_SESSION_ID` in its environment, as the session's commands do ([tasks log](log.md#2026-11-20-on-windows-the-task-servers-saves-land-in-the-claude-apps-package-where-the-rack-cant-read-them)).
   Running `plates hooks install`, agreeing on a plan in a new app session, and finding a `local_<id>.json` in the tasks folder would settle both.
-- Whether an update of Plates on Windows can replace `plates-tasks.exe` while sessions run it, since Windows doesn't let a running program's file be replaced.
-  Other running instances of an app could make a Velopack update fail or be terminated (documented, [Velopack: integrating](https://docs.velopack.io/integrating/overview), as of 2026-11-20), and whether Velopack treats `plates-tasks` that way is unverified.
-  Updating an installed Plates while an app session runs its server would settle it.
+- Whether an update of Plates replaces `plates-tasks.exe` while sessions run it, which [01-updates](../build/01-updates.md#installing) covers.
 - Whether Claude Code asks you to approve the server's tools in each permission mode, and so whether the install needs to allow them.
   In the probe, the app didn't ask before `tasks_get` in the one session where we noted it, and we didn't record that session's permission mode.
   A session in each mode with the server registered would settle it.

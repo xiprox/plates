@@ -16,8 +16,10 @@ Documentation people write for other people lives in `docs/` instead.
 - [areas/tasks/01-task-list.md](areas/tasks/01-task-list.md): how Claude keeps each session's task list, and how the rack shows it beside the session's tile.
 - [areas/tasks/02-waits-and-pings.md](areas/tasks/02-waits-and-pings.md): how Claude ends a turn as waiting on something outside the session, and rings you when something you requested a ping for happens.
 - [areas/tasks/log.md](areas/tasks/log.md): what we found about keeping a task list for each session through an MCP server.
+- [areas/build/01-updates.md](areas/build/01-updates.md): how an installed Plates finds, downloads, and installs a newer release.
 - [areas/build/releasing.md](areas/build/releasing.md): how a release is made, and what files it holds.
 - [areas/build/log.md](areas/build/log.md): what we found about building, versioning, and releasing Plates.
 - [decisions/001-rust-and-gpui.md](decisions/001-rust-and-gpui.md): Plates is written in Rust, with GPUI for its interface.
 - [decisions/002-build-on-windows-first.md](decisions/002-build-on-windows-first.md): Plates is built on Windows first, and tried on macOS once it's built.
 - [decisions/003-releases-with-release-please-and-velopack.md](decisions/003-releases-with-release-please-and-velopack.md): releases come from release-please, packed with Velopack, for Windows and macOS.
+- [decisions/004-plates-updates-itself.md](decisions/004-plates-updates-itself.md): an installed Plates looks for, downloads, and installs its own updates from the GitHub releases.

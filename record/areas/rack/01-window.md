@@ -67,7 +67,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 - On Windows, starting Plates from Explorer or a shortcut opens no console window, because `tools/build-release.ps1` gives `plates.exe` a console allocation policy of `detached` ([product log](../product/log.md#2026-11-15-the-detached-console-policy-keeps-plates-console-window-away-when-explorer-starts-it)).
   The policy needs Windows 11 24H2 (build 26100) or later (documented, [console allocation policy](https://learn.microsoft.com/en-us/windows/console/console-allocation-policy), as of 2026-11-15).
   That an earlier Windows ignores it and opens the console window is unverified, and starting the release build on Windows 11 23H2 would settle it.
-- Clicking the grip, or right-clicking the grip band at the rack's top, opens a menu with "Connect to Claude Code", "Start at login", and "Quit Plates" (user, 2026-11-15, 2026-11-16, and 2026-11-24).
+- Clicking the grip, or right-clicking the grip band at the rack's top, opens a menu with "Connect to Claude Code", "Start at login", a row for updates that [01-updates](../build/01-updates.md#what-the-rack-shows) describes, and "Quit Plates" (user, 2026-11-15, 2026-11-16, 2026-11-24, and 2026-11-25).
   The menu is 284px wide, for "Connect to Claude Code" and what follows it, so it opens as the moon's list does, 4px under the band with its right edge on the tiles' right edge, rather than at the pointer, from where it reached past the rack's right edge.
   The grip is a button as tall as the moon's badge, and a second click on it closes the menu, as on the moon.
   Pressing it and moving drags the rack, as anywhere else on the rack does.

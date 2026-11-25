@@ -2,6 +2,20 @@
 
 What we found about building, versioning, and releasing Plates, newest entry first.
 
+## 2026-11-25: Once the repository is public, a release's update feed downloads without a token
+
+**Asked:** once the repository is public, does a release's update feed download without a GitHub token, as [decision 003](../../decisions/003-releases-with-release-please-and-velopack.md) left unverified?
+
+**Expected:** yes once the repository is public, since a public repository's release files download from `github.com` with no sign-in.
+
+**Found:** after the repository went public, `releases/latest/download/releases.win-x64.json` answered HTTP 200 with the 0.5.0 feed, 497 bytes, with no `Authorization` header (measured on Windows 11 25H2, 2026-11-25, [results](results/2026-11-25-feed-without-token.txt)).
+The feed lists only 0.5.0's full and delta packages, and no earlier release's.
+We didn't call the API that lists the releases, which Velopack's `GithubSource` calls before it reads a feed.
+
+**Changed:** Plates looks for its own updates ([decision 004](../../decisions/004-plates-updates-itself.md)).
+
+**Affects:** [01-updates](01-updates.md).
+
 ## 2026-11-16: release-please can bump Cargo.lock's own versions, with a filter on each name's `value`
 
 **Asked:** can release-please's release PR bump the workspace crates' versions in `Cargo.lock` along with `Cargo.toml`?

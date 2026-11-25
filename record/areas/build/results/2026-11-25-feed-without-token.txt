@@ -1,0 +1,12 @@
+Downloading a release's update feed with no token, after the repository went public
+Windows 11 25H2, Windows PowerShell 5.1, 2026-11-25.
+
+gh repo view xiprox/plates --json visibility  ->  PUBLIC, after
+gh repo edit xiprox/plates --visibility public --accept-visibility-change-consequences
+
+Invoke-WebRequest -UseBasicParsing https://github.com/xiprox/plates/releases/latest/download/releases.win-x64.json
+  HTTP 200, 497 bytes, with no Authorization header:
+
+{"Assets":[{"PackageId":"plates","Version":"0.5.0","Type":"Full","FileName":"plates-0.5.0-win-x64-full.nupkg","SHA1":"698C54D22CC2C1105773CF49A6404DFC851C5F83","SHA256":"0EB13A159106B6D982472F69F3BE42AD23A7AB71C6A7777333562073C5D0FA14","Size":13788536},{"PackageId":"plates","Version":"0.5.0","Type":"Delta","FileName":"plates-0.5.0-win-x64-delta.nupkg","SHA1":"72B3E2D79E09F713A06472CA44922D9A9291AA03","SHA256":"005C5AE556E969FD0B9B0B33B34BCEFD81BF6825B6011DEC35EFF9B43D9B8EBF","Size":3470811}]}
+
+The 0.5.0 feed lists only 0.5.0's packages, and no earlier release's.
