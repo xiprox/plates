@@ -15,7 +15,7 @@ use plates_core::{
     Rack, Removed, SessionEvent, SessionState, Tile, TileId, desktop,
     hooks::{self, HookMessage},
     install::Connection,
-    pulls::{self, Pull},
+    pulls::{self, Pull, PullLink},
     store,
     tasks::{self, TaskList},
     timer::{DEFAULT_MINUTES, MENU_HOURS, MENU_MINUTES, Timer},
@@ -1597,6 +1597,20 @@ impl RackView {
             return;
         }
         self.show_card(id, folder, &spot, cx);
+    }
+
+    /// Gives the showcase's pull requests what GitHub would say about them, since the showcase
+    /// asks GitHub nothing.
+    pub(crate) fn showcase_pulls(&mut self, pulls: impl IntoIterator<Item = (PullLink, Pull)>) {
+        for (link, pull) in pulls {
+            self.pulls.insert(
+                link.url,
+                SeenPull {
+                    pull,
+                    changed: None,
+                },
+            );
+        }
     }
 
     /// Gives the showcase's tile `id` the made-up task list, open if `open`, as if you last opened

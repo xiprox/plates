@@ -271,6 +271,14 @@ pub fn showcase(capture: Option<PathBuf>, tasks: bool) {
             true,
             cx,
         );
+        view.update(cx, |this, cx| {
+            this.showcase_pulls(
+                showcase::pulls()
+                    .into_iter()
+                    .map(|(_, link, pull)| (link, pull)),
+            );
+            cx.notify();
+        });
         if tasks || capture.is_some() {
             let open = capture.is_none();
             view.update(cx, |this, cx| this.showcase_tasks(card_tile, open, cx));

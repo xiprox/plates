@@ -2,10 +2,12 @@
 //! `plates showcase` opens it, writing none of Plates' data files. Its tiles come from a few
 //! weeks of real Claude Code sessions with the names of projects, clients, and people taken out,
 //! so it shows at once the states record/areas/rack/02-tiles.md describes: a session asking for
-//! approval, one at your turn with a question and a task list, one working with the app's plan for
-//! its request and a sub-session under it, your own tile whose timer runs beside one whose reminder is due, and two snoozed tiles
-//! behind the moon. It leaves out a finished turn you haven't read, so the rack stays short enough
-//! to read at a glance (user, 2026-11-20).
+//! approval to merge its pull request, whose chip shows the checks passed, one at your turn with a
+//! question and a task list, one working with the app's plan for its request and a sub-session
+//! under it, your own tile whose reminder is due, and two snoozed tiles behind the moon. Only the
+//! session about a pull request shows one, since the others' work is under way (user, 2026-11-27).
+//! It leaves out a finished turn you haven't read, so the rack stays short enough to read at a
+//! glance (user, 2026-11-20).
 
 use std::{
     path::PathBuf,
@@ -15,6 +17,7 @@ use std::{
 use plates_core::{
     Rack, SessionEvent, TileId, Timer, Tool, WrapUp,
     desktop::AppSession,
+    pulls::{Checks, Pull, PullLink, PullState, Review},
     session::{PlanChange, Step, StepStatus},
     tasks::{Change, State, TaskList},
 };
@@ -82,6 +85,45 @@ fn made_up(now: SystemTime, tasks: &[(&str, State, &str, &str, u64)]) -> TaskLis
     list
 }
 
+/// The made-up pull requests the showcase's sessions link, oldest first, each with what GitHub
+/// says about it, by the session's ID.
+pub fn pulls() -> Vec<(&'static str, PullLink, Pull)> {
+    let pull = |session: &'static str,
+                repo: &str,
+                number: u64,
+                title: &str,
+                checks: Checks,
+                draft: bool,
+                review: Review| {
+        let link = PullLink {
+            url: format!("https://github.com/{repo}/pull/{number}"),
+            repo: repo.to_string(),
+            number,
+            open: true,
+            dismissed: false,
+        };
+        let pull = Pull {
+            number,
+            title: title.to_string(),
+            state: PullState::Open,
+            draft,
+            checks,
+            review,
+            conflicts: false,
+        };
+        (session, link, pull)
+    };
+    vec![pull(
+        "admin",
+        "acme/admin",
+        482,
+        "Send a user a fresh magic link from the admin app",
+        Checks::Passed,
+        false,
+        Review::Approved,
+    )]
+}
+
 /// Builds the made-up rack as it stands at `now`, and the tile whose hover card the showcase's
 /// picture shows.
 pub fn rack(now: SystemTime) -> (Rack, TileId) {
@@ -104,7 +146,11 @@ pub fn rack(now: SystemTime) -> (Rack, TileId) {
                 focused_at: None,
                 parent: parent.map(|p| format!("local_{p}")),
                 cli_id: Some(id.to_string()),
-                pulls: Vec::new(),
+                pulls: pulls()
+                    .into_iter()
+                    .filter(|(session, _, _)| *session == id)
+                    .map(|(_, link, _)| link)
+                    .collect(),
                 archived: false,
             },
         );
@@ -298,10 +344,7 @@ pub fn rack(now: SystemTime) -> (Rack, TileId) {
     let hub = rack.add_own("Order a USB-C hub", ago(300));
     rack.remove(hub, ago(240));
 
-    // Your own tiles wait on something else: one for a PR's checks, with its timer running, and
-    // one for a reply on Slack, whose reminder has come due.
-    let checks = rack.add_own("Merge PR after checks pass", ago(12));
-    rack.start_timer(checks, 15, ago(5));
+    // Your own tile waits on a reply on Slack, and its reminder has come due.
     let slack = rack.add_own("Respond on Slack", ago(40));
     rack.start_timer(slack, 30, ago(31));
     for title in ["Fix the analytics MCP token", "Customer support docs plan"] {

@@ -2,7 +2,7 @@
 
 An always-on-top rack of your Claude Code sessions, and anything else you're juggling.
 
-![Three views of the rack: as it sits, with a session's task list open, and with a session's hover card open](.github/readme/rack.png)
+![Three views of the rack, where a session asking to merge its pull request shows the pull request's number in a chip: as it sits, with a session's task list open, and with a session's hover card open](.github/readme/rack.png)
 
 ## What it does
 
