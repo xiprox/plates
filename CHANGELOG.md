@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/xiprox/plates/compare/v0.8.0...v0.8.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* end a carried-over wait with its own command, not a dev server's ([36b086e](https://github.com/xiprox/plates/commit/36b086eb6621fcb02e6eec8d8f1fe746f5b58eec))
+
 ## [0.8.0](https://github.com/xiprox/plates/compare/v0.7.1...v0.8.0) (2026-11-27)
 
 
