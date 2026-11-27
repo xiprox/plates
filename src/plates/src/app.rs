@@ -17,6 +17,7 @@ use plates_core::{
     cuts::Cuts,
     desktop::{self, AppSessions},
     hooks::{self, HookMessage},
+    pulls::PullLink,
     receiver::{self, PORT, Received, Receiver},
     store,
     tasks::{self, TaskList},
@@ -38,12 +39,15 @@ pub use plates_core::store::data_dir;
 
 /// A session Plates has heard from or restored, as the events thread last read the Claude desktop
 /// app's file for it.
+type Named = (Option<String>, Option<String>, Vec<PullLink>);
+
 struct Look {
     cwd: PathBuf,
     /// The last time the app says you opened the session.
     seen: Option<SystemTime>,
-    /// The title and parent last reported, so the thread reports a change to either once.
-    named: Option<(Option<String>, Option<String>)>,
+    /// The title, parent, and pull requests last reported, so the thread reports a change to
+    /// any of them once.
+    named: Option<Named>,
 }
 
 impl Look {
@@ -60,8 +64,9 @@ impl Look {
 // file for the session, so the events thread reads each session's file once a second and reports
 // what changed:
 // - Opening a session saves the time, and the thread reports a look that's newer than the last.
-// - Renaming a session, or detaching it from the session that started it, changes its title or
-//   its parent, and the thread reports the change, the first read reporting every session's.
+// - Renaming a session, detaching it from the session that started it, or opening a pull request
+//   in it changes its title, its parent, or its pull requests, and the thread reports the change,
+//   the first read reporting every session's.
 // - Moving a session to a new Claude Code session names the new one as the file's
 //   `cliSessionId`, and the thread reports the move, so the old session's tile follows it rather
 //   than showing where the old session was left (record/areas/hooks/log.md, 2026-11-16).
@@ -88,7 +93,7 @@ fn read_app_files(
             moved.push((session_id.clone(), to));
             continue;
         }
-        let named = Some((app.title, app.parent));
+        let named = Some((app.title, app.parent, app.pulls));
         if look.named != named {
             look.named = named;
             found.push(message(session_id, &look.cwd, SessionEvent::AppChanged));

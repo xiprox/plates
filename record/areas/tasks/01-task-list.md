@@ -86,6 +86,8 @@ A `plates` started only as a server would open no window, and we haven't measure
 | `tasks_replace(tasks)` | replaces the whole list, and an empty list wipes it |
 | `tasks_decline` | records that you don't want a list in this session |
 
+The same server's `wait` and `ping` are in [02-waits-and-pings](02-waits-and-pings.md), and its `pr_link` is in [04-pull-requests](../rack/04-pull-requests.md#where-a-sessions-pull-requests-come-from).
+
 Since `tasks_get` returns the list `tasks_replace` last replaced, Claude can put it back with `tasks_replace` when you ask.
 When `tasks_replace` replaces a list that's already empty, as after a wipe, the server keeps the list the wipe replaced, so a list wiped by mistake survives a new list put in its place.
 A state outside the five, an `id` with no task, or text past its limit gets an error that Claude reads, and the list stays as it was.
@@ -104,7 +106,7 @@ If a rewind in a terminal starts a new Claude Code session, that session's list 
 The server saves each list as `<id>.json` in the tasks folder, where `<id>` is the ID it took its session from, such as `local_fb415057-61af-40ba-a31c-ad4367a426e1.json`.
 The tasks folder is `%USERPROFILE%\.plates\tasks\` on Windows, and `tasks` in Plates' data folder ([02-tiles](../rack/02-tiles.md#saving)) on macOS.
 The server writes a new file beside the list and renames it over the list, so Plates never reads half a list (unverified on Windows while Plates holds the list open, as [Left open](#left-open) says).
-The file holds the tasks, the next `id`, whether you declined a list, and the last list replaced, with when.
+The file holds the tasks, the next `id`, whether you declined a list, the last list replaced and when it was replaced, and the pull requests Claude linked with `pr_link` ([04-pull-requests](../rack/04-pull-requests.md#where-a-sessions-pull-requests-come-from)).
 
 Inside the Claude desktop app's package, Windows sends a new file under `%APPDATA%`, or a rename over an existing one, to the package's own folder, where the rack can't read it (measured on Windows 11 25H2, 2026-11-20, [tasks log](log.md#2026-11-20-on-windows-the-task-servers-saves-land-in-the-claude-apps-package-where-the-rack-cant-read-them)).
 A session's commands run inside the package, and the server Claude Code starts for an app session may too (unverified), so on Windows the tasks folder is outside `%APPDATA%`.

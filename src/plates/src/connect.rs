@@ -14,6 +14,8 @@ use std::{
 use plates_core::install::{self, Connection, InstallError, SERVER, ServerStep};
 use serde_json::{Value, json};
 
+use crate::program;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Change {
     /// Adds Plates' hooks and registers its task server, replacing any that another copy or
@@ -242,23 +244,17 @@ pub fn shown(args: &[String]) -> String {
 /// Runs Claude Code's `claude` command, which prints what it changed.
 fn claude(args: &[String], output: Output) -> Result<(), String> {
     let program = find_claude().ok_or("Couldn't find Claude Code's `claude` command.")?;
-    let mut command = Command::new(&program);
-    command.args(args);
     let (status, said) = match output {
-        Output::Terminal => command.status().map(|s| (s, String::new())),
+        Output::Terminal => Command::new(&program)
+            .args(args)
+            .status()
+            .map(|s| (s, String::new())),
         Output::Quiet => {
+            let mut command = program::quiet(&program);
             command
-                .stdin(Stdio::null())
+                .args(args)
                 .stdout(Stdio::null())
                 .stderr(Stdio::piped());
-            // A console program started from Plates' tray, which has no console, would open a
-            // console window of its own for the moment it runs.
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                command.creation_flags(CREATE_NO_WINDOW);
-            }
             command.output().map(|o| {
                 (
                     o.status,
@@ -279,66 +275,7 @@ fn claude(args: &[String], output: Output) -> Result<(), String> {
 
 /// Where Claude Code's `claude` command is: the first on `PATH`, then the one in `~/.local/bin`,
 /// where Claude Code's installer put it on our Mac, then on macOS, the one your shell finds.
-/// Plates opened from Finder or at login gets a `PATH` without the folders your shell adds, so
-/// the tray can't count on `PATH` alone.
 fn find_claude() -> Option<PathBuf> {
-    let name = format!("claude{}", std::env::consts::EXE_SUFFIX);
-    std::env::var_os("PATH")
-        .and_then(|paths| {
-            std::env::split_paths(&paths)
-                .map(|dir| dir.join(&name))
-                .find(|p| p.is_file())
-        })
-        .or_else(|| {
-            dirs::home_dir()
-                .map(|home| home.join(".local").join("bin").join(&name))
-                .filter(|p| p.is_file())
-        })
-        .or_else(from_shell)
-}
-
-/// The `claude` an interactive login shell finds. A login shell alone didn't find it on our Mac,
-/// since the folder it's in joins `PATH` in `~/.zshrc`, which only an interactive zsh reads
-/// (record/areas/hooks/log.md, 2026-11-24). An interactive shell can wait on a prompt of its own,
-/// so it gets 5s before Plates gives up on it.
-#[cfg(target_os = "macos")]
-fn from_shell() -> Option<PathBuf> {
-    use std::{
-        io::Read,
-        time::{Duration, Instant},
-    };
-    let shell = std::env::var_os("SHELL").unwrap_or_else(|| "/bin/zsh".into());
-    let mut child = Command::new(shell)
-        .args(["-ilc", "command -v claude"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-        }
-    }
-    let mut said = String::new();
-    child.stdout.take()?.read_to_string(&mut said).ok()?;
-    said.lines()
-        .map(str::trim)
-        .filter(|line| line.starts_with('/'))
-        .map(PathBuf::from)
-        .rfind(|p| p.is_file())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn from_shell() -> Option<PathBuf> {
-    None
+    let local = dirs::home_dir().map(|home| home.join(".local").join("bin"));
+    program::find("claude", local.as_slice())
 }

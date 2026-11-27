@@ -7,6 +7,7 @@ pub mod desktop;
 pub mod git;
 pub mod hooks;
 pub mod install;
+pub mod pulls;
 pub mod rack;
 pub mod receiver;
 pub mod session;

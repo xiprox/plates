@@ -63,6 +63,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   It draws a markdown link, `[text](target)`, as its text with a 1px underline in the line's color at 45% opacity, and the link can't be clicked (user, 2026-11-15).
   A line that's a table row, such as `| Width | First row |`, shows its cells joined by " · ", as "Width · First row".
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
+- A session with a pull request shows it as a chip at the end of its title, as [04-pull-requests](04-pull-requests.md) describes.
 - A session whose task list has any tasks has a bar under the tile's top that counts them by who holds each, and clicking the bar opens the list inside the tile ([01-task-list](../tasks/01-task-list.md)).
 - An ended tile clears itself 30 minutes after the session ends, and its menu's "Clear" clears it at once.
   A timer holds it past the 30 minutes while the timer is set for tomorrow, and once a timer has run out, until you click the tile (user, 2026-11-16).
@@ -82,6 +83,7 @@ Resting the pointer on a session tile's text for 400ms opens its hover card: a p
 
 - Each move of the pointer starts the wait again, so a pointer crossing the rack opens no card.
   The timer slot sits beside the tile's text, so a pointer on its way to it, or resting on it, opens none either.
+  Resting on a pull request chip opens the chip's pop-out instead ([04-pull-requests](04-pull-requests.md#the-pop-out)).
 - Clicking a tile, or its card, opens the session the card would show, so that tile's card doesn't open again until the pointer has left the tile (user, 2026-11-16).
 - The card grows from the tile's own rectangle to its full size over 180ms, easing out, and its text shows once it's full size, without a fade (user, 2026-11-15).
   It grows right and down from the tile's top-left corner, left from the tile's right edge where the monitor's work area leaves no room on the right, and up from the tile's bottom edge where it leaves no room below.

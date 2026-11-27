@@ -34,7 +34,7 @@ pub const CARD_W: f32 = 360.;
 /// How long the pointer rests on a tile's text before the tile grows into its card.
 pub const CARD_DELAY: Duration = Duration::from_millis(400);
 /// How long the card takes to grow from the tile to its full size (user, 2026-11-15).
-const GROW: Duration = Duration::from_millis(180);
+pub(crate) const GROW: Duration = Duration::from_millis(180);
 /// The tallest the card's middle, between its title and its controls, grows before it scrolls.
 const BODY_MAX_H: f32 = 300.;
 /// The card shows Claude's last message whole, and lays it out on every frame it's open, so a

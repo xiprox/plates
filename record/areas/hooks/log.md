@@ -2,6 +2,34 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-27: The Claude desktop app's file for a session lists its pull requests
+
+**Asked:** does the Claude desktop app keep which pull requests each session opened, where Plates could read them rather than have Claude report them?
+
+**Expected:** maybe, since the app shows a session's pull request and watches its checks.
+
+**Found:** the app's file for a session holds `prs`, a list of the session's pull requests (measured on macOS 26.5.2, 2026-11-27).
+Of the app's session files on our Mac, 99 had a `prs` list, with 157 entries in all:
+
+| Field | Entries that had it |
+| --- | --- |
+| `prNumber`, `repo`, `host`, `url`, `branch`, `baseRef`, `state` | 157 |
+| `provider` | 129 |
+| `own` | 93 |
+| `dismissed` | 34 |
+| `mergedSeenAt` | 13 |
+
+`repo` is `owner/name`, `url` is the pull request's page on github.com, and `state` was `MERGED` in 144 entries and `OPEN` in 13.
+78 files listed one pull request, and one listed 16.
+16 of the 21 lists with more than one entry ran in ascending number order, as one session's 411, 414, 415, 418, and 419 did.
+The other 5 each had one number out of place, such as 428 before 427, so we take a list to run in the order the app linked its pull requests (unverified).
+In one of those, 487 had no `own` and sat between 517 and 519, so `own` may mark a pull request the session opened rather than one it was pointed at (unverified).
+In one session every entry had `dismissed` true; we take it to mean you dismissed the pull request's card in the app (unverified).
+
+**Changed:** Plates reads `prs` into each session's pull requests, and the session's tile shows one as a chip.
+
+**Affects:** [04-pull-requests](../rack/04-pull-requests.md), which leaves Windows open.
+
 ## 2026-11-24: On macOS, a login shell started from a bare `PATH` didn't find `claude`, and an interactive login shell did
 
 **Asked:** can Plates, opened from Finder or at login rather than from a terminal, find Claude Code's `claude` command, which registers Plates' task server?

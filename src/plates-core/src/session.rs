@@ -9,6 +9,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::pulls::PullLink;
+
 /// How many of the turn's newest tools a session keeps, for the hover card.
 pub const RECENT_TOOLS: usize = 4;
 
@@ -538,6 +540,9 @@ pub struct Session {
     /// task list compares each task's last change with, to mark what changed since you were last
     /// there. A session the app doesn't keep, such as one in a terminal, has none.
     pub seen_at: Option<SystemTime>,
+    /// The pull requests the Claude desktop app links to the session, which Plates reads again
+    /// from the app's file after it starts rather than saving them.
+    pub pulls: Vec<PullLink>,
 }
 
 /// One of the turn's tools in words, such as "Reading plan.md", and whether it failed.
@@ -584,6 +589,7 @@ impl Session {
             ended_at: None,
             dismissed_at: None,
             seen_at: None,
+            pulls: Vec::new(),
         }
     }
 

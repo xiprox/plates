@@ -15,6 +15,8 @@ use std::{
 
 use serde_json::Value;
 
+use crate::pulls::{self, PullLink};
+
 /// How long a session ID that no file names waits before another search: `FIRST_RETRY` after its
 /// first miss, doubling after each miss up to `RETRY_AFTER`. A new sub-session's file names its
 /// parent only after the session's first hook events (record/areas/hooks/log.md, 2026-11-16), so
@@ -69,6 +71,8 @@ pub struct AppSession {
     /// session to a new Claude Code session, and then lists the earlier one in
     /// `priorCliSessionIds` (measured on Windows 11 25H2, 2026-11-16, record/areas/hooks/log.md).
     pub cli_id: Option<String>,
+    /// The pull requests the app links to the session, oldest first.
+    pub pulls: Vec<PullLink>,
 }
 
 /// The link that opens a session in the app by its own ID:
@@ -233,6 +237,7 @@ fn read_session(file: &Path, session_id: &str) -> Option<AppSession> {
             .filter(|_| v.get("lineageDetached").and_then(Value::as_bool) != Some(true))
             .map(str::to_string),
         cli_id: text("cliSessionId"),
+        pulls: pulls::links(v.get("prs")),
     })
 }
 

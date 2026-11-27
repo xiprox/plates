@@ -26,8 +26,9 @@ use serde_json::{Value, json};
 /// the list checks. When you change a tool's name here, change it in `tools` too, and for `wait`
 /// and `ping`, in `call` and in plates-core's `hooks::plates_call`, which reads them from the
 /// hooks. When you change a rule here, change it in "How Claude keeps a list" in
-/// record/areas/tasks/01-task-list.md too, or for `wait` and `ping`, in "What Claude is told" in
-/// record/areas/tasks/02-waits-and-pings.md.
+/// record/areas/tasks/01-task-list.md too, for `wait` and `ping`, in "What Claude is told" in
+/// record/areas/tasks/02-waits-and-pings.md, and for `pr_link`, in
+/// record/areas/rack/04-pull-requests.md.
 fn instructions() -> String {
     format!(
         "\
@@ -55,7 +56,9 @@ If your closing message says you're waiting on something, that's your cue to cal
 Don't call wait for a command you leave running for the user, such as a dev server.
 When the user has asked you to tell them when something happens, call ping in the turn it happens, with what happened, at most {message} characters, so the tile rings at once. Ping only when they asked.
 
-The tools are tasks_get, task_add, task_update, tasks_replace, tasks_decline, wait, and ping, from the plates server.",
+When you open a pull request for this session's work, or the user names the one it's for, call pr_link with its URL, so the tile shows where it stands.
+
+The tools are tasks_get, task_add, task_update, tasks_replace, tasks_decline, wait, ping, and pr_link, from the plates server.",
         title = Field::Title.max(),
         status = Field::Status.max(),
         on = Field::On.max(),
@@ -202,6 +205,17 @@ fn call(
         "tasks_decline" => {
             list.decline();
             "Recorded: no task list in this session. The tasks already on it stay.".to_string()
+        }
+        "pr_link" => {
+            let url = args
+                .get("url")
+                .and_then(Value::as_str)
+                .ok_or("pr_link needs url, the pull request's page on GitHub.")?;
+            let link = list.link_pull(url).map_err(|e| e.to_string())?;
+            format!(
+                "Linked #{} in {} to this session's tile, which shows where it stands on GitHub.",
+                link.number, link.repo
+            )
         }
         _ => return Err(format!("The plates server has no tool named {name}.")),
     };
@@ -351,6 +365,20 @@ fn tools() -> Value {
                 "required": ["message"],
             },
         },
+        {
+            "name": "pr_link",
+            "description": "Links a pull request to this session's Plates tile, which shows its number and where it stands on GitHub.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The pull request's page on GitHub, such as https://github.com/owner/repo/pull/12.",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
     ])
 }
 
@@ -445,7 +473,7 @@ mod tests {
                 "{name} isn't in the instructions"
             );
         }
-        assert_eq!(names.len(), 7);
+        assert_eq!(names.len(), 8);
         for word in instructions().split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
             if word.starts_with("task_") || word.starts_with("tasks_") {
                 assert!(
@@ -487,6 +515,27 @@ mod tests {
             text.contains("\"updated\": \"2026-11-20T11:42:11Z\""),
             "{text}"
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pr_link_keeps_each_pull_request_once_and_refuses_another_page() {
+        let dir = folder("pulls");
+        let url = "https://github.com/xiprox/plates/pull/8";
+        let (text, failed) = tool(&dir, "pr_link", json!({ "url": url }));
+        assert!(!failed, "{text}");
+        assert!(text.contains("#8 in xiprox/plates"), "{text}");
+        let (_, failed) = tool(&dir, "pr_link", json!({ "url": format!("{url}/files") }));
+        assert!(!failed);
+        let (text, failed) = tool(
+            &dir,
+            "pr_link",
+            json!({ "url": "https://github.com/xiprox/plates/issues/8" }),
+        );
+        assert!(failed, "{text}");
+        let saved = tasks::load(&tasks::path(&dir, SESSION).unwrap()).unwrap();
+        assert_eq!(saved.pulls, [url]);
+        assert!(saved.tasks.is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 

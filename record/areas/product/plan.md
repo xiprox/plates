@@ -90,6 +90,12 @@ Plates looking for its own updates, and installing one from the rack's menu, as 
 Done when, on Windows, a copy installed from one release finds the next, shows the teal dot on the grip, and after a click on "Update to …" in the rack's menu, runs the new version.
 Step 7's Mac session runs its macOS half.
 
+## 13. Pull requests on tiles
+
+The pull request chip on a session's tile, its pop-out, and `pr_link`, as [04-pull-requests](../rack/04-pull-requests.md) designs them.
+Done when, on Windows and macOS, a session that opens a pull request shows its chip within a second, the chip's icon turns red within a minute of a check failing, and the tile's timer starts if the session isn't working.
+The chip and its pop-out ran on macOS 26.5.2 on 2026-11-27, and we haven't yet seen a check fail under a watched tile.
+
 ## Later
 
 The questions [01-window](../rack/01-window.md#left-open) leaves open.

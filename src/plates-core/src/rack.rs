@@ -1040,6 +1040,7 @@ impl Rack {
         if app.id.is_some() {
             s.app_id = app.id.clone();
         }
+        s.pulls = app.pulls.clone();
         if s.app_parent == app.parent {
             return false;
         }
@@ -1406,6 +1407,25 @@ impl Rack {
         let parent = tile.session().and_then(|s| s.app_parent.clone());
         let index = self.session_slot(parent.as_deref());
         self.tiles.insert(index, tile);
+    }
+
+    /// Starts a session's 5-minute timer, as a turn that ends does, when one of its pull requests
+    /// broke while nothing works on it: its checks failed, or it came to conflict with its base.
+    /// A session that's working leaves it to Claude, and a timer already set, or a snooze, stays
+    /// as it is (user, 2026-11-27). It returns whether the timer started.
+    pub fn pull_broke(&mut self, session_id: &str, now: SystemTime) -> bool {
+        let Some(tile) = self.tiles.iter_mut().find(|t| {
+            t.session()
+                .is_some_and(|s| s.id == session_id && s.state != SessionState::Working)
+        }) else {
+            return false;
+        };
+        if tile.timer != Timer::Idle {
+            return false;
+        }
+        tile.timer = Timer::start(now, DEFAULT_MINUTES);
+        tile.refresh_need(now);
+        true
     }
 
     /// Starts a timer of `minutes`, or starts a running one over.
@@ -3251,5 +3271,22 @@ mod tests {
         assert!(!rack.rename_own(id, "   "));
         assert!(rack.rename_own(id, "Check CI"));
         assert_eq!(rack.tile(id).unwrap().title(), "Check CI");
+    }
+
+    #[test]
+    fn a_broken_pull_request_starts_the_timer_only_while_nothing_works_on_the_session() {
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Open the PR"), 0);
+        assert!(!rack.pull_broke("a", at(1)));
+        assert_eq!(rack.tile(id).unwrap().timer, Timer::Idle);
+
+        // The turn's end starts the timer of your turn, which you cancel.
+        apply(&mut rack, "a", stop("Opened it."), 2);
+        rack.cancel_timer(id, at(2));
+        assert!(rack.pull_broke("a", at(3)));
+        assert!(rack.tile(id).unwrap().timer.is_running());
+        // A timer that's already set stays as it is.
+        assert!(!rack.pull_broke("a", at(4)));
+        assert!(!rack.pull_broke("unknown", at(4)));
     }
 }

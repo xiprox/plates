@@ -92,6 +92,21 @@ fn icon(name: &str) -> Option<String> {
             "0 0 24 24",
             format!(r#"<path d="M6.5 14.5l5.5-5.5 5.5 5.5" {STROKE} stroke-width="1.9"/>"#),
         ),
+        // A pull request: the branch's line from its first commit down to its last, and the
+        // arrow from the last commit into the base branch.
+        "pull.svg" => svg(
+            "0 0 24 24",
+            format!(
+                r#"<g {STROKE} stroke-width="2"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v7.2"/><path d="M18 15.6V9.5a3 3 0 0 0-3-3h-3.5"/><path d="M14 4l-2.5 2.5L14 9"/></g>"#
+            ),
+        ),
+        // A merged pull request: the branch's line curving into the base branch's.
+        "merged.svg" => svg(
+            "0 0 24 24",
+            format!(
+                r#"<g {STROKE} stroke-width="2"><circle cx="6" cy="5.5" r="2.4"/><circle cx="6" cy="18.5" r="2.4"/><circle cx="18" cy="12" r="2.4"/><path d="M6 7.9v8.2"/><path d="M6 7.9c0 2.4 2.5 4.1 5.5 4.1h4.1"/></g>"#
+            ),
+        ),
         "plus.svg" => svg(
             "0 0 24 24",
             format!(r#"<path d="M12 5v14M5 12h14" {STROKE} stroke-width="1.8"/>"#),

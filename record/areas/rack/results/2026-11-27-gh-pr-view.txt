@@ -1,0 +1,6 @@
+$ time gh pr view https://github.com/xiprox/plates/pull/8 --json number,title,state,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,url
+# gh 2.91.0, macOS 26.5.2, 2026-11-27
+{"isDraft":false,"mergeStateStatus":"UNKNOWN","mergeable":"UNKNOWN","number":8,"reviewDecision":"","state":"MERGED","statusCheckRollup":[],"title":"chore(main): release 0.7.1","url":"https://github.com/xiprox/plates/pull/8"}
+real 0.96
+user 0.03
+sys 0.02

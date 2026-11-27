@@ -14,6 +14,9 @@ An always-on-top rack of your Claude Code sessions, and anything else you're jug
   Hover a tile to read Claude's last message, or its plan while it works, and to answer the choices Claude offers at the end of a turn.
 - **Task lists.**
   Claude keeps a short list of a session's bigger pieces of work on its tile: what's under way, what waits on you, and what waits on someone else.
+- **Pull requests.**
+  A session's tile shows its pull request's number, with an icon colored by where the pull request stands on GitHub, and a click opens it.
+  Plates asks GitHub through your `gh` command, so without it the tile shows only whether the pull request is open.
 - **Your own tiles.**
   For anything else, press Ctrl+Shift+Space on Windows or ⌃⇧Space on macOS, type a name, and press Enter.
 - **Timers and snoozing.**
@@ -45,7 +48,7 @@ On macOS, the hover card's buttons need Plates turned on under System Settings >
 Claude Code runs Plates' hooks at each step of a session, such as a prompt, a tool call, or a turn's end, and each hook passes its event to Plates on `127.0.0.1`.
 Plates reads Claude's messages from the session's transcript, and titles from the Claude desktop app's files.
 Task lists come from `plates-tasks`, a Model Context Protocol (MCP) server that Claude Code starts for each session.
-Plates has no account, and apart from looking for updates on GitHub, it sends nothing off your machine.
+Plates has no account, and apart from looking for updates on GitHub, and asking GitHub through your `gh` about your sessions' pull requests, it sends nothing off your machine.
 
 ## How to build it
 

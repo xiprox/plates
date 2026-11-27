@@ -12,7 +12,10 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::store::ms;
+use crate::{
+    pulls::{self, PullLink},
+    store::ms,
+};
 
 /// The version a list's file is written in, which a later format checks before reading.
 const VERSION: u32 = 1;
@@ -130,6 +133,11 @@ pub struct TaskList {
     pub tasks: Vec<Task>,
     #[serde(default)]
     pub replaced: Option<Replaced>,
+    /// The pull requests Claude linked to the session with `pr_link`, by their pages, oldest
+    /// first, which the session's tile shows as it does the Claude desktop app's own links
+    /// (record/areas/rack/04-pull-requests.md).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pulls: Vec<String>,
 }
 
 impl Default for TaskList {
@@ -140,6 +148,7 @@ impl Default for TaskList {
             next_id: 1,
             tasks: Vec::new(),
             replaced: None,
+            pulls: Vec::new(),
         }
     }
 }
@@ -155,6 +164,8 @@ pub enum Error {
     Missing(Field),
     NoTask(u32),
     Declined,
+    /// `pr_link` was given something other than a pull request's page on GitHub.
+    BadPull(String),
 }
 
 /// Text with a length limit: a task's fields, and the text `wait` and `ping` take.
@@ -220,6 +231,11 @@ impl std::fmt::Display for Error {
                 State::NAMES.join(", ")
             ),
             Error::EmptyTitle => write!(f, "A task needs a title."),
+            Error::BadPull(url) => write!(
+                f,
+                "\"{url}\" isn't a pull request's page on GitHub. Give its URL, such as \
+                 https://github.com/owner/repo/pull/12."
+            ),
             Error::TooLong(Field::Title) => write!(
                 f,
                 "A title shows in one line of about {} characters. Name the piece of work in a few \
@@ -388,6 +404,16 @@ impl TaskList {
             });
         }
         Ok(())
+    }
+
+    /// Links the pull request at `url` to the session, once however often Claude links it, and
+    /// returns it.
+    pub fn link_pull(&mut self, url: &str) -> Result<PullLink, Error> {
+        let link = pulls::from_url(url).ok_or_else(|| Error::BadPull(url.to_string()))?;
+        if !self.pulls.contains(&link.url) {
+            self.pulls.push(link.url.clone());
+        }
+        Ok(link)
     }
 
     /// Records that the user doesn't want a list in this session.

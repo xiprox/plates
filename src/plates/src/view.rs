@@ -30,7 +30,7 @@ pub(crate) const YELLOW: u32 = 0xF4D35E;
 /// yellow, so the moon reads at 20px, and redder than the working blue, so the two don't blur
 /// (user, 2026-11-16).
 pub(crate) const VIOLET: u32 = 0xB39DFF;
-const GREEN: u32 = 0x5BCB8A;
+pub(crate) const GREEN: u32 = 0x5BCB8A;
 pub(crate) const GRAY: u32 = 0x5E626B;
 /// The text colors of a working tile, a your-turn tile, and an approval.
 pub(crate) const WORKING_TEXT: u32 = 0x9CC4FF;
@@ -45,7 +45,7 @@ pub(crate) const TEAL: u32 = 0x2DD4BF;
 const LEAVING: usize = 10_000;
 
 /// How long a tile's background brightens when it starts needing you.
-const BRIGHTEN: Duration = Duration::from_millis(1400);
+pub(crate) const BRIGHTEN: Duration = Duration::from_millis(1400);
 /// A new session's tile brightens once it has grown in.
 const ENTER: Duration = crate::rows::ENTER;
 /// How long a starting timer's hourglass takes to turn over before it fills with yellow.
@@ -379,6 +379,12 @@ fn brighten_to(t: &Tile, need: Need) -> u32 {
 
 // The mockups' brighten: up to the peak color 35% of the way in, then back to rest.
 fn brightened(base: u32, peak: u32, elapsed: Duration, length: Duration) -> Option<u32> {
+    swell(elapsed, length).map(|k| mix(base, peak, k))
+}
+
+/// How far a brighten `elapsed` into its `length` stands from rest toward its peak, from 0 to 1,
+/// or `None` once it's over.
+pub(crate) fn swell(elapsed: Duration, length: Duration) -> Option<f32> {
     let t = elapsed.as_secs_f32() / length.as_secs_f32();
     if t >= 1. {
         return None;
@@ -388,7 +394,7 @@ fn brightened(base: u32, peak: u32, elapsed: Duration, length: Duration) -> Opti
     } else {
         1. - (t - 0.35) / 0.65
     };
-    Some(mix(base, peak, k * (2. - k)))
+    Some(k * (2. - k))
 }
 
 // A tile's marker, or with `pip` its mark on the docked strip. The strip has no room for the
@@ -586,6 +592,23 @@ impl RackView {
         } else {
             title.line_clamp(2).line_height(relative(1.25))
         };
+        // A pull request's chip sits at the end of the title: beside its one line, or level with
+        // the first of its two.
+        let chip = self
+            .shown_pull(t)
+            .map(|(link, more)| self.pull_chip(id, &link, more, cx));
+        let title = match chip {
+            Some(chip) => {
+                let row = div().flex().gap(px(6.)).min_w_0();
+                let row = if summary.is_some() {
+                    row.items_center()
+                } else {
+                    row.items_start()
+                };
+                row.child(title.min_w_0()).child(chip).into_any_element()
+            }
+            None => title.into_any_element(),
+        };
         let txt = div()
             .flex()
             .flex_col()
@@ -609,8 +632,10 @@ impl RackView {
             .items_center()
             .gap(px(10.))
             .pl(px(12.))
-            // Beside the timer slot, the text stops 6px short of its divider. An ended tile has
-            // no timer slot, so its text stops as far from the tile's edge as it starts.
+            // Beside the timer slot, the text stops 6px short of its divider, and the pull
+            // request chip's right margin in pull_chip.rs builds on that, so change both
+            // together. An ended tile has no timer slot, so its text stops as far from the
+            // tile's edge as it starts.
             .pr(px(if ended { 12. } else { 6. }))
             .child(marker(t, false))
             .child(txt)
@@ -1482,7 +1507,12 @@ impl RackView {
             .swipe
             .as_ref()
             .is_some_and(|s| s.settling(Instant::now()));
+        let chip_brightens = self
+            .pulls
+            .values()
+            .any(|p| p.changed.is_some_and(|at| at.elapsed() < BRIGHTEN));
         swiped
+            || chip_brightens
             || self.rack.tiles().iter().any(|t| {
                 t.need
                     .is_some_and(|(_, at)| !self.hold.holds(at) && since(at, now) < BRIGHTEN)

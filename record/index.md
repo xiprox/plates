@@ -9,6 +9,7 @@ Documentation people write for other people lives in `docs/` instead.
 - [areas/rack/01-window.md](areas/rack/01-window.md): the rack's window, and how it moves, docks, and leaves your keyboard focus alone.
 - [areas/rack/02-tiles.md](areas/rack/02-tiles.md): what each tile shows, the timer, how a tile asks for attention, and adding, renaming, and removing tiles.
 - [areas/rack/03-holding-pings.md](areas/rack/03-holding-pings.md): how Plates holds its tone and its calls for attention while you type or read a reply in the Claude app.
+- [areas/rack/04-pull-requests.md](areas/rack/04-pull-requests.md): how a session's tile shows its pull request, and where that pull request stands on GitHub.
 - [areas/rack/log.md](areas/rack/log.md): what we found about the rack's window, from the window test in `experiments/areas/rack/`.
 - [areas/core/01-core.md](areas/core/01-core.md): what `plates-core` holds, and its rules for tiles, timers, and saving.
 - [areas/hooks/01-claude-code-hooks.md](areas/hooks/01-claude-code-hooks.md): how Claude Code's hooks and transcripts tell Plates what each session is doing.

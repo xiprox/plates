@@ -2,6 +2,50 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-27: GPUI's tooltip can't leave the rack's window, so the pull request chip's pop-out is a window of its own
+
+**Asked:** why did the pull request chip's pop-out sit against the rack's left edge, with room to spare on the right?
+
+**Expected:** a tooltip beside the pointer, since GPUI places one at the pointer.
+
+**Found:** GPUI places a tooltip 1px from the pointer, moves it to the pointer's left when it would pass the window's right edge, and pins it to the window's left edge when it fits on neither side (read in gpui-pre 0.3.12, `src/window.rs`, `prepaint_tooltip`).
+The rack's window is 304px wide and the pop-out was 250px, so over a chip near the tile's right end it fit on neither side, and sat at the rack's left edge (seen by the user on macOS 26.5.2, 2026-11-27).
+
+**Changed:** the pop-out is a popup window that grows out of the chip, as the hover card grows out of its tile.
+
+**Affects:** [04-pull-requests](04-pull-requests.md#the-pop-out).
+
+## 2026-11-27: A click on the pull request chip just before its pop-out opened left the pop-out over the browser
+
+**Asked:** why did a pull request's pop-out stay on screen over the browser after a click on its chip?
+
+**Expected:** the pop-out to stay closed, since the click opened the pull request and took the pointer's attention elsewhere.
+
+**Found:** a click on the chip just before the pop-out's wait ended opened the browser, and the pop-out then opened over it and stayed (seen by the user on macOS 26.5.2, 2026-11-27).
+The click didn't cancel the wait. The pop-out was then GPUI's tooltip, and GPUI closes a tooltip only on its own window's pointer events (read in gpui-pre 0.3.12, `src/elements/div.rs`, `register_tooltip_mouse_handlers`), which stopped reaching the rack once the browser was in front (unverified).
+
+**Changed:** a click on the chip cancels the wait, closes any pop-out, and keeps the card and the pop-out closed until the pointer leaves the tile's text, as a click on the tile does.
+The pop-out, a window of its own since the entry above, reads the pointer's place on screen each frame, as the hover card does.
+
+**Affects:** [04-pull-requests](04-pull-requests.md#the-chip).
+
+## 2026-11-27: `gh pr view` answers in under a second, and lists a pull request's checks one by one
+
+**Asked:** how long does `gh pr view` take to say where a pull request stands, and how does it report the checks?
+
+**Expected:** under a second, and the checks summed up in one state.
+
+**Found:** `gh pr view https://github.com/xiprox/plates/pull/8 --json number,title,state,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,url` took 820ms, and 960ms in a second run, whose output is in [results](results/2026-11-27-gh-pr-view.txt), with gh 2.91.0 (measured on macOS 26.5.2, 2026-11-27).
+That pull request was merged and had no checks, so `statusCheckRollup` was `[]`.
+Its `mergeable` was `UNKNOWN`.
+For an open pull request in a private repository of ours, `statusCheckRollup` listed its 7 checks one by one, each with `__typename` `CheckRun`, `status` `COMPLETED`, and `conclusion` `SUCCESS`, beside its `name`, `workflowName`, `startedAt`, `completedAt`, and `detailsUrl`.
+Its `mergeable` was `MERGEABLE`, and its `reviewDecision` was empty, which we take to mean the repository asks for no review (unverified).
+We didn't save that pull request's output, since it names a private repository.
+
+**Changed:** Plates asks `gh` from a thread of its own, one pull request at a time, and sums the checks up itself.
+
+**Affects:** [04-pull-requests](04-pull-requests.md#asking-github).
+
 ## 2026-11-23: The Mac drew the README's three-rack picture at the sizes read from the code
 
 **Asked:** does `plates showcase --capture` on the Mac draw the three-rack picture that [the Windows capture entry](#2026-11-20-on-windows-plates-showcase---capture-cant-draw-the-rack) laid out, at the sizes it read from the code?
