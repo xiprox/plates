@@ -6,7 +6,7 @@ use std::{
     cell::Cell,
     path::PathBuf,
     rc::Rc,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
 
 use gpui_kit::component::scroll::ScrollableElement;
@@ -21,6 +21,7 @@ use crate::{
     markup::{self, Align, Block},
     motion::Rect,
     native,
+    popup::Grow,
     rack_view::RackView,
     view::{
         APPROVAL_TEXT, BLUE, GRAY, MONO, MUTED, SANS, TEXT, TEXT2, TILE, VIOLET, WORKING_TEXT,
@@ -33,8 +34,6 @@ use crate::{
 pub const CARD_W: f32 = 360.;
 /// How long the pointer rests on a tile's text before the tile grows into its card.
 pub const CARD_DELAY: Duration = Duration::from_millis(400);
-/// How long the card takes to grow from the tile to its full size (user, 2026-11-15).
-pub(crate) const GROW: Duration = Duration::from_millis(180);
 /// The tallest the card's middle, between its title and its controls, grows before it scrolls.
 const BODY_MAX_H: f32 = 300.;
 /// The card shows Claude's last message whole, and lays it out on every frame it's open, so a
@@ -53,9 +52,7 @@ pub struct CardView {
     /// The content's height in logical pixels, from the last frame's layout, which the window
     /// takes once the card has grown.
     measured: Rc<Cell<Option<f32>>>,
-    grow_start: Option<Instant>,
-    shadow: bool,
-    applied: Option<(i32, i32, i32, i32)>,
+    grow: Grow,
     /// The session's folder and branch, such as "plates · main", read once when the card opens.
     place: String,
     closed: bool,
@@ -71,14 +68,7 @@ impl CardView {
         cx: &mut Context<Self>,
     ) -> Self {
         let hwnd = native::hwnd_of(window);
-        // DWM draws the shadow around the whole window, so it waits for the card to finish
-        // growing, as the menu's waits for its fade.
-        cx.spawn(async move |_, _| {
-            native::take_over(hwnd);
-            native::set_bounds(hwnd, from);
-            native::set_shadow(hwnd, false);
-        })
-        .detach();
+        let grow = Grow::new(hwnd, from, cx);
         let name = folder.file_name().map_or_else(
             || folder.display().to_string(),
             |n| n.to_string_lossy().into_owned(),
@@ -93,9 +83,7 @@ impl CardView {
             hwnd,
             from,
             measured: Rc::default(),
-            grow_start: None,
-            shadow: false,
-            applied: Some(key(from)),
+            grow,
             place,
             closed: false,
         }
@@ -126,33 +114,7 @@ impl CardView {
         let area = native::edges_at(((f.left + f.right) / 2., (f.top + f.bottom) / 2.)).area;
         // The content sits inside the card's 1px border.
         let full = card_rect(f, CARD_W as f64 * scale, (height + 2.) as f64 * scale, area);
-        let start = *self.grow_start.get_or_insert_with(Instant::now);
-        let t = (start.elapsed().as_secs_f64() / GROW.as_secs_f64()).min(1.);
-        let k = 1. - (1. - t).powi(3);
-        let lerp = |a: f64, b: f64| a + (b - a) * k;
-        let r = Rect {
-            left: lerp(f.left, full.left),
-            top: lerp(f.top, full.top),
-            right: lerp(f.right, full.right),
-            bottom: lerp(f.bottom, full.bottom),
-        };
-        let hwnd = self.hwnd;
-        if self.applied != Some(key(r)) {
-            self.applied = Some(key(r));
-            // GPUI can't take the WM_MOVE a SetWindowPos sends while it draws, as the rack's
-            // RackView::place says, so the move waits for a task.
-            cx.foreground_executor()
-                .spawn(async move { native::set_bounds(hwnd, r) })
-                .detach();
-        }
-        let grown = t >= 1.;
-        if grown && !self.shadow {
-            self.shadow = true;
-            cx.foreground_executor()
-                .spawn(async move { native::set_shadow(hwnd, true) })
-                .detach();
-        }
-        grown
+        self.grow.step(full, cx)
     }
 
     fn content(&self, t: &Tile, s: &Session, parent: Option<&str>, cx: &mut Context<Self>) -> Div {
@@ -505,15 +467,6 @@ impl Render for CardView {
             )
             .into_any_element()
     }
-}
-
-fn key(r: Rect) -> (i32, i32, i32, i32) {
-    (
-        r.left.round() as i32,
-        r.top.round() as i32,
-        (r.right - r.left).round() as i32,
-        (r.bottom - r.top).round() as i32,
-    )
 }
 
 // The card's full rectangle: from the tile's top-left corner, out to the right and down, or to

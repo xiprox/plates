@@ -15,6 +15,7 @@ mod menu;
 mod motion;
 mod native;
 mod place;
+mod popup;
 mod press;
 mod program;
 mod pull_chip;

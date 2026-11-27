@@ -28,11 +28,15 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
     let app = message.app.as_ref();
     let transcript = message.transcript_path.as_deref();
     // A session the Claude desktop app archived leaves the rack for good, whether its tile is
-    // shown or dismissed, since the app still keeps the session (user, 2026-11-27). While the app
-    // keeps it archived, none of its events bring a tile back, as an event it sent after it was
-    // archived, such as a `SessionEnd`, would otherwise add one (unverified whether archiving
-    // sends any).
+    // shown, dismissed, or snoozed, since the app still keeps the session (user, 2026-11-27).
+    // While the app keeps it archived, none of its events bring a tile back, as an event it sent
+    // after it was archived, such as a `SessionEnd`, would otherwise add one (unverified whether
+    // archiving sends any). A session the app moved before archiving it still has its tile under
+    // the session it moved from.
     if app.is_some_and(|a| a.archived) {
+        if let SessionEvent::Continued { from } = &event {
+            rack.archived_in_app(from);
+        }
         return rack.archived_in_app(session_id);
     }
     match &event {

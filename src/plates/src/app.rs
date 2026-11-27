@@ -37,10 +37,12 @@ const POLL: Duration = Duration::from_secs(1);
 
 pub use plates_core::store::data_dir;
 
-/// A session Plates has heard from or restored, as the events thread last read the Claude desktop
-/// app's file for it.
+/// What the app's file says about a session that the tile shows: its title, its parent, its pull
+/// requests, and whether the app archived it.
 type Named = (Option<String>, Option<String>, Vec<PullLink>, bool);
 
+/// A session Plates has heard from or restored, as the events thread last read the Claude desktop
+/// app's file for it.
 struct Look {
     cwd: PathBuf,
     /// The last time the app says you opened the session.

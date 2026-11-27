@@ -6,8 +6,8 @@ Depends on:  02-tiles (02-tiles.md), for the tile, its hover card, its timer, an
 Decides:     Where Plates learns a session's pull requests, which one a tile shows, how Plates asks GitHub about it, what the chip and its pop-out show, and what a pull request that changes does to its tile.
 ```
 
-A session tile shows the pull request its session works on as a chip at the end of its title: a pull request icon colored by where it stands, and its number, as in "#525" (user, 2026-11-27).
-Resting the pointer on the chip opens a pop-out with the pull request's title and its state in words, and clicking the chip opens the pull request in your browser.
+A session tile shows the pull requests its session works on as a chip at the end of its title: a pull request icon colored by where they stand, and a number, as in "#525", or "#531 +1" with two open (user, 2026-11-27).
+Resting the pointer on the chip opens a pop-out with a row for each open pull request, its title and its state in words, and clicking a row, or the chip when it names one pull request, opens it in your browser.
 Plates learns which pull requests a session has from the Claude desktop app and from Claude, and asks GitHub where each stands through GitHub's `gh` command.
 
 ## Where a session's pull requests come from
@@ -24,23 +24,26 @@ Plates learns which pull requests a session has from the Claude desktop app and 
 
 A session's pull requests are the app's, in the app's order, then the ones Claude linked, in the order it linked them, without repeats.
 
-## Which one the tile shows
+## Which ones the tile shows
 
-- The last open pull request in that order that isn't dismissed, with "+2" after its number when the session has two more open ones.
-- Once none is open, the last merged or closed one, so a session whose work landed shows that it did.
-- No chip when every pull request is dismissed, or the session has none.
+A tile shows every open pull request of its session that isn't dismissed, and its chip names one (user, 2026-11-27):
 
-Until GitHub answers, Plates counts a pull request as open if the app's file says `OPEN` and as merged otherwise, and one Claude linked as open.
+- The chip names the last open one in that order, with "+1" after its number for each other open one, as in "#531 +1".
+- Once none is open, the chip names the last merged or closed one, so a session whose work landed shows that it did.
+- No chip shows when every pull request is dismissed, or the session has none.
+
+Once GitHub has answered about a pull request, its answer says whether it's open.
+Until then, Plates counts a pull request as open if the app's file says `OPEN` and as merged otherwise, and one Claude linked as open.
 
 ## Asking GitHub
 
-Plates asks `gh pr view <url> --json number,title,state,isDraft,reviewDecision,mergeable,statusCheckRollup` about each pull request a tile shows, one at a time, on a thread of its own rather than the rack's, since an ask took 820ms to 960ms (measured on macOS 26.5.2, 2026-11-27, [rack log](log.md#2026-11-27-gh-pr-view-answers-in-under-a-second-and-lists-a-pull-requests-checks-one-by-one)).
+Plates asks `gh pr view <url> --json number,title,state,isDraft,reviewDecision,mergeable,statusCheckRollup` about each pull request a tile shows, open or named, one at a time, on a thread of its own rather than the rack's, since an ask took 820ms to 960ms (measured on macOS 26.5.2, 2026-11-27, [rack log](log.md#2026-11-27-gh-pr-view-answers-in-under-a-second-and-lists-a-pull-requests-checks-one-by-one)).
 
 - Plates asks about an open pull request once a minute, and about a merged or closed one once, for its title.
 - Plates stops asking about a pull request once no tile shows it.
 - When an ask fails, as when `gh` isn't signed in, Plates asks again a minute later, and the tile keeps what it showed.
 
-Plates looks for `gh` once, when a tile first shows a pull request: on `PATH`, then in `/opt/homebrew/bin` and `/usr/local/bin`, where Homebrew puts it on a Mac with Apple silicon and with Intel ([Homebrew's FAQ](https://docs.brew.sh/FAQ#why-should-i-install-homebrew-in-the-default-location)), then, on macOS, where an interactive login shell finds it, as Plates finds `claude` ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#installing)).
+Plates looks for `gh` once, when a tile first shows a pull request: on `PATH`, then on macOS in `/opt/homebrew/bin` and `/usr/local/bin`, where Homebrew puts it on a Mac with Apple silicon and with Intel ([Homebrew's FAQ](https://docs.brew.sh/FAQ#why-should-i-install-homebrew-in-the-default-location)), then, on macOS, where an interactive login shell finds it, as Plates finds `claude` ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#installing)).
 Without `gh`, the chip shows only what the app's file says.
 `gh` asks GitHub with the account you signed it in to.
 
@@ -64,7 +67,8 @@ Plates gives a pull request the first of these that holds: merged, closed, faile
   A title too long for its lines truncates before the chip.
   At the end of a long title, the chip sits 10px from the timer slot (user, 2026-11-27).
 - Its fill is white at 7% opacity, and its number is in the secondary text color, so a chip on every tile doesn't pull the eye from the tiles' own states (user, 2026-11-27).
-  Only its 11px icon takes a color:
+  Only its 11px icon takes a color, from where the open pull request that most wants your eye stands: failed, then in conflict, then running, passed, open, and a draft last, so an older pull request with a failed check shows red behind a newer one that passed.
+  Once none is open, the icon takes the named one's color:
 
   | Pull request | Icon |
   | --- | --- |
@@ -74,27 +78,32 @@ Plates gives a pull request the first of these that holds: merged, closed, faile
   | Draft, or closed | pull request icon in the muted color |
 
   An open pull request whose checks are running, or that has none, is green like one whose checks passed, because gray marks a draft on GitHub (user, 2026-11-27).
-- Clicking the chip opens the pull request in your browser and nothing else: the click stops at the chip, so it doesn't open the session, and the tile's card and the chip's pop-out stay closed until the pointer leaves the tile's text, as after a click on the tile ([02-tiles](02-tiles.md#the-hover-card)).
+- With one pull request open or named, clicking the chip opens it in your browser and nothing else: the click stops at the chip, so it doesn't open the session, and the tile's card and the chip's pop-out stay closed until the pointer leaves the tile's text, as after a click on the tile ([02-tiles](02-tiles.md#the-hover-card)).
   Without that, a click just before the pop-out opened left the pop-out over the browser (seen by the user on macOS 26.5.2, 2026-11-27, [rack log](log.md#2026-11-27-a-click-on-the-pull-request-chip-just-before-its-pop-out-opened-left-the-pop-out-over-the-browser)).
+- With two or more open, clicking the chip opens the pop-out at once, without the hover card's wait, for you to pick one from (user, 2026-11-27).
+- A click that ends a drag of the rack opens nothing, as on the rest of the rack.
 
 ## The pop-out
 
 - When the hover card's wait ends with the pointer on the chip, the pop-out opens instead of the card ([02-tiles](02-tiles.md#the-hover-card)).
   It grows out of the chip as the card grows out of its tile, in a popup window of its own (user, 2026-11-27).
   It opens 6px under the chip from the chip's left edge, above the chip where the screen has no room below, and further left where it has none on the right.
-- It shows, top to bottom:
+- It lists a row for each open pull request, newest first, or once none is open, a row for the named one, with a line between rows (user, 2026-11-27).
+  Each row shows, top to bottom:
   - the number and the repository, as "#525 · owner/name"
   - the title, once GitHub has said it
-  - the state in words, in the icon's color, such as "2 checks failed · Changes requested", where a pull request in conflict says "Merge conflicts" (user, 2026-11-27)
-  - "1 more open pull request" when the session has another open one
-- It stays open while the pointer is on the chip, the gap, or the pop-out, and clicking it opens the pull request.
+  - the state in words, in its icon's color, such as "2 checks failed · Changes requested", where a pull request in conflict says "Merge conflicts" (user, 2026-11-27)
+- Clicking a row opens its pull request in your browser and closes the pop-out.
+- It stays open while the pointer is on the chip, on the pop-out, or in the 6px gap between them as wide as the chip.
+- It closes as the hover card does when a menu opens, a swipe starts, or the name field opens.
 
 The pop-out is a window of its own because GPUI keeps a tooltip inside the window it belongs to, so over a chip near the tile's right end, a tooltip sat against the rack's left edge ([rack log](log.md#2026-11-27-gpuis-tooltip-cant-leave-the-racks-window-so-the-pull-request-chips-pop-out-is-a-window-of-its-own)).
 
 ## When a pull request changes
 
-- When GitHub's answer changes where a pull request stands, as from running to failed, its chip brightens once: its fill washes up to the icon's color at 45% opacity and back over 1.4s, the length of a tile's brighten.
-- When a pull request breaks, going to failed or in conflict from neither, each tile showing it starts its 5-minute timer, if its session isn't working and its tile has no timer running, run out, or set for later (user, 2026-11-27).
+- When GitHub's answer changes where one of a chip's pull requests stands, as from running to failed, the chip brightens once: its fill washes up to the icon's color at 45% opacity and back over 1.4s, the length of a tile's brighten.
+- When an open pull request breaks, going to failed or in conflict from neither, each tile showing it starts its 5-minute timer, if its session isn't working or ended and its tile has no timer running, run out, or set for later (user, 2026-11-27).
+  An ended session's tile has no timer slot to show or cancel a timer in.
   The timer stops once the session starts working, as when Claude picks up the failure, so the tone rings only for a break nobody took up in 5 minutes ([02-tiles](02-tiles.md#the-timer)).
   Nothing else about a pull request rings, since Claude often watches and merges its own pull requests (user, 2026-11-27).
 - Plates' first answer about a pull request after it starts changes nothing, so a pull request that was already failing when a tile first showed it neither brightens nor starts a timer.
@@ -106,7 +115,7 @@ The pop-out is a window of its own because GPUI keeps a tooltip inside the windo
 
 ## Left open
 
-- Whether `prs` runs in the order the app linked its pull requests, which the tile's pick depends on; a session that links an older pull request after a newer one would settle it.
+- Whether `prs` runs in the order the app linked its pull requests, which the named pull request depends on; a session that links an older pull request after a newer one would settle it.
 - Whether `dismissed` marks a pull request whose card you dismissed in the app; dismissing one and reading the session's file would settle it.
 - Whether the app's files on Windows hold `prs` as they do on macOS, and whether `gh` runs from Plates on Windows without a console window; running a session that opens a pull request on Windows would settle both.
 - We haven't seen a chip brighten, or a break start a timer, since no pull request changed while we watched; a pull request whose checks fail while its session isn't working would settle both.

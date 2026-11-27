@@ -29,6 +29,7 @@ use crate::{
     motion::{self, Ease, Rect, Side, Tween},
     native,
     place::{self, Place},
+    popup,
     pull_pop::PullPopView,
     pulls::Watcher,
     rows::Rows,
@@ -152,7 +153,6 @@ pub(crate) struct Spot {
 /// The pop-out of the pull request chip on tile `tile`.
 pub(crate) struct PullPop {
     tile: TileId,
-    url: String,
 }
 
 /// What GitHub last said about a pull request, and when what its chip says last changed, which
@@ -931,8 +931,8 @@ impl RackView {
     }
 
     /// Follows a two-finger swipe across the rack, sliding its tile with the fingers and, once
-    /// they lift, back into place or out, which dismisses the tile as its × does
-    /// (user, 2026-11-16).
+    /// they lift, back into place or out, which takes the tile off as its menu's last row does
+    /// (user, 2026-11-16), unless it's a session with sub-sessions, which slides back.
     pub(crate) fn on_scroll(&mut self, e: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
         // A mouse wheel's notches come as lines, and only a trackpad's or a touchscreen's scroll
         // comes in exact pixels.
@@ -1377,18 +1377,19 @@ impl RackView {
     }
 
     // Tells the watcher which pull requests the tiles show, when that changed: for each session
-    // tile on the rack, the one `shown_pull` picks.
+    // tile on the rack, every open one, and the one its chip names.
     fn watch_pulls(&mut self) {
         let Some(watcher) = &self.pull_watcher else {
             return;
         };
-        let urls: Vec<String> = self
-            .rack
-            .tiles()
-            .iter()
-            .filter_map(|t| self.shown_pull(t))
-            .map(|(link, _)| link.url)
-            .collect();
+        let mut urls: Vec<String> = Vec::new();
+        for on in self.rack.tiles().iter().filter_map(|t| self.tile_pulls(t)) {
+            for link in on.open.iter().chain([&on.named]) {
+                if !urls.contains(&link.url) {
+                    urls.push(link.url.clone());
+                }
+            }
+        }
         if urls != self.watched {
             watcher.watch(urls.clone());
             self.watched = urls;
@@ -1396,7 +1397,7 @@ impl RackView {
     }
 
     // GitHub's word on a pull request. A chip whose status changed brightens once, and a pull
-    // request that broke starts the timer of each idle session that shows it
+    // request that broke starts the timer of each session that shows it and isn't working
     // (record/areas/rack/04-pull-requests.md).
     fn pull_arrived(&mut self, url: String, pull: Pull, cx: &mut Context<Self>) {
         let was = self.pulls.get(&url);
@@ -1412,7 +1413,10 @@ impl RackView {
                 .rack
                 .tiles()
                 .iter()
-                .filter(|t| self.shown_pull(t).is_some_and(|(link, _)| link.url == url))
+                .filter(|t| {
+                    self.tile_pulls(t)
+                        .is_some_and(|on| on.open.iter().any(|link| link.url == url))
+                })
                 .filter_map(|t| Some(t.session()?.id.clone()))
                 .collect();
             let mut started = false;
@@ -1586,14 +1590,11 @@ impl RackView {
         let chip = self
             .rack
             .tile(id)
-            .and_then(|t| self.shown_pull(t))
-            .map(|(link, _)| link.url);
-        if let Some(url) = chip {
-            let on_chip = self.on_screen(&spot.chip);
-            if on_chip.contains(cursor) {
-                self.show_pull_pop(id, url, on_chip, cx);
-                return;
-            }
+            .is_some_and(|t| self.tile_pulls(t).is_some());
+        let on_chip = self.on_screen(&spot.chip);
+        if chip && on_chip.contains(cursor) {
+            self.show_pull_pop(id, on_chip, cx);
+            return;
         }
         self.show_card(id, folder, &spot, cx);
     }
@@ -1655,25 +1656,7 @@ impl RackView {
         let s = self.scale;
         let from = self.on_screen(&spot.tile);
         let rack = cx.entity().downgrade();
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                point(px((from.left / s) as f32), px((from.top / s) as f32)),
-                size(
-                    px(((from.right - from.left) / s) as f32),
-                    px(((from.bottom - from.top) / s) as f32),
-                ),
-            ))),
-            titlebar: None,
-            focus: false,
-            show: true,
-            kind: WindowKind::PopUp,
-            is_movable: false,
-            is_resizable: false,
-            is_minimizable: false,
-            window_background: WindowBackgroundAppearance::Transparent,
-            inactive_frame_interval: None,
-            ..Default::default()
-        };
+        let options = popup::options(from, s);
         self.card = Some(Card {
             tile: id,
             window: None,
@@ -1702,36 +1685,15 @@ impl RackView {
 
     // The pop-out opens in a window of its own, growing out of the chip, as the card does out of
     // its tile.
-    fn show_pull_pop(&mut self, id: TileId, url: String, from: Rect, cx: &mut Context<Self>) {
+    fn show_pull_pop(&mut self, id: TileId, from: Rect, cx: &mut Context<Self>) {
         let s = self.scale;
         let rack = cx.entity().downgrade();
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                point(px((from.left / s) as f32), px((from.top / s) as f32)),
-                size(
-                    px(((from.right - from.left) / s) as f32),
-                    px(((from.bottom - from.top) / s) as f32),
-                ),
-            ))),
-            titlebar: None,
-            focus: false,
-            show: true,
-            kind: WindowKind::PopUp,
-            is_movable: false,
-            is_resizable: false,
-            is_minimizable: false,
-            window_background: WindowBackgroundAppearance::Transparent,
-            inactive_frame_interval: None,
-            ..Default::default()
-        };
-        self.pull_pop = Some(PullPop {
-            tile: id,
-            url: url.clone(),
-        });
+        let options = popup::options(from, s);
+        self.pull_pop = Some(PullPop { tile: id });
         // As for the card, the window opens once the rack's update is over.
         cx.defer(move |cx| {
             let opened = cx.open_window(options, |window, cx| {
-                cx.new(|cx| PullPopView::new(rack.clone(), id, url.clone(), from, window, cx))
+                cx.new(|cx| PullPopView::new(rack.clone(), id, from, window, cx))
             });
             if let Err(e) = opened {
                 eprintln!("Couldn't open a pull request's pop-out: {e}");
@@ -1740,31 +1702,48 @@ impl RackView {
         });
     }
 
-    /// Whether the rack still wants the pop-out of tile `tile`'s pull request at `url`.
-    pub(crate) fn pull_pop_is(&self, tile: TileId, url: &str) -> bool {
-        self.pull_pop
-            .as_ref()
-            .is_some_and(|p| p.tile == tile && p.url == url)
+    /// Whether the rack still wants the pop-out of tile `tile`'s pull requests.
+    pub(crate) fn pull_pop_is(&self, tile: TileId) -> bool {
+        self.pull_pop.as_ref().is_some_and(|p| p.tile == tile)
     }
 
     /// The pop-out window tells the rack it closed itself.
-    pub(crate) fn pull_pop_closed(&mut self, tile: TileId, url: &str) {
-        if self.pull_pop_is(tile, url) {
+    pub(crate) fn pull_pop_closed(&mut self, tile: TileId) {
+        if self.pull_pop_is(tile) {
             self.pull_pop = None;
         }
     }
 
-    /// A click on a pull request chip opens the pull request in your browser. A pointer that
-    /// clicked before its pop-out opened would otherwise get the pop-out over the browser, so the
-    /// click cancels the wait, closes any pop-out, and holds back the card and the pop-out until
-    /// the pointer leaves the tile's text, as a click on the tile does.
-    pub(crate) fn click_pull(&mut self, id: TileId, url: String, cx: &mut Context<Self>) {
-        self.opened = Some(id);
+    /// A click on a pull request chip. With one pull request, it opens that pull request in your
+    /// browser, and cancels the pop-out's wait, closes any pop-out, and holds back the card and
+    /// the pop-out until the pointer leaves the tile's text, as a click on the tile does, since a
+    /// pop-out that opened after the click sat over the browser. With two or more open, it opens
+    /// the pop-out at once, without the wait, for you to pick one (user, 2026-11-27).
+    pub(crate) fn click_pull(&mut self, id: TileId, cx: &mut Context<Self>) {
+        if self.suppress_click {
+            return;
+        }
+        let Some(on) = self.rack.tile(id).and_then(|t| self.tile_pulls(t)) else {
+            return;
+        };
         if self.rest.is_some_and(|(resting, _)| resting == id) {
             self.rest = None;
         }
+        if on.open.len() >= 2 {
+            if self.pull_pop_is(id) {
+                return;
+            }
+            self.close_card(cx);
+            let chip = self.spots.borrow().get(&id).map(|spot| spot.chip);
+            if let Some(chip) = chip {
+                let from = self.on_screen(&chip);
+                self.show_pull_pop(id, from, cx);
+            }
+            return;
+        }
+        self.opened = Some(id);
         self.pull_pop = None;
-        Self::open_link(url, cx);
+        Self::open_link(on.named.url, cx);
     }
 
     /// The card window tells the rack it closed itself.
@@ -1776,8 +1755,11 @@ impl RackView {
 
     // Closing a window can run while the rack draws, as when the rack docks, so it waits for
     // GPUI to finish the frame.
+    // Closes the tile's card, and the pull request chip's pop-out, which closes itself once the
+    // rack no longer wants it.
     fn close_card(&mut self, cx: &mut Context<Self>) {
         self.rest = None;
+        self.pull_pop = None;
         if let Some(window) = self.card.take().and_then(|c| c.window) {
             cx.defer(move |cx| {
                 window

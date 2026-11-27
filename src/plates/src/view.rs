@@ -525,7 +525,6 @@ impl RackView {
             return self.field_row(t, cx);
         }
         let id = t.id;
-        let group: SharedString = format!("tile-{i}").into();
         let rest = tile_bg(t);
         let mut bg = rest;
         // A tile that started needing you while you were busy waits to brighten until the held
@@ -594,9 +593,7 @@ impl RackView {
         };
         // A pull request's chip sits at the end of the title: beside its one line, or level with
         // the first of its two.
-        let chip = self
-            .shown_pull(t)
-            .map(|(link, more)| self.pull_chip(id, &link, more, cx));
+        let chip = self.tile_pulls(t).map(|on| self.pull_chip(id, &on, cx));
         let title = match chip {
             Some(chip) => {
                 let row = div().flex().gap(px(6.)).min_w_0();
@@ -727,7 +724,6 @@ impl RackView {
         let shift = self.swipe_offset(Swiped::Tile(id), !live, Instant::now());
         div()
             .id(("tile", id.0))
-            .group(group)
             .relative()
             .left(px(shift))
             .opacity(1. - 0.7 * (shift.abs() / crate::swipe::OUT).min(1.))

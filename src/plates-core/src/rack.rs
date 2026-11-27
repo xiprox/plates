@@ -1052,7 +1052,7 @@ impl Rack {
     }
 
     /// Takes the tile of a session the Claude desktop app archived off the rack for good, from
-    /// among the shown or the dismissed, and returns it. Its sub-sessions stay, each until the app
+    /// among the shown, the dismissed, and the snoozed, and returns it. Its sub-sessions stay, each until the app
     /// archives it too.
     pub fn archived_in_app(&mut self, session_id: &str) -> Option<TileId> {
         let of = |t: &Tile| t.session().is_some_and(|s| s.id == session_id);
@@ -1426,11 +1426,14 @@ impl Rack {
     /// Starts a session's 5-minute timer, as a turn that ends does, when one of its pull requests
     /// broke while nothing works on it: its checks failed, or it came to conflict with its base.
     /// A session that's working leaves it to Claude, and a timer already set, or a snooze, stays
-    /// as it is (user, 2026-11-27). It returns whether the timer started.
+    /// as it is (user, 2026-11-27). An ended session's tile has no timer slot to show or cancel a
+    /// timer in, so it starts none. It returns whether the timer started.
     pub fn pull_broke(&mut self, session_id: &str, now: SystemTime) -> bool {
         let Some(tile) = self.tiles.iter_mut().find(|t| {
-            t.session()
-                .is_some_and(|s| s.id == session_id && s.state != SessionState::Working)
+            t.session().is_some_and(|s| {
+                s.id == session_id
+                    && !matches!(s.state, SessionState::Working | SessionState::Ended)
+            })
         }) else {
             return false;
         };

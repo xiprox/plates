@@ -96,13 +96,15 @@ impl Watcher {
 /// (documented in <https://docs.brew.sh/FAQ#why-should-i-install-homebrew-in-the-default-location>),
 /// or on macOS, where your shell finds it.
 fn find_gh() -> Option<PathBuf> {
-    let found = program::find(
-        "gh",
+    let homebrew: &[PathBuf] = if cfg!(target_os = "macos") {
         &[
             PathBuf::from("/opt/homebrew/bin"),
             PathBuf::from("/usr/local/bin"),
-        ],
-    );
+        ]
+    } else {
+        &[]
+    };
+    let found = program::find("gh", homebrew);
     if found.is_none() {
         eprintln!("Couldn't find GitHub's gh command, so tiles show no pull request's checks.");
     }

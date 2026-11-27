@@ -76,15 +76,36 @@ pub fn combined(app: &[PullLink], linked: &[String]) -> Vec<PullLink> {
     all
 }
 
-/// The pull request a tile's chip shows, and how many more open ones the session links: the last
-/// open one in `links`, or once none is open, the last merged or closed one. A dismissed one never
-/// shows.
-pub fn shown(links: &[PullLink]) -> Option<(&PullLink, usize)> {
-    let mut open = links.iter().filter(|l| !l.dismissed && l.open);
-    match open.next_back() {
-        Some(newest) => Some((newest, open.count())),
-        None => links.iter().rfind(|l| !l.dismissed).map(|l| (l, 0)),
+/// The pull requests a session's tile shows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OnTile {
+    /// Every open one that isn't dismissed, in `links`' order.
+    pub open: Vec<PullLink>,
+    /// The one the chip names: the last open one, or once none is open, the last merged or
+    /// closed one.
+    pub named: PullLink,
+}
+
+impl OnTile {
+    /// How many open pull requests the chip counts after the one it names, as in "+1".
+    pub fn more(&self) -> usize {
+        self.open.len().saturating_sub(1)
     }
+}
+
+/// The pull requests a tile shows from a session's `links`, or `None` when every one is
+/// dismissed, or there are none.
+pub fn on_tile(links: &[PullLink]) -> Option<OnTile> {
+    let open: Vec<PullLink> = links
+        .iter()
+        .filter(|l| !l.dismissed && l.open)
+        .cloned()
+        .collect();
+    let named = match open.last() {
+        Some(newest) => newest.clone(),
+        None => links.iter().rfind(|l| !l.dismissed)?.clone(),
+    };
+    Some(OnTile { open, named })
 }
 
 /// What `gh pr view` says about a pull request.
@@ -145,6 +166,26 @@ impl Status {
     pub fn broken(self) -> bool {
         matches!(self, Status::Failed | Status::Conflicts)
     }
+
+    // How soon this status wants your eye among a session's open pull requests, lowest first.
+    fn urgency(self) -> u8 {
+        match self {
+            Status::Failed => 0,
+            Status::Conflicts => 1,
+            Status::Running => 2,
+            Status::Passed => 3,
+            Status::Open => 4,
+            Status::Draft => 5,
+            Status::Closed => 6,
+            Status::Merged => 7,
+        }
+    }
+}
+
+/// The status a chip shows for several pull requests: the one that most wants your eye, so a
+/// failed check on an older pull request isn't hidden behind a newer one that passed.
+pub fn most_pressing(statuses: impl IntoIterator<Item = Status>) -> Option<Status> {
+    statuses.into_iter().min_by_key(|s| s.urgency())
 }
 
 /// The fields `parse` reads, for `gh pr view <url> --json`.
@@ -323,25 +364,36 @@ mod tests {
     }
 
     #[test]
-    fn the_chip_shows_the_newest_open_pull_request_or_else_the_newest_merged_one() {
+    fn a_tile_shows_every_open_pull_request_and_names_the_last_or_else_the_last_merged() {
         let open = [
             link(1, true, false),
             link(2, false, false),
             link(3, true, false),
         ];
-        let (shown_link, more) = shown(&open).unwrap();
-        assert_eq!((shown_link.number, more), (3, 1));
+        let on = on_tile(&open).unwrap();
+        assert_eq!(on.named.number, 3);
+        assert_eq!(on.open.iter().map(|l| l.number).collect::<Vec<_>>(), [1, 3]);
+        assert_eq!(on.more(), 1);
 
         let merged = [
             link(1, false, false),
             link(2, false, false),
             link(3, true, true),
         ];
-        let (shown_link, more) = shown(&merged).unwrap();
-        assert_eq!((shown_link.number, more), (2, 0));
+        let on = on_tile(&merged).unwrap();
+        assert_eq!((on.named.number, on.open.len(), on.more()), (2, 0, 0));
 
-        assert!(shown(&[link(1, false, true)]).is_none());
-        assert!(shown(&[]).is_none());
+        assert!(on_tile(&[link(1, false, true)]).is_none());
+        assert!(on_tile(&[]).is_none());
+    }
+
+    #[test]
+    fn the_chip_takes_the_status_that_most_wants_your_eye() {
+        use Status::*;
+        assert_eq!(most_pressing([Passed, Failed, Running]), Some(Failed));
+        assert_eq!(most_pressing([Draft, Open]), Some(Open));
+        assert_eq!(most_pressing([Conflicts, Running]), Some(Conflicts));
+        assert_eq!(most_pressing([]), None);
     }
 
     fn gh(state: &str, extra: Value) -> Pull {

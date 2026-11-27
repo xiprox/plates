@@ -28,9 +28,10 @@ pub const OUT: f32 = 320.;
 /// How long a tile takes to slide back, or out, once the fingers lift.
 pub const SETTLE: Duration = Duration::from_millis(180);
 /// The farthest a held tile, a session with sub-sessions, slides however far the fingers go, in
-/// logical px, and how hard it resists on the way: at `DISMISS`, the distance that would take any
-/// other tile off, it has slid 23px.
+/// logical px.
 const BAND: f32 = 40.;
+/// How hard a held tile resists on its way to `BAND`: at `DISMISS`, the distance that would take
+/// any other tile off, it has slid 23px.
 const BAND_GIVE: f32 = 0.55;
 
 /// What a swipe moves: a tile, or the Undo row a removed tile leaves.

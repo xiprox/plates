@@ -1,12 +1,13 @@
 //! The pull request chip at the end of a session tile's title, which says by its icon's color where
-//! the pull request stands, opens it in your browser on a click, and shows its number, title, and
-//! state in a pop-out, `PullPopView`, when the pointer rests on it (user, 2026-11-27;
-//! record/areas/rack/04-pull-requests.md).
+//! the session's pull requests stand, and the rows of the pop-out, `PullPopView`, that lists them
+//! (record/areas/rack/04-pull-requests.md).
+
+use std::time::Instant;
 
 use gpui_kit::*;
 use plates_core::{
     Tile, TileId,
-    pulls::{self, PullLink, Status},
+    pulls::{self, OnTile, PullLink, PullState, Status},
 };
 
 use crate::{
@@ -21,11 +22,12 @@ const RED: u32 = 0xF2706B;
 /// A merged pull request, in a purple like the one GitHub marks merged pull requests with.
 const PURPLE: u32 = 0xA98BF5;
 
-/// The chip is gray, and only its icon takes the pull request's color, since a chip on every tile
-/// in full color drew the eye from the tiles' own states (user, 2026-11-27). Its brighten washes
-/// the gray with the icon's color, up to `FILL_PEAK` of it.
+/// How much white the chip's fill takes at rest and on hover. The chip is gray, and only its icon
+/// takes the pull request's color, since a chip on every tile in full color drew the eye from the
+/// tiles' own states (user, 2026-11-27).
 const FILL: f32 = 0.07;
 const FILL_HOVER: f32 = 0.13;
+/// How much of the icon's color the chip's brighten washes its fill with at its peak.
 const FILL_PEAK: f32 = 0.45;
 
 /// The pop-out's width, in logical pixels.
@@ -46,8 +48,8 @@ fn tint(c: u32, alpha: f32) -> Hsla {
     Hsla::from(rgb(c)).alpha(alpha)
 }
 
-// What the chip says until GitHub answers, or without `gh`: what the Claude desktop app's file
-// says, open or merged.
+// What a pull request's row and the chip say until GitHub answers, or without `gh`: what the
+// Claude desktop app's file says, open or merged.
 fn status(link: &PullLink, seen: Option<&SeenPull>) -> Status {
     match seen {
         Some(seen) => seen.pull.status(),
@@ -57,33 +59,45 @@ fn status(link: &PullLink, seen: Option<&SeenPull>) -> Status {
 }
 
 impl RackView {
-    /// The pull request tile `t` shows, if any, and how many more open ones its session has:
-    /// `pulls::shown`'s pick from the Claude desktop app's links and the ones Claude made with
-    /// `pr_link`, which the session's task file keeps.
-    pub(crate) fn shown_pull(&self, t: &Tile) -> Option<(PullLink, usize)> {
+    /// The pull requests tile `t` shows, from the Claude desktop app's links and the ones Claude
+    /// made with `pr_link`, which the session's task file keeps. Once GitHub has answered about
+    /// one, its answer says whether it's open, rather than the app's file or the link.
+    pub(crate) fn tile_pulls(&self, t: &Tile) -> Option<OnTile> {
         let s = t.session()?;
         let linked = list_key(t)
             .and_then(|key| self.task_lists.get(key))
             .map_or(&[][..], |list| list.pulls.as_slice());
-        let all = pulls::combined(&s.pulls, linked);
-        pulls::shown(&all).map(|(link, more)| (link.clone(), more))
+        let mut all = pulls::combined(&s.pulls, linked);
+        for link in &mut all {
+            if let Some(seen) = self.pulls.get(&link.url) {
+                link.open = seen.pull.state == PullState::Open;
+            }
+        }
+        pulls::on_tile(&all)
     }
 
-    /// The chip for the pull request `shown_pull` picked for tile `id`, with `more` other open
-    /// ones.
-    pub(crate) fn pull_chip(
-        &self,
-        id: TileId,
-        link: &PullLink,
-        more: usize,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let seen = self.pulls.get(&link.url);
-        let status = status(link, seen);
+    /// The chip for tile `id`'s pull requests: the number of the one it names, "+1" for each
+    /// other open one, and the status that most wants your eye among the open ones.
+    pub(crate) fn pull_chip(&self, id: TileId, on: &OnTile, cx: &mut Context<Self>) -> AnyElement {
+        let watched: Vec<&PullLink> = if on.open.is_empty() {
+            vec![&on.named]
+        } else {
+            on.open.iter().collect()
+        };
+        let status = pulls::most_pressing(
+            watched
+                .iter()
+                .map(|link| status(link, self.pulls.get(&link.url))),
+        )
+        .unwrap_or(Status::Open);
         let c = color(status);
-        let wash = seen
-            .and_then(|s| s.changed)
-            .and_then(|at| swell(at.elapsed(), BRIGHTEN))
+        // The chip brightens when where any of its pull requests stands changes.
+        let changed = watched
+            .iter()
+            .filter_map(|link| self.pulls.get(&link.url)?.changed)
+            .max();
+        let wash = changed
+            .and_then(|at| swell(Instant::now().saturating_duration_since(at), BRIGHTEN))
             .map(|k| {
                 div()
                     .absolute()
@@ -98,11 +112,10 @@ impl RackView {
         } else {
             "plates/pull.svg"
         };
-        let label = match more {
-            0 => format!("#{}", link.number),
-            n => format!("#{} +{n}", link.number),
+        let label = match on.more() {
+            0 => format!("#{}", on.named.number),
+            n => format!("#{} +{n}", on.named.number),
         };
-        let url = link.url.clone();
         let spots = self.spots.clone();
         div()
             .id(("pull", id.0))
@@ -131,7 +144,7 @@ impl RackView {
             // stops there.
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 cx.stop_propagation();
-                this.click_pull(id, url.clone(), cx);
+                this.click_pull(id, cx);
             }))
             .child(
                 canvas(
@@ -147,19 +160,23 @@ impl RackView {
     }
 }
 
-/// The pop-out's text: the number and repository, the title once GitHub has said it, and the
-/// state in words.
-pub(crate) fn pop_content(link: &PullLink, more: usize, seen: Option<&SeenPull>) -> Div {
+/// The pull requests the pop-out lists, newest first: every open one, or once none is open, the
+/// one the chip names.
+pub(crate) fn listed(on: &OnTile) -> Vec<PullLink> {
+    if on.open.is_empty() {
+        return vec![on.named.clone()];
+    }
+    on.open.iter().rev().cloned().collect()
+}
+
+/// One pull request's row in the pop-out: its number and repository, its title once GitHub has
+/// said it, and where it stands in words, in its icon's color.
+pub(crate) fn pop_row(link: &PullLink, seen: Option<&SeenPull>) -> Div {
     let c = color(status(link, seen));
     let words = match seen {
         Some(seen) => seen.pull.words(),
         None if link.open => "Open".into(),
         None => "Merged".into(),
-    };
-    let more = match more {
-        0 => None,
-        1 => Some("1 more open pull request".to_string()),
-        n => Some(format!("{n} more open pull requests")),
     };
     div()
         .flex()
@@ -183,5 +200,4 @@ pub(crate) fn pop_content(link: &PullLink, more: usize, seen: Option<&SeenPull>)
                 .child(s.pull.title.clone())
         }))
         .child(div().text_size(px(12.)).text_color(rgb(c)).child(words))
-        .children(more.map(|m| div().text_size(px(11.)).text_color(rgb(MUTED)).child(m)))
 }

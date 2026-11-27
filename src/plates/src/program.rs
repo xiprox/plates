@@ -27,8 +27,9 @@ pub fn find(name: &str, also: &[PathBuf]) -> Option<PathBuf> {
 pub fn quiet(program: &Path) -> Command {
     let mut command = Command::new(program);
     command.stdin(Stdio::null());
-    // A console program started from Plates, which has no console, would open a console window
-    // of its own for the moment it runs.
+    // A console program started from Plates, which has no console, would get a console window of
+    // its own for the moment it runs, and `CREATE_NO_WINDOW` runs it without one (documented in
+    // <https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags>).
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
