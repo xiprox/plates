@@ -1,4 +1,5 @@
-//! Swiping a tile sideways with two fingers on a trackpad to dismiss it, as the × does.
+//! Swiping a tile sideways with two fingers on a trackpad to take it off the rack, as its menu's
+//! last row does.
 //!
 //! The swipe arrives as scroll events with phases: `Started`, a `Moved` for each move, and `Ended`.
 //! The `Moved` events after `Ended` are the scroll coasting, and the swipe ignores them.
@@ -26,6 +27,11 @@ const SPEED_SPAN: Duration = crate::motion::SAMPLE_SPAN;
 pub const OUT: f32 = 320.;
 /// How long a tile takes to slide back, or out, once the fingers lift.
 pub const SETTLE: Duration = Duration::from_millis(180);
+/// The farthest a held tile, a session with sub-sessions, slides however far the fingers go, in
+/// logical px, and how hard it resists on the way: at `DISMISS`, the distance that would take any
+/// other tile off, it has slid 23px.
+const BAND: f32 = 40.;
+const BAND_GIVE: f32 = 0.55;
 
 /// What a swipe moves: a tile, or the Undo row a removed tile leaves.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -40,6 +46,10 @@ pub struct Swipe {
     /// The sub-sessions nested under a session's tile, which slide with it, since dismissing it
     /// takes them along.
     pub family: Vec<TileId>,
+    /// Whether the swipe can't take its tile off: a session with sub-sessions, whose tile follows
+    /// the fingers only against a growing pull, and springs back when they lift, since a swipe
+    /// that took the sub-sessions along was too easy to make by accident (user, 2026-11-27).
+    held: bool,
     dx: f32,
     dy: f32,
     /// Whether the fingers move sideways, once they've moved `DECIDE` to tell.
@@ -65,6 +75,7 @@ impl Swipe {
     pub fn new(target: Swiped, family: Vec<TileId>) -> Self {
         Self {
             target,
+            held: !family.is_empty(),
             family,
             dx: 0.,
             dy: 0.,
@@ -113,9 +124,9 @@ impl Swipe {
         let flicked = speed.abs() >= FLICK
             && speed.signum() == self.dx.signum()
             && self.dx.abs() >= FLICK_MIN;
-        let dismiss = !cancel && (self.dx.abs() >= DISMISS || flicked);
+        let dismiss = !cancel && !self.held && (self.dx.abs() >= DISMISS || flicked);
         let to = if dismiss { OUT.copysign(self.dx) } else { 0. };
-        self.settle = Some((self.dx, to, now));
+        self.settle = Some((self.slid(), to, now));
         if dismiss {
             Release::Dismiss
         } else {
@@ -130,9 +141,19 @@ impl Swipe {
                 let t = (now.duration_since(at).as_secs_f32() / SETTLE.as_secs_f32()).min(1.);
                 from + (to - from) * (1. - (1. - t).powi(3))
             }
-            None if self.sideways == Some(true) => self.dx,
+            None if self.sideways == Some(true) => self.slid(),
             None => 0.,
         }
+    }
+
+    // How far the fingers have slid the tile: as far as they moved, or for a held tile, a rubber
+    // band's pull that nears `BAND`, as iOS pulls a scroll view past its end.
+    fn slid(&self) -> f32 {
+        if !self.held {
+            return self.dx;
+        }
+        let pulled = BAND * (1. - 1. / (self.dx.abs() * BAND_GIVE / BAND + 1.));
+        pulled.copysign(self.dx)
     }
 
     /// Whether the tile is still sliding after the fingers lifted.
@@ -204,6 +225,22 @@ mod tests {
         assert_eq!(s.release(false, now), Release::Back);
         s.moved(200., 0., now);
         assert_eq!(s.offset(now + SETTLE), 0.);
+    }
+
+    #[test]
+    fn a_session_with_sub_sessions_pulls_against_the_fingers_and_always_slides_back() {
+        let mut s = Swipe::new(Swiped::Tile(TileId(1)), vec![TileId(2)]);
+        let mut now = Instant::now();
+        for _ in 0..10 {
+            now += Duration::from_millis(16);
+            s.moved(30., 0., now);
+        }
+        let slid = s.offset(now);
+        assert!(slid > 0. && slid < BAND, "{slid}");
+        assert_eq!(s.release(false, now), Release::Back);
+        assert_eq!(s.offset(now), slid);
+        assert_eq!(s.offset(now + SETTLE), 0.);
+        assert!(!s.dismissed());
     }
 
     #[test]

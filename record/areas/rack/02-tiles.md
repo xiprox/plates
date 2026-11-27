@@ -160,8 +160,11 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
 - Once your fingers have moved 8px, a swipe that moved more sideways than up or down slides the tile, and any other swipe leaves it alone until your fingers lift.
 - The tile slides with your fingers, fading to 79% opacity at 96px and 30% at 320px, and the window's edges cut it off, since its row reaches out through the rack's padding and border (user, 2026-11-16).
 - A session's tile slides with the sub-sessions indented under it, and with the lines from its marker down to theirs, since dismissing it takes them along.
+- A session with sub-sessions doesn't swipe away, since a swipe that took the sub-sessions along was too easy to make by accident (user, 2026-11-27).
+  Its tile follows your fingers against a growing pull, as iOS pulls a list past its end: 23px when your fingers have moved the 96px that takes another tile off, and never past 40px.
+  When your fingers lift, it slides back over 180ms however far or fast they went, and its menu's "Dismiss" still takes it off, sub-sessions and all.
 - The Undo row a removed tile leaves swipes away the same way, which keeps the removal, as waiting out its 5s does (user, 2026-11-16).
-- When you lift your fingers, the tile slides out over 180ms if it slid 96px or more either way, about a third of its width.
+- When you lift your fingers, any other tile slides out over 180ms if it slid 96px or more either way, about a third of its width.
   It also slides out if it slid at least 20px and, in the 60ms before the lift, your fingers carried it on that way at 600px/s or faster.
   Otherwise it slides back into place over the same 180ms.
 - On macOS, the scrolling that coasts on after your fingers lift moves nothing, and on Windows it moves the tile, as the last bullet says.
