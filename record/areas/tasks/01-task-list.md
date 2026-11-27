@@ -52,6 +52,8 @@ They give these rules, all chosen by the user on 2026-11-20, and `instructions()
 - If you say not to keep a list, Claude calls `tasks_decline`.
   From then on the server refuses `task_add` and `tasks_replace` with an error Claude reads, while `task_update` still changes the tasks the list already has.
 - A list holds big pieces of work, about 3 to 10.
+- A list leaves out a piece of work Claude hands to a session of its own, such as a sub-session it starts, since that session's own tile shows it (user, 2026-11-27).
+  A session that split its work into 7 sub-sessions also kept a task for each, which repeated on its tile what the 7 tiles under it already showed (seen by the user on macOS 26.5.2, 2026-11-27).
 - A title names the piece in a few words, such as "Windows probe".
 - A status says only what's new about the piece: where it stands, what's next, or what it waits for, such as "Needs a session on the PC".
   It never repeats the title, and it stays empty when the title says enough.

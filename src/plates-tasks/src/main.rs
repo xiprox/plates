@@ -39,6 +39,7 @@ When you start a list, say so in one line, such as \"Started a Plates task list:
 If the user says not to keep a list in this session, call tasks_decline.
 
 Keep the list to big pieces of work, about 3 to 10.
+Leave out a piece of work you hand to a session of its own, such as a sub-session you start, since that session's own tile shows it.
 Write each title as a few words that name the piece, at most {title} characters, such as \"Windows probe\" or \"Footnote style\".
 Write each status as what's new about the piece, at most {status} characters: where it stands, what's next, or what it waits for, such as \"Needs a session on the PC\". Don't repeat the title, and leave the status empty when the title says enough.
 When a task waits on the user, set waiting_on to \"you\". When it waits on someone else, name them in waiting_on, such as \"Dana\", not in the status.
