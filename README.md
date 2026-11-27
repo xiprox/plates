@@ -18,7 +18,7 @@ An always-on-top rack of your Claude Code sessions, and anything else you're jug
   For anything else, press Ctrl+Shift+Space on Windows or ⌃⇧Space on macOS, type a name, and press Enter.
 - **Timers and snoozing.**
   Set a timer on any tile, and Plates plays a soft tone when it runs out.
-  Snooze a tile for 2 or 4 hours, or until tomorrow morning.
+  Snooze a tile for 1, 2, or 4 hours, or until tomorrow morning.
 - **Tossing and docking.**
   Drag the rack anywhere, toss it aside, or hold it against a side of the screen to dock it as a strip of colored dots.
 

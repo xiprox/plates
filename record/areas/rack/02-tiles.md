@@ -173,7 +173,7 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
 - Clicking the hourglass starts a 5-minute timer.
   Right-clicking it, or a force click on a Mac trackpad, pressing on past the click, opens a menu in a popup at the pointer that can reach past the rack's edges, one length to a row, in two parts (user, 2026-11-15 and 2026-11-16):
   - "Remind me in": 5, 10, 15, 20, and 30 minutes, and 1 hour, which start a timer and keep the tile on the rack, and picking one while a timer runs starts it over
-  - "Snooze": for 2 hours, for 4 hours, and until tomorrow, which take the tile off the rack until then, as [Snoozing](#snoozing) says
+  - "Snooze": for 1 hour, for 2 hours, for 4 hours, and until tomorrow, which take the tile off the rack until then, as [Snoozing](#snoozing) says (user, 2026-11-16 and 2026-11-27)
 - A force click opens the menu at the deeper press, and the click it ends in starts or cancels no timer (user, 2026-11-16).
 - A grid of chips for the minutes, above a list of the rest, didn't sit well beside the list's rows, whether the chips were filled, outlined, or inset.
 - A timer that starts, by your click or on its own, first rotates the hourglass a half turn over 500ms, as you'd turn one over to start it, and the yellow shows once it's upright (user, 2026-11-16).
@@ -208,7 +208,7 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
 
 Snoozing a tile takes it off the rack until a time, for a session you can't act on for a while, or one of your own you'll deal with later (user, 2026-11-16):
 
-- The timer's menu snoozes a tile for 2 hours, for 4 hours, or until tomorrow, and the hover card's Tomorrow chip snoozes it until tomorrow.
+- The timer's menu snoozes a tile for 1 hour, 2 hours, 4 hours, or until tomorrow, and the hover card's 1h, 2h, 4h, and Tomorrow chips do the same.
 - Until tomorrow means until 4:00 the next morning, local time, so the tile is back whenever you sit down.
   Before 4:00, a night that went past midnight still counts as the day before, so it then means the coming 4:00.
   Plates takes the offset from UTC when you snooze, so on a night the clocks change, the tile comes back at 3:00 or 5:00 by the new time.

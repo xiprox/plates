@@ -16,8 +16,8 @@ pub const MENU_MINUTES: [u32; 5] = [5, 10, 15, 20, 30];
 pub const MENU_HOURS: [u32; 1] = [1];
 
 /// The lengths in hours the hourglass's menu offers to snooze a tile for, before Tomorrow
-/// (user, 2026-11-16).
-pub const SNOOZE_HOURS: [u32; 2] = [2, 4];
+/// (user, 2026-11-16 and 2026-11-27).
+pub const SNOOZE_HOURS: [u32; 3] = [1, 2, 4];
 
 /// When a reminder for tomorrow runs out: 4:00 local time. Before 4:00, a night that went past
 /// midnight still counts as the day before, so tomorrow is the coming 4:00 (user, 2026-11-16).

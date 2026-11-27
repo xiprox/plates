@@ -60,8 +60,8 @@ impl MenuKind {
     pub fn height(self) -> f32 {
         match self {
             // A 6px pad top and bottom, a 23px heading, six 32px rows to remind you in, a 27px
-            // heading, three 32px rows to snooze for, and a 1px border.
-            MenuKind::Timer(_) => 352.,
+            // heading, four 32px rows to snooze for, and a 1px border.
+            MenuKind::Timer(_) => 384.,
             // A 6px pad top and bottom, four 32px rows, and a 1px border.
             MenuKind::Rack { .. } => 141.,
             // A 6px pad top and bottom, one 32px row, and a 1px border.
@@ -190,13 +190,8 @@ impl MenuView {
             );
         }
         for h in MENU_HOURS {
-            let label = if h == 1 {
-                "1 hour".to_string()
-            } else {
-                format!("{h} hours")
-            };
             items.push(
-                Self::row(("hours", u64::from(h)), &label)
+                Self::row(("hours", u64::from(h)), &hours(h, ""))
                     .on_click(Self::pick(tile, h * 60, cx))
                     .into_any_element(),
             );
@@ -204,7 +199,7 @@ impl MenuView {
         items.push(Self::heading("SNOOZE", 10.));
         for h in SNOOZE_HOURS {
             items.push(
-                Self::row(("snooze", u64::from(h)), &format!("For {h} hours"))
+                Self::row(("snooze", u64::from(h)), &hours(h, "For "))
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.rack
                             .update(cx, |rack, cx| rack.snooze_for(tile, h, cx))
@@ -622,6 +617,12 @@ fn ago(at: SystemTime, now: SystemTime) -> String {
         1440..2880 => "yesterday".to_string(),
         _ => format!("{}d ago", minutes / 1440),
     }
+}
+
+// A length in hours as a menu row says it, after `lead`: "1 hour", or "For 2 hours".
+fn hours(h: u32, lead: &str) -> String {
+    let unit = if h == 1 { "hour" } else { "hours" };
+    format!("{lead}{h} {unit}")
 }
 
 // When a snoozed tile comes back, in local time on the clock the OS shows you: "Returns 4:30 PM"
