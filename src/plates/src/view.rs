@@ -609,16 +609,28 @@ impl RackView {
             .items_center()
             .gap(px(10.))
             .pl(px(12.))
-            .pr(px(6.))
+            // Beside the timer slot, the text stops 6px short of its divider. An ended tile has
+            // no timer slot, so its text stops as far from the tile's edge as it starts.
+            .pr(px(if ended { 12. } else { 6. }))
             .child(marker(t, false))
             .child(txt)
             .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
                 this.click_tile(id, e.click_count(), window, cx)
             }));
         // Resting the pointer on a session tile's text grows the tile into its hover card, which
-        // shows what the tile cuts short (user, 2026-11-15). The × and the timer slot sit beside
-        // the text, so a pointer on its way to them opens no card.
+        // shows what the tile cuts short (user, 2026-11-15). The timer slot sits beside the text,
+        // so a pointer on its way to it opens no card.
         let live = i < LEAVING;
+        // Right-clicking any tile's text opens its menu, which takes the tile off the rack
+        // (record/areas/rack/02-tiles.md).
+        if live {
+            main = main.on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                    this.open_tile_menu(id, e.position, cx)
+                }),
+            );
+        }
         if live && t.session().is_some() {
             let spots = self.spots.clone();
             main = main
@@ -630,12 +642,6 @@ impl RackView {
                         this.pointer_left(id);
                     }
                 }))
-                .on_mouse_down(
-                    MouseButton::Right,
-                    cx.listener(move |this, e: &MouseDownEvent, _, cx| {
-                        this.open_tile_menu(id, e.position, cx)
-                    }),
-                )
                 .child(
                     canvas(
                         move |b, _, _| spots.borrow_mut().entry(id).or_default().main = b,
@@ -647,36 +653,6 @@ impl RackView {
                     .size_full(),
                 );
         }
-
-        // Every tile shows an × on hover, 8px from the timer slot or from the tile's edge, which
-        // removes your own tile or an ended session's, and dismisses any other session's until
-        // it needs you again (user, 2026-11-15).
-        let side = {
-            let btn: SharedString = format!("x-{i}").into();
-            div().flex().items_center().mr(px(8.)).child(
-                div()
-                    .id(("x", id.0))
-                    .group(btn.clone())
-                    .size(px(32.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(8.))
-                    .opacity(0.)
-                    .group_hover(group.clone(), |s| s.opacity(1.))
-                    .hover(|s| s.bg(white(0.08)))
-                    .child(
-                        svg()
-                            .path("plates/x.svg")
-                            .size(px(16.))
-                            .text_color(text(0.6))
-                            .group_hover(btn, |s| s.text_color(rgb(TEXT))),
-                    )
-                    .on_click(
-                        cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_tile(id, cx)),
-                    ),
-            )
-        };
 
         let hg = (!ended).then(|| self.timer_slot(i, t, now, cx));
         // The card grows from the tile's own rectangle, which only layout knows.
@@ -713,7 +689,6 @@ impl RackView {
                 }
             }))
             .child(main)
-            .child(side)
             .children(hg)
             .children(spot);
         let top = if below > 0. {

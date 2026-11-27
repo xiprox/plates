@@ -45,15 +45,25 @@ pub enum MenuKind {
         login: bool,
         connection: Option<Connection>,
     },
-    /// A finished session's tile, from its text: whether to mark its turn read or unread, which
-    /// the rack works out as it opens the menu, since the menu's first frame is drawn while the
-    /// rack is still handling the click. (read in gpui-pre 0.3.12, src/app.rs, App::open_window)
-    Tile(TileId, bool),
+    /// A tile, from its text: whether a finished session's row marks its turn read or unread, and
+    /// what the row that takes the tile off the rack does, which the rack works out as it opens
+    /// the menu, since the menu's first frame is drawn while the rack is still handling the
+    /// click. (read in gpui-pre 0.3.12, src/app.rs, App::open_window)
+    Tile(TileId, Option<bool>, TakeOff),
     /// The snoozed tiles, from the moon in the grip band, with how many there were as it opened.
     Snoozed { count: usize },
     /// The tiles you removed, from the archive's box in the grip band, with how many there were
     /// as it opened.
     Archived { count: usize },
+}
+
+/// What the tile menu's last row does to the tile: dismisses a session until it needs you again,
+/// clears an ended session's tile, or removes your own tile to the archive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TakeOff {
+    Dismiss,
+    Clear,
+    Remove,
 }
 
 impl MenuKind {
@@ -64,8 +74,8 @@ impl MenuKind {
             MenuKind::Timer(_) => 384.,
             // A 6px pad top and bottom, four 32px rows, and a 1px border.
             MenuKind::Rack { .. } => 141.,
-            // A 6px pad top and bottom, one 32px row, and a 1px border.
-            MenuKind::Tile(..) => 46.,
+            // A 6px pad top and bottom, a 32px row each, and a 1px border.
+            MenuKind::Tile(_, read, _) => 14. + 32. * (1 + usize::from(read.is_some())) as f32,
             // A 6px pad top and bottom, a 23px heading, a 32px row per tile, and a 1px border.
             MenuKind::Snoozed { count } => 37. + 32. * count as f32,
             // The same with a 27px heading, which holds the Clear all button, and rows up to
@@ -517,22 +527,47 @@ impl MenuView {
             .into_any_element()
     }
 
-    fn tile_items(&self, tile: TileId, read: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let label = if read {
-            "Mark as read"
-        } else {
-            "Mark as unread"
+    fn tile_items(
+        &self,
+        tile: TileId,
+        read: Option<bool>,
+        take_off: TakeOff,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let mut items = Vec::new();
+        if let Some(read) = read {
+            let label = if read {
+                "Mark as read"
+            } else {
+                "Mark as unread"
+            };
+            items.push(
+                Self::row("read", label)
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.rack
+                            .update(cx, |rack, cx| rack.set_read(tile, read, cx))
+                            .ok();
+                        this.close(window, cx);
+                    }))
+                    .into_any_element(),
+            );
+        }
+        let label = match take_off {
+            TakeOff::Dismiss => "Dismiss",
+            TakeOff::Clear => "Clear",
+            TakeOff::Remove => "Remove",
         };
-        vec![
-            Self::row("read", label)
+        items.push(
+            Self::row("take-off", label)
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.rack
-                        .update(cx, |rack, cx| rack.set_read(tile, read, cx))
+                        .update(cx, |rack, cx| rack.take_off(tile, cx))
                         .ok();
                     this.close(window, cx);
                 }))
                 .into_any_element(),
-        ]
+        );
+        items
     }
 
     // Forgets an archived tile and takes its row out of the list, which shrinks from the bottom,
@@ -578,7 +613,7 @@ impl Render for MenuView {
         let items = match self.kind {
             MenuKind::Timer(tile) => self.timer_items(tile, cx),
             MenuKind::Rack { login, connection } => self.rack_items(login, connection, cx),
-            MenuKind::Tile(tile, read) => self.tile_items(tile, read, cx),
+            MenuKind::Tile(tile, read, take_off) => self.tile_items(tile, read, take_off, cx),
             MenuKind::Snoozed { .. } => self.snoozed_items(cx),
             MenuKind::Archived { .. } => self.archived_items(cx),
         };

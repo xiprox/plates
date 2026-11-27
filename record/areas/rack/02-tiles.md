@@ -42,7 +42,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 | Done | you open an unread session in the Claude desktop app, click its tile, or mark it read | a gray dot, and the first line of Claude's last message in the secondary text color, with no timer and no tint, since the session doesn't need you (user, 2026-11-15 and 2026-11-16) |
 | Waiting | Claude ends a turn by calling `wait`, such as while a pull request's checks run | what [02-waits-and-pings](../tasks/02-waits-and-pings.md#the-waiting-state) gives |
 | Needs approval | Claude asks you to approve a tool, or asks you a question, which the hover card calls "Needs your input" | an orange dot, what Claude wants to do or asks as an orange summary line, such as "Wants to run: cargo test -p collector" or "Asks: Which design?", and a timer that starts on its own |
-| Ended | the session ends | a dimmed ring for its marker, "Ended · clears in 27m" as its summary line in the muted color, and an × on hover that clears the tile (user, 2026-11-15) |
+| Ended | the session ends | a dimmed ring for its marker, "Ended · clears in 27m" as its summary line in the muted color (user, 2026-11-15) |
 
 [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events) says which hook event starts each state.
 
@@ -52,19 +52,22 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   It never says "Waiting on", which is the [waiting state](../tasks/02-waits-and-pings.md#the-waiting-state)'s summary line.
   [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#background-tasks) says which tasks count.
 - On Windows, clicking a session tile opens that session in the Claude desktop app, and clicking the tile of a session the app doesn't keep, such as one in a terminal, does nothing ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#opening-a-session)).
-- Right-clicking the text of a tile at your turn, unread, or done opens a menu with one item, in a popup at the pointer like the timer's menu (user, 2026-11-16).
-  On a turn you haven't read, the item is "Mark as read", which marks the turn read as opening the session would, and leaves the session closed.
+- Right-clicking a tile's text opens its menu, in a popup at the pointer like the timer's menu (user, 2026-11-16).
+  Its last row takes the tile off the rack: "Dismiss" on a session's tile, "Clear" on an ended session's, and "Remove" on your own (user, 2026-11-27).
+  On a tile at your turn, unread, or done, a row above it marks the turn.
+  On a turn you haven't read, the row is "Mark as read", which marks the turn read as opening the session would, and leaves the session closed.
   On a turn you've read, it's "Mark as unread": a done tile goes back to unread, a your-turn tile's amber ring goes back to an amber dot, and the tile brightens once, as a tile that needs you does, and starts no timer.
-  Right-clicking the text of any other tile opens nothing, and right-clicking the timer slot opens the timer's menu on every tile.
+  Right-clicking the timer slot opens the timer's menu on every tile.
+  The tiles have no × of their own, since an × that showed on hover took room from the tile's text, and the text jumped as the pointer arrived, moving a pull request chip from under the pointer on its way to it (user, 2026-11-27).
 - A summary line draws text between backticks in a monospace font on a background of 8% white, and text between double asterisks in bold, and leaves out the backticks and asterisks (user, 2026-11-15).
   It draws a markdown link, `[text](target)`, as its text with a 1px underline in the line's color at 45% opacity, and the link can't be clicked (user, 2026-11-15).
   A line that's a table row, such as `| Width | First row |`, shows its cells joined by " · ", as "Width · First row".
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
 - A session whose task list has any tasks has a bar under the tile's top that counts them by who holds each, and clicking the bar opens the list inside the tile ([01-task-list](../tasks/01-task-list.md)).
-- An ended tile clears itself 30 minutes after the session ends, and its × clears it at once.
+- An ended tile clears itself 30 minutes after the session ends, and its menu's "Clear" clears it at once.
   A timer holds it past the 30 minutes while the timer is set for tomorrow, and once a timer has run out, until you click the tile (user, 2026-11-16).
   While a timer holds it, its summary line says only "Ended".
-- Every other session tile shows an × on hover too, which dismisses the session: its tile shrinks out, with an Undo button for 5s, and the session is read and its timer stops (user, 2026-11-15).
+- Dismissing any other session shrinks its tile out, with an Undo button for 5s, and the session is read and its timer stops (user, 2026-11-15).
   A dismissed session stays off the rack while it works, compacts, or is opened, and comes back once it needs you again, with an approval, a question, an unread turn, or an MCP server's request, or once you send it a prompt you typed (user, 2026-11-15).
   A subagent's report or a task notification fires `UserPromptSubmit` too ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#events)), but brings the session back only if its turn ends needing you.
   It comes back after the last session tile, or for a sub-session where [01-core](../core/01-core.md#tiles) says.
@@ -78,7 +81,7 @@ On every tile, the marker on the left is its status, and the timer slot on the r
 Resting the pointer on a session tile's text for 400ms opens its hover card: a popup window 360px wide that grows out of the tile over the rack, like the menus in [01-window](01-window.md#launching-and-quitting), and shows what the tile cuts short (user, 2026-11-15).
 
 - Each move of the pointer starts the wait again, so a pointer crossing the rack opens no card.
-  The × and the timer slot sit beside the tile's text, so a pointer on its way to them, or resting on them, opens none either.
+  The timer slot sits beside the tile's text, so a pointer on its way to it, or resting on it, opens none either.
 - Clicking a tile, or its card, opens the session the card would show, so that tile's card doesn't open again until the pointer has left the tile (user, 2026-11-16).
 - The card grows from the tile's own rectangle to its full size over 180ms, easing out, and its text shows once it's full size, without a fade (user, 2026-11-15).
   It grows right and down from the tile's top-left corner, left from the tile's right edge where the monitor's work area leaves no room on the right, and up from the tile's bottom edge where it leaves no room below.
@@ -144,12 +147,11 @@ From the top, the card shows:
   Clicking the reminder steps it as Tab does, and clicking Enter adds the tile as Enter does.
 - A click anywhere on the rack outside the field closes it without adding or renaming the tile, as Esc does (user, 2026-11-16).
 - Double-clicking your own tile turns its title into the same inline field, to rename it.
-- An × appears on your own tile when you hover it, as on an ended session's tile (user, 2026-11-15).
-  Clicking the × removes the tile to [the archive](#the-archive) and shows an Undo button for 5s (user, 2026-11-15 and 2026-11-16).
+- Removing your own tile, from its menu, moves it to [the archive](#the-archive) and shows an Undo button for 5s (user, 2026-11-15 and 2026-11-16).
 
 ## Swiping a tile away
 
-On a trackpad, swiping two fingers sideways over a tile's top does what its × does: it dismisses a session or removes your own tile, each with the same Undo, and clears an ended session's tile at once (user, 2026-11-16).
+On a trackpad, swiping two fingers sideways over a tile's top does what its menu's last row does: it dismisses a session or removes your own tile, each with the same Undo, and clears an ended session's tile at once (user, 2026-11-16).
 The phantom tile doesn't swipe, and no swipe starts while a name field is open.
 We've read how macOS and Windows deliver the swipe but measured neither, as the last bullet says.
 
@@ -173,7 +175,7 @@ We've read how macOS and Windows deliver the swipe but measured neither, as the 
 - Clicking the hourglass starts a 5-minute timer.
   Right-clicking it, or a force click on a Mac trackpad, pressing on past the click, opens a menu in a popup at the pointer that can reach past the rack's edges, one length to a row, in two parts (user, 2026-11-15 and 2026-11-16):
   - "Remind me in": 5, 10, 15, 20, and 30 minutes, and 1 hour, which start a timer and keep the tile on the rack, and picking one while a timer runs starts it over
-  - "Snooze": for 1 hour, for 2 hours, for 4 hours, and until tomorrow, which take the tile off the rack until then, as [Snoozing](#snoozing) says (user, 2026-11-16 and 2026-11-27)
+  - "Snooze": a row for each length [Snoozing](#snoozing) lists, which takes the tile off the rack until then (user, 2026-11-16 and 2026-11-27)
 - A force click opens the menu at the deeper press, and the click it ends in starts or cancels no timer (user, 2026-11-16).
 - A grid of chips for the minutes, above a list of the rest, didn't sit well beside the list's rows, whether the chips were filled, outlined, or inset.
 - A timer that starts, by your click or on its own, first rotates the hourglass a half turn over 500ms, as you'd turn one over to start it, and the yellow shows once it's upright (user, 2026-11-16).
@@ -223,11 +225,11 @@ Snoozing a tile takes it off the rack until a time, for a session you can't act 
 - Violet is a snooze's color, apart from yellow's timer running now (user, 2026-11-16).
   A tile that Plates 0.1.0 set for tomorrow, without snoozing it, shows a violet moon in its timer slot, "Reminder tomorrow" in the hover card, and a violet outline on the docked strip.
   Hovering the moon dims it, and clicking it cancels the reminder.
-- The moon's list leaves out the tiles you remove or dismiss with × or a swipe, which [the archive](#the-archive) lists.
+- The moon's list leaves out the tiles you remove or dismiss from their menu or with a swipe, which [the archive](#the-archive) lists.
 
 ## The archive
 
-The archive holds your own tiles you remove and the sessions you dismiss, with × or a swipe, until you bring them back or clear it (user, 2026-11-16).
+The archive holds your own tiles you remove and the sessions you dismiss, from their menu or with a swipe, until you bring them back or clear it (user, 2026-11-16).
 While it holds any, its badge sits in the grip band: an archive-box icon and the count, in the muted color, left of the moon, or in the moon's place while no tile is snoozed.
 
 - An ended session's tile you clear goes for good, with no Undo.

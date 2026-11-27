@@ -114,10 +114,10 @@ Plates reads the tasks folder once a second, and rereads only the files whose mo
 It shows each list on the tile that holds the file's ID: the app's `sessionId`, or for a session in a terminal, its Claude Code session ID.
 So a change Claude makes shows on the tile within about 1s.
 
-Plates deletes a list's file when the session's tile goes for good, as [02-tiles](../rack/02-tiles.md#the-archive) defines it: an ended tile that's cleared, by its × or after 30 minutes, and a dismissed or snoozed session that ends.
+Plates deletes a list's file when the session's tile goes for good, as [02-tiles](../rack/02-tiles.md#the-archive) defines it: an ended tile that's cleared, from its menu or after 30 minutes, and a dismissed or snoozed session that ends.
 Dismissing a session keeps its file, and so does forgetting it in the archive with Clear all or its row's ×, since the session comes back once it needs you.
 While an Undo row is up, the ended sessions it could bring back keep their files, and Plates deletes the files once the row goes, or as you quit Plates.
-That covers an ended tile you clear with its × while a sub-session that went with it hasn't ended, and an ended sub-session that went with a session you dismissed ([02-tiles](../rack/02-tiles.md#session-tiles)).
+That covers an ended tile you clear while a sub-session that went with it hasn't ended, and an ended sub-session that went with a session you dismissed ([02-tiles](../rack/02-tiles.md#session-tiles)).
 A Plates that stops without quitting, such as when its process is ended, leaves those files.
 
 ### Installing

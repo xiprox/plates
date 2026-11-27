@@ -32,7 +32,7 @@ You drag it from anywhere on it, throw it out of the way, and dock it to a side 
 
 - The pointer is the arrow everywhere on the rack and its menus and card, with no pointing hand over what you can click, as in a desktop app, and the closed hand only while you drag the rack (user, 2026-11-16).
 - A press anywhere on the rack becomes a drag once the pointer moves 5px.
-  A click on a tile, its timer, or its × still lands, and a drag that starts on a tile doesn't also click it.
+  A click on a tile or its timer still lands, and a drag that starts on a tile doesn't also click it.
 - Letting go mid-drag keeps the rack's speed, measured over the drag's last 60ms, and capped only at 20,000px/s, a guard against a bad sample (user, 2026-11-15, [rack log](log.md#2026-11-15-by-hand-the-prototypes-throw-bounce-and-dock-numbers-got-in-the-way)).
 - The rack then slides on, keeping about 4% of its speed after each second (a factor of e^−3.2).
   A screen edge stops it on that axis, and it slides on along the edge, because a rack that bounced would come back into the way (user, 2026-11-15).

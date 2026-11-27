@@ -24,7 +24,7 @@ use crate::{
     card::{CARD_DELAY, CardView},
     connect::{self, Change, Output, Plan},
     hold::Hold,
-    menu::{MenuKind, MenuView},
+    menu::{MenuKind, MenuView, TakeOff},
     motion::{self, Ease, Rect, Side, Tween},
     native,
     place::{self, Place},
@@ -1348,20 +1348,31 @@ impl RackView {
         }
     }
 
-    /// Right-clicking a finished session's text opens a menu that marks its turn read, without
-    /// opening the session, or unread again once you've read it (user, 2026-11-16). Other tiles
-    /// have nothing to mark, so the click opens nothing.
+    /// Right-clicking a tile's text opens its menu. On a finished session's tile, the menu marks
+    /// its turn read, without opening the session, or unread again once you've read it (user,
+    /// 2026-11-16). On every tile, it takes the tile off the rack: it dismisses a session, clears
+    /// an ended session's tile, and removes your own tile (user, 2026-11-27).
     pub(crate) fn open_tile_menu(&mut self, id: TileId, at: Point<Pixels>, cx: &mut Context<Self>) {
-        let Some(s) = self.rack.tile(id).and_then(|t| t.session()) else {
+        let Some(t) = self.rack.tile(id) else {
             return;
         };
-        let read = match s.state {
-            SessionState::Unread => true,
-            SessionState::YourTurn => !s.read,
-            SessionState::Done => false,
-            _ => return,
+        let (read, take_off) = match t.session() {
+            None => (None, TakeOff::Remove),
+            Some(s) => {
+                let read = match s.state {
+                    SessionState::Unread => Some(true),
+                    SessionState::YourTurn => Some(!s.read),
+                    SessionState::Done => Some(false),
+                    _ => None,
+                };
+                let take_off = match s.state {
+                    SessionState::Ended => TakeOff::Clear,
+                    _ => TakeOff::Dismiss,
+                };
+                (read, take_off)
+            }
         };
-        self.open_menu(MenuKind::Tile(id, read), at, cx);
+        self.open_menu(MenuKind::Tile(id, read, take_off), at, cx);
     }
 
     /// Marks a session's turn read or unread, from the tile's menu.
@@ -1804,17 +1815,9 @@ impl RackView {
         self.after_change(cx);
     }
 
-    pub(crate) fn remove_tile(&mut self, id: TileId, cx: &mut Context<Self>) {
-        if self.suppress_click {
-            return;
-        }
-        self.take_off(id, cx);
-    }
-
-    // Takes a tile off the rack, with an Undo for your own tile and a dismissed session. A swipe
-    // comes here directly, since a click left over from a drag of the rack has nothing to do with
-    // it.
-    fn take_off(&mut self, id: TileId, cx: &mut Context<Self>) {
+    /// Takes a tile off the rack, from its menu or a swipe, with an Undo for your own tile and a
+    /// dismissed session.
+    pub(crate) fn take_off(&mut self, id: TileId, cx: &mut Context<Self>) {
         let Some(removed) = self.rack.remove(id, SystemTime::now()) else {
             return;
         };
