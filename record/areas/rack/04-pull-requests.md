@@ -101,7 +101,7 @@ The pop-out is a window of its own because GPUI keeps a tooltip inside the windo
 
 ## When a pull request changes
 
-- When GitHub's answer changes where one of a chip's pull requests stands, as from running to failed, the chip brightens once: its fill washes up to the icon's color at 45% opacity and back over 1.4s, the length of a tile's brighten, and its number takes the icon's color with the wash, since a gray number on the colored wash read as washed out (user, 2026-11-27).
+- When GitHub's answer changes where one of a chip's pull requests stands, as from running to failed, the chip brightens once: its fill washes up to the icon's color at 20% opacity and back over 1.4s, the length of a tile's brighten, and its number takes the icon's color with the wash, since a gray number on the colored wash read as washed out (user, 2026-11-27).
 - When an open pull request breaks, going to failed or in conflict from neither, each tile showing it starts its 5-minute timer, if its session isn't working or ended and its tile has no timer running, run out, or set for later (user, 2026-11-27).
   An ended session's tile has no timer slot to show or cancel a timer in.
   The timer stops once the session starts working, as when Claude picks up the failure, so the tone rings only for a break nobody took up in 5 minutes ([02-tiles](02-tiles.md#the-timer)).

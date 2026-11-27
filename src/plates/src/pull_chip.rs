@@ -27,8 +27,9 @@ const PURPLE: u32 = 0xA98BF5;
 /// tiles' own states (user, 2026-11-27).
 const FILL: f32 = 0.07;
 const FILL_HOVER: f32 = 0.13;
-/// How much of the icon's color the chip's brighten washes its fill with at its peak.
-const FILL_PEAK: f32 = 0.45;
+/// How much of the icon's color the chip's brighten washes its fill with at its peak, which the
+/// user tuned on a bench of every status (user, 2026-11-27).
+const FILL_PEAK: f32 = 0.2;
 
 /// The pop-out's width, in logical pixels.
 pub(crate) const POP_W: f32 = 260.;
