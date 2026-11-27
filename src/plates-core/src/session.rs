@@ -717,15 +717,32 @@ pub fn prompt_title(prompt: &str) -> String {
     first_line(rest)
 }
 
-/// The first non-empty line of `text`, trimmed. A markdown table row comes back as its cells
-/// joined by " · ", such as "Width · First row" for `| Width | First row |`, since a tile shows
-/// the line without the table around it.
+/// The first line of `text` a tile shows: its first non-empty line, trimmed, past any horizontal
+/// rule. A line that opens a code fence gives way to the first line inside it, so a message that
+/// opens with ```` ```text ```` shows the text's first line rather than the fence (user,
+/// 2026-11-27). A markdown table row comes back as its cells joined by " · ", such as
+/// "Width · First row" for `| Width | First row |`, since a tile shows the line without the table
+/// around it.
 pub fn first_line(text: &str) -> String {
+    let mut fence: Option<Fence> = None;
     let line = text
         .lines()
         .map(str::trim)
-        .find(|l| !l.is_empty())
+        .find(|l| match fence {
+            Some(f) if f.closed_by(l) => {
+                fence = None;
+                false
+            }
+            Some(_) => !l.is_empty(),
+            None => {
+                fence = Fence::open(l);
+                fence.is_none() && !l.is_empty() && !is_rule(l)
+            }
+        })
         .unwrap_or("");
+    if fence.is_some() {
+        return line.to_string();
+    }
     match table_cells(line) {
         Some(cells) => cells
             .into_iter()
@@ -760,6 +777,44 @@ pub fn table_cells(line: &str) -> Option<Vec<String>> {
         cells.push(cell.trim().to_string());
     }
     Some(cells)
+}
+
+/// A code fence: the character its opening line is made of, ` or ~, and how many of them open
+/// it. It closes at a line of the same character, at least as many of them, and nothing else, so
+/// a fence of four backticks can hold a line of three, as Claude writes when it quotes a fence
+/// (documented, https://spec.commonmark.org/0.31.2/#fenced-code-blocks).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Fence {
+    mark: char,
+    len: usize,
+}
+
+impl Fence {
+    /// The fence `line` opens, such as ```` ```rust ````, or None. A line of backticks with a
+    /// backtick after them, such as ```` ```a``` ````, is code inside a line, and opens none.
+    pub fn open(line: &str) -> Option<Fence> {
+        let line = line.trim();
+        let mark = line.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+        let len = line.len() - line.trim_start_matches(mark).len();
+        let info = &line[len..];
+        (len >= 3 && !(mark == '`' && info.contains('`'))).then_some(Fence { mark, len })
+    }
+
+    /// Whether `line` closes the fence.
+    pub fn closed_by(self, line: &str) -> bool {
+        let line = line.trim();
+        let len = line.len() - line.trim_start_matches(self.mark).len();
+        len >= self.len && len == line.len()
+    }
+}
+
+/// Whether `line`, trimmed, is a horizontal rule, such as `---` or `* * *`, or a table's rule row
+/// with no row above it, such as `|---|:-:|`, neither of which says anything on a tile.
+pub fn is_rule(line: &str) -> bool {
+    line.contains(['-', '*', '_'])
+        && line
+            .chars()
+            .all(|c| matches!(c, '|' | '-' | ':' | '*' | '_' | ' '))
 }
 
 #[cfg(test)]
@@ -1011,5 +1066,39 @@ mod tests {
         );
         assert_eq!(first_line("| | **Note** |"), "**Note**");
         assert_eq!(first_line("  Plain line\nnext"), "Plain line");
+    }
+
+    #[test]
+    fn a_first_line_skips_rules_and_steps_into_a_fence() {
+        assert_eq!(first_line("```text\n\nKeep:\n- State\n```"), "Keep:");
+        assert_eq!(first_line("---\n\nAfter the rule."), "After the rule.");
+        assert_eq!(
+            first_line("```\n```\nAfter an empty fence."),
+            "After an empty fence."
+        );
+        assert_eq!(
+            first_line("```\n| a | b |\n```"),
+            "| a | b |",
+            "a row inside a fence is code, not a table"
+        );
+        assert_eq!(first_line("```a``` is inline"), "```a``` is inline");
+        assert_eq!(first_line("```"), "");
+    }
+
+    #[test]
+    fn a_fence_closes_at_a_run_as_long_as_its_own() {
+        let four = Fence::open("````markdown").expect("four backticks open a fence");
+        assert!(
+            !four.closed_by("```"),
+            "three backticks are a line inside it"
+        );
+        assert!(
+            !four.closed_by("````rust"),
+            "a run with text after it opens, not closes"
+        );
+        assert!(four.closed_by("  `````  "));
+        assert!(!four.closed_by("~~~~"));
+        assert_eq!(Fence::open("``not a fence``"), None);
+        assert_eq!(Fence::open("~~~").map(|f| f.closed_by("~~~")), Some(true));
     }
 }

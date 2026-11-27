@@ -2,6 +2,43 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-27: Italics and code inside bold were the commonest Markdown the tiles drew as raw marks
+
+**Asked:** a tile showed "```text" as its summary line, for a message that opened with a code fence (seen by the user on macOS 26.5.2, 2026-11-27).
+Which other Markdown forms do Claude's messages use that the tiles and the hover card don't read?
+
+**Expected:** a few rare forms, since the summary line and the card already read code, bold, links, headings, lists, quotes, fences, and tables.
+
+**Found:** over the 20,211 messages Claude wrote in every transcript on one Mac, each a text block, these forms drew wrong, most common first ([results](results/2026-11-27-markdown-forms.txt)):
+
+- Code inside bold, as in `` **`Dialog`:** ``, on 2,074 lines: bold took its text as it was, so the backticks showed.
+- Italics, `*text*`, on 976 lines, and `_text_` on 1 line.
+- A list item the card nested at the wrong depth, 61 of 35,087 items, 55 of them among the 129 indented 4 or more spaces: the card nested an item a level for every 2 spaces, so one indented 4 spaces under a parent at the margin sat two levels in instead of one.
+- A line that starts with an issue number, such as "#503 merged" (hypothetical), 61 times, which the tile and the card took for a heading, so it lost its # and the card drew it in semibold.
+- A fence as a message's first line, 46 times, the form behind the tile the user saw.
+- A task item, `- [ ] text`, 29 times, which drew its box as "[ ]".
+- A quoted list item, `> 1. text`, 26 times, which drew as a paragraph.
+- Bold and italics at once, `***text***` or `**bold *italic***`, 14 times.
+- `<br>` in a table row, on 8 lines, and a backslash before a mark, as in `\*`, 5 times.
+- An image, `![text](target)`, 3 times, and a code span opened by two backticks, 2 times.
+
+A fence of four backticks came 3 times, each holding a line of three, and the card closed it at that line.
+Claude wrote no strikethrough, `__bold__`, autolinks, footnotes, `~~~` fences, or fences and tables inside a quote.
+Its 327 bare URLs draw as the text they are, and its 3 `$math$` spans keep their dollar signs.
+
+**Changed:** `markup::parse` drops `*`, `_`, `**`, and `***` around text.
+A mark opens only before a character that isn't a space and closes only after one, a `_` inside a word opens or closes nothing, and `__` stays as typed.
+That is a subset of CommonMark's rules, and the run below counted the marks still showing, not marks dropped that should have shown.
+`markup::parse` also ends a code span at a run of backticks as long as the one that opened it, turns `<br>` into a space, shows a mark after a backslash, and draws an image as a link.
+`markup::blocks` needs a space after a heading's #s, reads the headings and list items inside a quote, draws a task item's box as ▢ or ✓, and nests an item under the nearest item indented less.
+`Fence` closes at a line of only backticks, at least as many as opened it, and `first_line` steps into a fence and past a rule.
+
+We ran the new code over the same messages: none panicked, and each of the 58 marks still showing is one that should, such as a footnote's asterisk, "SELECT *", or a file name that starts with `_`.
+Italics lose their marks, but on macOS they draw upright: Plates hands GPUI only Inter's four upright faces, and GPUI takes the Inter family from those before the system's fonts and picks its nearest face (read in gpui-pre-apple 0.3.12, `src/text_system.rs`, `load_family` and `font_id`).
+We haven't seen italics on Windows, so whether they slant there is unverified until a Windows run shows a tile with italics.
+
+**Affects:** [02-tiles](02-tiles.md#session-tiles), its summary line, and [the hover card](02-tiles.md#the-hover-card).
+
 ## 2026-11-27: GPUI's tooltip can't leave the rack's window, so the pull request chip's pop-out is a window of its own
 
 **Asked:** why did the pull request chip's pop-out sit against the rack's left edge, with room to spare on the right?

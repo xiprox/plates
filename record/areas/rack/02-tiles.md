@@ -60,8 +60,15 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   Right-clicking the timer slot opens the timer's menu on every tile.
   The tiles have no × of their own, since an × that showed on hover took room from the tile's text, and the text jumped as the pointer arrived, moving a pull request chip from under the pointer on its way to it (user, 2026-11-27).
 - A summary line draws text between backticks in a monospace font on a background of 8% white, and text between double asterisks in bold, and leaves out the backticks and asterisks (user, 2026-11-15).
-  It draws a markdown link, `[text](target)`, as its text with a 1px underline in the line's color at 45% opacity, and the link can't be clicked (user, 2026-11-15).
+  Text between single asterisks or underscores is in italics, and bold, italics, and a link can hold code, as in `` **`Dialog`:** ``.
+  On macOS, italics draw upright, since Plates hands GPUI only Inter's four upright faces and GPUI picks the nearest of them (read in gpui-pre-apple 0.3.12, src/text_system.rs, `load_family` and `font_id`; [rack log](log.md#2026-11-27-italics-and-code-inside-bold-were-the-commonest-markdown-the-tiles-drew-as-raw-marks)).
+  Whether they slant on Windows is unverified until a tile with italics shows there.
+  An underscore inside a word, as in tile_pulls, stays, and a backslash before a mark, as in `\*`, shows the mark.
+  A summary line draws a Markdown link, `[text](target)`, as its text with a 1px underline in the line's color at 45% opacity, and the link can't be clicked (user, 2026-11-15).
+  An image, `![text](target)`, draws as a link does.
   A line that's a table row, such as `| Width | First row |`, shows its cells joined by " · ", as "Width · First row".
+  A `<br>` outside code, in a summary line or in a cell of the hover card's table, is a space.
+  A message that opens with a code fence shows the first line inside the fence, and one that opens with a horizontal rule shows the line after it (user, 2026-11-27).
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
 - A session with a pull request shows it as a chip at the end of its title, as [04-pull-requests](04-pull-requests.md) describes.
 - A session whose task list has any tasks has a bar under the tile's top that counts them by who holds each, and clicking the bar opens the list inside the tile ([01-task-list](../tasks/01-task-list.md)).
@@ -117,8 +124,13 @@ From the top, the card shows:
 - The summary line and its three dots follow the last step, as they follow the tools in a turn with no plan, since under the step in progress they read as squeezed into the list (user, 2026-11-21).
 
 - The card shows at most 12,000 characters of Claude's last message, cut at a space, with "…" where it stops, and draws it as paragraphs: a heading loses its #s and is 12.5px semibold, and a fenced code block is in the monospace font.
-- A list item's marker, a • for a `-`, `*`, or `+` item, or the item's number, such as "2.", sits in a gutter of its own, so the item's wrapped lines line up with its text, as the Claude desktop app draws a list (user, 2026-11-16).
-  Each two spaces of indent nest an item 14px further in, up to 28px, and an item indented further sits at 28px.
+  A heading takes one to six #s and a space, so a line that starts with an issue number, such as "#503 merged", is a paragraph.
+  A fence closes at a line of only backticks, at least as many as opened it, so a fence of four can hold a line of three.
+  A quote loses its >s and keeps the headings and list items inside it, so a quoted numbered item is a numbered item.
+  A fence or a table inside a quote draws as paragraphs, since Claude's messages held none ([rack log](log.md#2026-11-27-italics-and-code-inside-bold-were-the-commonest-markdown-the-tiles-drew-as-raw-marks)).
+- A list item's marker sits in a gutter of its own, so the item's wrapped lines line up with its text, as the Claude desktop app draws a list (user, 2026-11-16).
+  The marker is a • for a `-`, `*`, or `+` item, the item's number, such as "2.", or for a task item, ▢ for an open box and ✓ for a checked one.
+  An item nests one level under the nearest item above it that's indented less, by any number of spaces, and each level sits 14px further in, to at most 28px.
 - A table is a grid of one-line cells, with its header in semibold in the secondary text color over a rule of 14% white, and a rule of 6% white between rows (user, 2026-11-23).
   It has 6px more room above and below it than a paragraph has, so two tables in a row read as two (user, 2026-11-23).
   Each column is as wide as its widest cell, and its cells sit left, centered, or right as its rule row says, such as `:-:` for centered.

@@ -269,6 +269,9 @@ pub(crate) fn styled_line_weighted(
             if has(Mark::Bold) {
                 f = f.bold();
             }
+            if has(Mark::Italic) {
+                f = f.italic();
+            }
             TextRun {
                 len: w[1] - w[0],
                 font: f,

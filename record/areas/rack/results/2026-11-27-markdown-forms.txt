@@ -1,0 +1,62 @@
+# Markdown in Claude's messages, each a text block in a transcript, counted over every transcript in ~/.claude/projects on one Mac, 2026-11-27.
+# Counts only: the messages name private repositories, so none is quoted.
+
+## First line of each message, by what it starts with
+messages: 20211
+
+FIRST LINE KINDS
+ 19263 plain
+   303 code start
+   280 bold start
+    82 numbered
+    66 link start
+    64 heading #
+    56 emoji/other
+    49 hash no space
+    46 fence ```
+     2 bullet
+
+INLINE FORMS (lines outside fences)
+  2074 bold w/ inner code
+   976 *italic*
+   327 bare url
+    14 ***bolditalic***
+     8 <br>/html (outside code spans)
+     5 backslash escape
+     3 ![image](...)
+     3 $math$
+     2 ``double code``
+     1 _italic_
+
+FENCE MARKERS [('```', 2686), ('````', 6)]   (opening and closing lines, so 3 fences of four backticks)
+
+## Block forms on lines outside code fences
+  2692 fence lines
+    73 line indented exactly 4 spaces
+    61 hash no space line
+    29 task item
+    26 quote then list
+     6 bullet *
+
+## Finer counts
+list items indented 4+ spaces: 129
+list items: 35087, nested at a different depth by every-2-spaces than by the item above: 61, of them indented 4+ spaces: 55
+<br> lines in a table row: 8, elsewhere: 5 (code spans included)
+fences opened by four backticks: 3, holding a line of three: 3
+code spans opened by two backticks: 2, holding a backtick: 0
+quoted fence lines: 0, quoted table lines: 0
+
+Patterns counted with no hits: ~~strike~~, __bold__, <https://autolink>, [text][ref], HTML entities, [^footnotes], :emoji:, ~~~ fences, setext underlines, nested > > quotes, HTML blocks such as <details>.
+
+## After the change: markup.rs over the same messages, marks still showing outside code
+# tile = first_line, then summary_line, then parse; card = blocks, then parse on each block's text.
+# Every hit left is a mark that should show: a footnote asterisk, SELECT *, a glob outside code, a message cut mid-stream, a file name that starts with _, or a run of backticks with no partner.
+messages 20211, panics 0
+    37 card *
+     2 card **
+    10 card _edge
+     2 card `
+     1 card ```
+     4 tile *
+     1 tile `
+     1 tile ```
