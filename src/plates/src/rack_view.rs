@@ -474,7 +474,7 @@ impl RackView {
                     change_connection(cx).await;
                     let connection = connection(cx).await;
                     if this
-                        .update(cx, |this, _| this.show_connection(connection))
+                        .update(cx, |this, cx| this.show_connection(connection, cx))
                         .is_err()
                     {
                         break;
@@ -489,12 +489,16 @@ impl RackView {
         });
         // Whether Plates is connected can change outside Plates, as when you run `plates hooks
         // install`, so the rack reads it again every 5s, which takes about a millisecond away from
-        // the main thread.
+        // the main thread. The showcase reads none: the build that takes the README's picture is
+        // seldom the copy Claude Code's settings name, so the grip's amber dot would show in it.
         let connection_watch = cx.spawn(async move |this, cx| {
+            if showcase {
+                return;
+            }
             loop {
                 let connection = connection(cx).await;
                 if this
-                    .update(cx, |this, _| this.show_connection(connection))
+                    .update(cx, |this, cx| this.show_connection(connection, cx))
                     .is_err()
                 {
                     break;
@@ -1229,7 +1233,12 @@ impl RackView {
         }
     }
 
-    fn show_connection(&mut self, connection: Option<Connection>) {
+    /// Redraws the rack, for the grip's amber dot, only when the connection changed, since the
+    /// rack reads it every 5s.
+    fn show_connection(&mut self, connection: Option<Connection>, cx: &mut Context<Self>) {
+        if self.connection != connection {
+            cx.notify();
+        }
         self.connection = connection;
         if let Some(tray) = &self.tray {
             tray.show_connection(connection);
@@ -1241,7 +1250,7 @@ impl RackView {
         cx.spawn(async move |this, cx| {
             change_connection(cx).await;
             let connection = connection(cx).await;
-            this.update(cx, |this, _| this.show_connection(connection))
+            this.update(cx, |this, cx| this.show_connection(connection, cx))
                 .ok();
         })
         .detach();

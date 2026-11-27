@@ -210,6 +210,8 @@ It shows you the exact change, backs the file up beside itself, and writes the c
 
 - The item is checked while Claude Code's settings hold every hook this copy of Plates writes, and none other of Plates', and register this copy's task server.
 - While the settings hold Plates' hooks or task server but not as this copy writes them, as after Plates moved or once a newer Plates listens to another event, the rack's menu shows "Update needed" in the your-turn text color where the check would be, and the tray's item reads "Connect to Claude Code (update needed)", still checked.
+  A 6px dot in the your-turn color sits on the grip's top-right corner meanwhile, so an update that leaves the connection behind says so without your opening the menu.
+  While an update is ready too, the grip shows only the teal dot [01-updates](../build/01-updates.md#what-the-rack-shows) describes (user, 2026-11-27).
 - Clicking it opens a dialog that says what changes and asks first, in place of the install's question: Connect, Update, or Disconnect beside Cancel on macOS, and OK and Cancel on Windows.
 - The rack reads the settings every 5s, so the item also follows a change `plates hooks install` makes.
 

@@ -281,7 +281,7 @@ When it starts, Plates brings each restored tile up to date with any turn that e
 | Text, and secondary text | `#ECEDEF`, `#A3A6AE` |
 | Muted text | `#8B8E97` |
 | Working and new: dot, and working text | `#74AEFF`, `#9CC4FF` |
-| Your turn: dot, and text | `#F2B441`, `#F2C46A` |
+| Your turn: dot, and text, with the dot's color also on the grip while the connection to Claude Code needs an update ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#installing)) | `#F2B441`, `#F2C46A` |
 | Unread: dot, and the color it brightens to | `#5BCB8A`, `#1D3A2B` |
 | Done: dot | `#5E626B` |
 | Approval: dot, and text | `#FF7A45`, `#FF9B6E` |

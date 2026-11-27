@@ -5,7 +5,9 @@ use std::time::{Duration, Instant, SystemTime};
 
 use gpui_kit::component::input::Input;
 use gpui_kit::*;
-use plates_core::{Need, SessionState, Tile, Timer, rack::ENDED_CLEARS_AFTER};
+use plates_core::{
+    Need, SessionState, Tile, Timer, install::Connection, rack::ENDED_CLEARS_AFTER,
+};
 
 use crate::{
     markup::{self, Mark},
@@ -1285,9 +1287,18 @@ impl RackView {
             login: native::starts_at_login(),
             connection,
         };
-        // While an update is ready, a teal dot on the grip's top-right corner says the menu has
-        // news before you open it (record/areas/build/01-updates.md).
-        let update_ready = self.updates.read(cx).is_ready();
+        // A dot on the grip's top-right corner says the menu has news before you open it: teal
+        // while an update is ready (record/areas/build/01-updates.md), or else amber while Claude
+        // Code's settings hold an older or moved Plates' connection, which you'd otherwise find
+        // only by opening the menu after an update (record/areas/hooks/01-claude-code-hooks.md).
+        // One dot at a time, and the update first (user, 2026-11-27).
+        let news = if self.updates.read(cx).is_ready() {
+            Some(TEAL)
+        } else if connection == Some(Connection::Stale) {
+            Some(AMBER)
+        } else {
+            None
+        };
         let grip = div()
             .id("grip")
             .relative()
@@ -1304,14 +1315,14 @@ impl RackView {
                     .h(px(10.))
                     .text_color(rgb(GRAY)),
             )
-            .children(update_ready.then(|| {
+            .children(news.map(|color| {
                 div()
                     .absolute()
                     .top(px(3.))
                     .right(px(3.))
                     .size(px(6.))
                     .rounded_full()
-                    .bg(rgb(TEAL))
+                    .bg(rgb(color))
             }))
             .on_mouse_down(
                 MouseButton::Left,

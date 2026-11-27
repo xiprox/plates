@@ -37,6 +37,7 @@ Whether GitHub counts the `github.com` downloads against the same limit is unver
 ## What the rack shows
 
 While an update is ready, a 6px teal dot sits on the grip's top-right corner, telling you the rack's menu has news before you open it.
+It takes the place of the amber dot that says the connection to Claude Code needs an update ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#installing)), so the grip shows one dot at a time (user, 2026-11-27).
 
 The rack's menu, the one the grip opens ([01-window](../rack/01-window.md#launching-and-quitting)), has a row for updates above "Quit Plates".
 Its words say where an update stands, and its right end shows the version that runs, such as "0.5.0":
