@@ -13,7 +13,7 @@ use plates_core::{
 use crate::{
     rack_view::{RackView, SeenPull},
     task_list::list_key,
-    view::{BRIGHTEN, GREEN, MUTED, TEXT, TEXT2, swell, white},
+    view::{BRIGHTEN, GREEN, MUTED, TEXT, TEXT2, mix, swell, white},
 };
 
 /// Failed checks and conflicts, redder than an approval's orange, so a broken pull request doesn't
@@ -96,17 +96,20 @@ impl RackView {
             .iter()
             .filter_map(|link| self.pulls.get(&link.url)?.changed)
             .max();
-        let wash = changed
-            .and_then(|at| swell(Instant::now().saturating_duration_since(at), BRIGHTEN))
-            .map(|k| {
-                div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
-                    .rounded(px(5.))
-                    .bg(tint(c, FILL_PEAK * k))
-            });
+        let swelled =
+            changed.and_then(|at| swell(Instant::now().saturating_duration_since(at), BRIGHTEN));
+        // The number takes the icon's color as the chip brightens, since the gray number on the
+        // colored wash read as washed out (user, 2026-11-27).
+        let number = mix(TEXT2, c, swelled.unwrap_or(0.));
+        let wash = swelled.map(|k| {
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full()
+                .rounded(px(5.))
+                .bg(tint(c, FILL_PEAK * k))
+        });
         let icon = if status == Status::Merged {
             "plates/merged.svg"
         } else {
@@ -136,7 +139,7 @@ impl RackView {
             .hover(|s| s.bg(white(FILL_HOVER)))
             .text_size(px(11.))
             .font_weight(FontWeight::SEMIBOLD)
-            .text_color(rgb(TEXT2))
+            .text_color(rgb(number))
             .children(wash)
             .child(svg().path(icon).size(px(11.)).text_color(rgb(c)))
             .child(label)

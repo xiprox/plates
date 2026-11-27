@@ -294,7 +294,7 @@ pub(crate) fn text(alpha: f32) -> Hsla {
     c
 }
 
-fn mix(a: u32, b: u32, t: f32) -> u32 {
+pub(crate) fn mix(a: u32, b: u32, t: f32) -> u32 {
     let channel = |shift: u32| {
         let (x, y) = (((a >> shift) & 0xFF) as f32, ((b >> shift) & 0xFF) as f32);
         ((x + (y - x) * t).round() as u32) << shift
