@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.8.0](https://github.com/xiprox/plates/compare/v0.7.1...v0.8.0) (2026-11-27)
+
+
+### Features
+
+* hold back a swipe on a session with sub-sessions ([67beabc](https://github.com/xiprox/plates/commit/67beabca98ea4f2a67235717fdfb91a53e846fad))
+* keep a session waiting past a question, and catch a forgotten wait ([2c4d489](https://github.com/xiprox/plates/commit/2c4d489e1809604abcb0cf2ba492f17bba6d3919))
+* list every open pull request in the chip's pop-out ([9e4406e](https://github.com/xiprox/plates/commit/9e4406ebbe49698f8005c1062b4ca3301ae01087))
+* show a session's pull request on its tile ([ad31838](https://github.com/xiprox/plates/commit/ad318381ba14ec0c74a8e8cddd75fe5fafba69b4))
+* snooze a tile for 1 hour ([870b7d7](https://github.com/xiprox/plates/commit/870b7d7487b8d65db71342a1ed347585c8fca019))
+* soften the pull request chip's brighten to a 20% wash ([ab76abe](https://github.com/xiprox/plates/commit/ab76abea3bf12fab5a46d8c1bec62b4bc4d62f86))
+* take a session's tile off the rack once the Claude app archives it ([4565253](https://github.com/xiprox/plates/commit/4565253e9a1acfe23ae9a4e1ec60f10bc8fb31aa))
+* take a tile off the rack from its right-click menu, in place of its × ([32324e9](https://github.com/xiprox/plates/commit/32324e948bbcbfec2ebe708b83f51cee356a5869))
+* tint the pull request chip's number while the chip brightens ([86c26f1](https://github.com/xiprox/plates/commit/86c26f1a62d9037ca13c37b194c23e3db8999143))
+
+
+### Bug Fixes
+
+* leave work handed to a sub-session off the task list ([ba51746](https://github.com/xiprox/plates/commit/ba517465264ab3b1a52b8112632f648402c4bd70))
+
 ## [0.7.1](https://github.com/xiprox/plates/compare/v0.7.0...v0.7.1) (2026-11-25)
 
 
