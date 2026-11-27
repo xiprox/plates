@@ -2,6 +2,35 @@
 
 What we found about keeping a task list for each session, for Plates to show in its tile, newest entry first.
 
+## 2026-11-27: The Claude desktop app kept Claude going when `plates-hook stop-check` blocked a turn's end
+
+**Asked:** does the Claude desktop app keep Claude going when `plates-hook stop-check` blocks a turn's end, and how does it show the block?
+
+**Expected:** Claude to get the reason as its next input, since Claude Code's hooks reference says a `Stop` hook's `decision` of `block` keeps Claude going.
+
+**Found:** a turn that restarted a build of Plates in the background, and called neither `wait` nor `ping`, was blocked once, and Claude got the reason under "Stop hook feedback" with the user's next message (seen in this repository's own session, Claude desktop app on macOS 26.5.2, 2026-11-27).
+The app showed it as `Stop hook blocking error from command: "command hook 3":` followed by the reason.
+The command was a build of Plates left running, the case where Claude should end the turn again, so the check cost one extra step there.
+
+**Changed:** nothing, since the check did what [02-waits-and-pings](02-waits-and-pings.md#catching-a-forgotten-wait) designs.
+
+**Affects:** [02-waits-and-pings](02-waits-and-pings.md#left-open), which no longer asks whether the app honors the block.
+
+## 2026-11-27: A wait carried over on a dev server an earlier turn left running
+
+**Asked:** why did a session's tile keep "Waiting on v0.8.0 release build" after the turn that reported the release had ended?
+
+**Expected:** the tile to show the turn's end, since the release build the `wait` was for had finished.
+
+**Found:** the session had left a build of Plates running in the background turns earlier, beside the command that watched the release build (seen by the user on macOS 26.5.2, 2026-11-27).
+A `wait` carried over while any `shell` task still ran that had been running at its turn's end, and the build of Plates was one of them, so the wait held after the release build's command had finished.
+The transcript records each background command's task `id` as `backgroundTaskId` in its result's `toolUseResult`, such as `bgnnbfb5e`, the same `id` its task notification carries (read in this session's transcript, 2026-11-27).
+
+**Changed:** a wait carries over only on the commands its own turn started, the ones running at its `Stop` that weren't at the `Stop` before.
+The stop check counts only the commands its turn started, by their `backgroundTaskId`.
+
+**Affects:** [02-waits-and-pings](02-waits-and-pings.md#a-wait-that-carries-over).
+
 ## 2026-11-27: `plates-hook stop-check` read a 35MB transcript in under 50ms
 
 **Asked:** how long does `plates-hook stop-check`, a `Stop` hook Claude Code waits for, hold up a turn's end on a long session?

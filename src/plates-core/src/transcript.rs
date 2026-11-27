@@ -181,10 +181,12 @@ pub fn plan(path: &Path) -> io::Result<Vec<Step>> {
 }
 
 /// What the transcript's newest turn did that the `Stop` nudge weighs: whether it started a
-/// command in the background, and whether it called the `plates` server's `wait` or `ping`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// command in the background, the task `id`s Claude Code gave the commands it started, and
+/// whether it called the `plates` server's `wait` or `ping`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TurnCalls {
     pub backgrounded: bool,
+    pub started: Vec<String>,
     pub waited: bool,
 }
 
@@ -197,6 +199,7 @@ pub fn newest_turn_calls(path: &Path) -> io::Result<TurnCalls> {
     for line in reader.split(b'\n').map_while(Result::ok) {
         let line = String::from_utf8_lossy(&line);
         if !line.contains("run_in_background")
+            && !line.contains("backgroundTaskId")
             && !line.contains("mcp__plates__")
             && !line.contains("\"origin\"")
             && !line.contains("queued_command")
@@ -218,6 +221,16 @@ pub fn newest_turn_calls(path: &Path) -> io::Result<TurnCalls> {
                 .any(|input| input.get("run_in_background").and_then(Value::as_bool) == Some(true))
         });
         turn.backgrounded |= backgrounded;
+        // A background command's result is a `user` record whose `toolUseResult` holds the task's
+        // `backgroundTaskId`, such as `bgnnbfb5e` (seen in this repository's own sessions'
+        // transcripts, 2026-11-27).
+        if let Some(id) = record
+            .get("toolUseResult")
+            .and_then(|r| r.get("backgroundTaskId"))
+            .and_then(Value::as_str)
+        {
+            turn.started.push(id.to_string());
+        }
         turn.waited |= calls(&record, "mcp__plates__wait").next().is_some()
             || calls(&record, "mcp__plates__ping").next().is_some();
     }
@@ -385,19 +398,27 @@ mod tests {
             "Bash",
             json!({ "command": "cargo test", "run_in_background": true }),
         );
+        let result = |id: &str| {
+            json!({ "type": "user", "isSidechain": false,
+                    "message": { "role": "user", "content": [ { "type": "tool_result", "content": "" } ] },
+                    "toolUseResult": { "stdout": "", "backgroundTaskId": id } })
+        };
         let wait = call("mcp__plates__wait", json!({ "on": "test run" }));
         let path = transcript(
             "calls",
             &[
                 prompt.clone(),
                 background.clone(),
+                result("old1"),
                 wait,
                 prompt.clone(),
                 background,
+                result("new1"),
             ],
         );
         let turn = newest_turn_calls(&path).unwrap();
         assert!(turn.backgrounded && !turn.waited);
+        assert_eq!(turn.started, ["new1"]);
         let path = transcript(
             "calls-plain",
             &[prompt, call("Bash", json!({ "command": "ls" }))],

@@ -75,13 +75,14 @@ A turn that begins with no `UserPromptSubmit` finds the tile where the last turn
 
 ### A wait that carries over
 
-A `wait` holds past the turn that called it while a background command that turn left running still runs (user, 2026-11-27).
-At that turn's `Stop`, Plates keeps the `wait`'s `on` and the `id` of each `shell` task in `Stop`'s `background_tasks`.
+A `wait` holds past the turn that called it while a background command that turn started still runs (user, 2026-11-27).
+At that turn's `Stop`, Plates keeps the `wait`'s `on` and the `id` of each `shell` task the turn started: one in `Stop`'s `background_tasks` that wasn't there at the previous turn's `Stop`.
+A command an earlier turn left running, such as a dev server, doesn't count, since it kept a wait going after the command the wait was for had finished ([tasks log](log.md#2026-11-27-a-wait-carried-over-on-a-dev-server-an-earlier-turn-left-running)).
 At a later turn's `Stop` that calls no `wait`, the tile goes to waiting on the same `on` while any of those `id`s is still in `background_tasks`, as long as the turn doesn't ping or ask you something.
 Once none of them runs, the wait ends.
 So a turn that starts a build, calls `wait`, and asks you something is your turn, and the turn your answer starts waits on the build again when it ends, though Claude, which already called `wait`, doesn't call it again.
-A `wait` whose turn left no command running holds for that turn only.
-Plates doesn't save a wait that carries over, so it's gone once Plates restarts.
+A `wait` whose turn started no command that still runs holds for that turn only.
+Plates doesn't save a wait that carries over, or the commands running at the last `Stop`, so after Plates restarts, the first turn's `Stop` counts every command running as one it started.
 
 ### Catching a forgotten wait
 
@@ -90,14 +91,16 @@ So `Stop` runs a second hook, `plates-hook stop-check`, which Claude Code waits 
 It reads the session's transcript from the prompt that started the turn, and keeps Claude from ending the turn once when all of these hold (user, 2026-11-27):
 
 - the turn ran a `Bash` or `PowerShell` command with `run_in_background`
-- `Stop`'s `background_tasks` holds a `shell` task
+- `Stop`'s `background_tasks` holds a `shell` task the turn started, which the check tells by the `backgroundTaskId` the transcript records with the command's result, or any `shell` task when the transcript records none (unverified that `Stop`'s `id` is the `backgroundTaskId`)
 - the turn called neither `wait` nor `ping`
 - `stop_hook_active` is false, so this isn't the turn's retry after an earlier block
 
 It prints `{"decision": "block", "reason": …}` on stdout and exits with 0, which keeps Claude going with the reason as its next input (documented, [hooks](https://code.claude.com/docs/en/hooks.md), "Stop decision control", as of 2026-11-27).
-The reason names the commands by their descriptions, such as "Run the tests", and tells Claude to call `wait` and end the turn with no further message if it'll act on a result, and otherwise, as for a dev server left running for you or a turn that asks you something, to end the turn again with no further message.
+The reason names those commands by their descriptions, such as "Run the tests", and tells Claude to call `wait` and end the turn with no further message if it'll act on a result, and otherwise, as for a dev server left running for you or a turn that asks you something, to end the turn again with no further message.
 Claude decides, since only Claude knows whether it waits on a command.
 Claude Code sets `stop_hook_active` on the retry, which the check never blocks, so it blocks a turn once at most (same page, "Stop input").
+The Claude desktop app keeps Claude going on the block, and shows it as a "Stop hook blocking error" with the reason (seen on macOS 26.5.2, 2026-11-27, [tasks log](log.md#2026-11-27-the-claude-desktop-app-kept-claude-going-when-plates-hook-stop-check-blocked-a-turns-end)).
+A dev server Claude starts in a turn draws the block too, and costs that turn one extra step.
 On this session's 35MB transcript, the check took 40ms to 50ms, and 360ms on its first run (measured on macOS 26.5.2, 2026-11-27, [tasks log](log.md#2026-11-27-plates-hook-stop-check-read-a-35mb-transcript-in-under-50ms)).
 
 ## The waiting state
@@ -160,8 +163,6 @@ That list names no new turn for checks that pass, so Claude watches for those wi
   Asking a session to ping you once a pull request's checks pass, then watching its tile, would settle it for `ping`.
 - Whether the Claude desktop app starts a turn in a session when its pull request's checks pass.
   Opening a pull request from a session, ending the turn with nothing watching, and waiting for the checks to pass would settle it.
-- Whether the Claude desktop app keeps Claude going when `plates-hook stop-check` blocks a turn's end, and how the extra step shows in the app.
-  Ending a turn in a desktop session after starting a background command, without calling `wait`, would settle it.
 - Whether a `shell` task keeps the same `id` at each `Stop` while it runs, which [A wait that carries over](#a-wait-that-carries-over) depends on.
   Reading two turns' `Stop` bodies while one background command runs, with `plates listen --log <file>`, would settle it.
 - Whether a background command's exit starts a new turn in a terminal session.

@@ -164,8 +164,8 @@ impl SessionEvent {
     }
 }
 
-/// What a turn's `wait` waited on, and the `id`s of the background commands the turn left
-/// running, which a later turn's end still waits on while any of them runs.
+/// What a turn's `wait` waited on, and the `id`s of the background commands the turn started,
+/// which a later turn's end still waits on while any of them runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CarriedWait {
     pub on: String,
@@ -505,9 +505,12 @@ pub struct Session {
     /// What the turn's `wait` call waits on, which its `Stop` turns into the waiting state.
     pub wait: Option<String>,
     /// The last `wait`, kept past the turn that called it while a background command that turn
-    /// left running still runs, so a later turn that ends without calling `wait` again still
-    /// waits on it.
+    /// started still runs, so a later turn that ends without calling `wait` again still waits on
+    /// it.
     pub carried_wait: Option<CarriedWait>,
+    /// The `id`s of the background commands still running at the last turn's end, which tell the
+    /// commands a turn started from the ones an earlier turn left running.
+    pub commands_at_stop: Vec<String>,
     /// The turn's `ping` message, which its `Stop` turns into your turn with a ring.
     pub ping: Option<String>,
     /// When a ping last moved the tile to your turn, which the app rings its tone for.
@@ -591,6 +594,7 @@ impl Session {
             plan: Vec::new(),
             background: Vec::new(),
             carried_wait: None,
+            commands_at_stop: Vec::new(),
             status: None,
             status_at: now,
             activity: None,

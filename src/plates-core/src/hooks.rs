@@ -522,14 +522,19 @@ fn plates_call(v: &Value) -> Option<SessionEvent> {
 /// command it left running for you, such as a dev server, waits on nothing. Claude Code sets
 /// `stop_hook_active` on the retry, which this never blocks, so a turn is blocked once at most
 /// (documented, https://code.claude.com/docs/en/hooks.md, "Stop input", as of 2026-11-27).
-pub fn stop_nudge(stop: &Value, turn: TurnCalls) -> Option<String> {
+pub fn stop_nudge(stop: &Value, turn: &TurnCalls) -> Option<String> {
     let retry = stop.get("stop_hook_active").and_then(Value::as_bool) == Some(true);
     if retry || !turn.backgrounded || turn.waited {
         return None;
     }
+    // Only the commands this turn started count, so a dev server an earlier turn left running
+    // doesn't stop every turn after it. That `Stop`'s task `id` is the transcript's
+    // `backgroundTaskId` is unverified, so a turn whose transcript holds no `id` counts every
+    // command still running.
     let running: Vec<String> = background_tasks(stop)
         .into_iter()
         .filter(|t| t.kind == "shell")
+        .filter(|t| turn.started.is_empty() || turn.started.contains(&t.id))
         .map(|t| format!("\"{}\"", t.description))
         .collect();
     if running.is_empty() {
@@ -985,22 +990,29 @@ mod tests {
         };
         let backgrounded = TurnCalls {
             backgrounded: true,
+            started: vec!["b2".into()],
             waited: false,
         };
-        let reason = stop_nudge(&stop(false), backgrounded).unwrap();
+        let reason = stop_nudge(&stop(false), &backgrounded).unwrap();
         assert!(reason.contains("\"Run the tests\""), "{reason}");
         assert!(!reason.contains("Search"), "{reason}");
-        assert_eq!(stop_nudge(&stop(true), backgrounded), None);
+        assert_eq!(stop_nudge(&stop(true), &backgrounded), None);
         let waited = TurnCalls {
-            backgrounded: true,
             waited: true,
+            ..backgrounded.clone()
         };
-        assert_eq!(stop_nudge(&stop(false), waited), None);
-        assert_eq!(stop_nudge(&stop(false), TurnCalls::default()), None);
+        assert_eq!(stop_nudge(&stop(false), &waited), None);
+        assert_eq!(stop_nudge(&stop(false), &TurnCalls::default()), None);
         assert_eq!(
-            stop_nudge(&json!({ "background_tasks": [] }), backgrounded),
+            stop_nudge(&json!({ "background_tasks": [] }), &backgrounded),
             None
         );
+        // A command an earlier turn left running, such as a dev server, stops nothing.
+        let other = TurnCalls {
+            started: vec!["c3".into()],
+            ..backgrounded
+        };
+        assert_eq!(stop_nudge(&stop(false), &other), None);
     }
 
     #[test]

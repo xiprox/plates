@@ -49,7 +49,7 @@ fn stop_check(body: &[u8]) {
     let Ok(turn) = transcript::newest_turn_calls(std::path::Path::new(path)) else {
         return;
     };
-    if let Some(reason) = hooks::stop_nudge(&stop, turn) {
+    if let Some(reason) = hooks::stop_nudge(&stop, &turn) {
         println!(
             "{}",
             serde_json::json!({ "decision": "block", "reason": reason })

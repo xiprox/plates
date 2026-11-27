@@ -459,20 +459,28 @@ impl Rack {
                 let ping = s.ping.take();
                 let mut wait = s.wait.take();
                 // A turn that calls `wait` keeps it past its end while a background command it
-                // left running still runs, so a later turn that ends without calling `wait`
-                // again, as after Claude asked you something and you answered, still waits on it
-                // (user, 2026-11-27; record/areas/tasks/02-waits-and-pings.md).
+                // started still runs, so a later turn that ends without calling `wait` again, as
+                // after Claude asked you something and you answered, still waits on it (user,
+                // 2026-11-27; record/areas/tasks/02-waits-and-pings.md). A command an earlier turn
+                // left running, such as a dev server, isn't what the turn waits on, and kept a
+                // wait going after its own command had finished (record/areas/tasks/log.md).
                 let commands: Vec<String> = s
                     .background
                     .iter()
                     .filter(|t| t.kind == "shell" && !t.id.is_empty())
                     .map(|t| t.id.clone())
                     .collect();
+                let started: Vec<String> = commands
+                    .iter()
+                    .filter(|c| !s.commands_at_stop.contains(c))
+                    .cloned()
+                    .collect();
+                s.commands_at_stop = commands.clone();
                 match &wait {
                     Some(on) => {
-                        s.carried_wait = (!commands.is_empty()).then(|| CarriedWait {
+                        s.carried_wait = (!started.is_empty()).then(|| CarriedWait {
                             on: on.clone(),
-                            commands,
+                            commands: started,
                         });
                     }
                     None => match &s.carried_wait {
@@ -1936,6 +1944,43 @@ mod tests {
         apply(&mut rack, "a", prompt("Thanks"), 30);
         apply(&mut rack, "a", wrapped(false), 31);
         apply(&mut rack, "a", ended(&["s2"]), 32);
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::Unread);
+        assert_eq!(s.carried_wait, None);
+    }
+
+    #[test]
+    fn a_wait_ends_with_its_own_command_while_an_earlier_turns_dev_server_runs_on() {
+        let ended = |shell: &[&str]| SessionEvent::TurnEnded {
+            last_message: Some("Done.".into()),
+            background: shell
+                .iter()
+                .map(|id| BackgroundTask {
+                    id: (*id).into(),
+                    kind: "shell".into(),
+                    description: (*id).into(),
+                })
+                .collect(),
+        };
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Run the app"), 0);
+        apply(&mut rack, "a", wrapped(false), 1);
+        apply(&mut rack, "a", ended(&["dev"]), 2);
+
+        // The release build's turn waits on the build, with the dev server still up.
+        apply(&mut rack, "a", prompt("Release it"), 10);
+        let on = SessionEvent::WaitCalled {
+            on: "release build".into(),
+        };
+        apply(&mut rack, "a", on, 11);
+        apply(&mut rack, "a", wrapped(false), 12);
+        apply(&mut rack, "a", ended(&["dev", "build"]), 13);
+        assert_eq!(session(&rack, id).state, SessionState::Waiting);
+
+        // The build's exit starts a turn that reports it, and the dev server keeps no wait going.
+        apply(&mut rack, "a", prompt("The build finished"), 20);
+        apply(&mut rack, "a", wrapped(false), 21);
+        apply(&mut rack, "a", ended(&["dev"]), 22);
         let s = session(&rack, id);
         assert_eq!(s.state, SessionState::Unread);
         assert_eq!(s.carried_wait, None);
