@@ -6,7 +6,7 @@ members = ["src/*"]
 exclude = ["experiments"]
 
 [workspace.package]
-version = "0.8.1"
+version = "0.8.2"
 edition = "2024"
 publish = false
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.2](https://github.com/xiprox/plates/compare/v0.8.1...v0.8.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* draw commands and search patterns on tiles as written ([8d93919](https://github.com/xiprox/plates/commit/8d93919abde671e97f77bc0effd3d0143b2071ec))
+* draw italics, code inside bold, task boxes, and a fenced first line without their Markdown marks ([abb1593](https://github.com/xiprox/plates/commit/abb1593d339ede14c28874cd8c15c246a7ad9335))
+
 ## [0.8.1](https://github.com/xiprox/plates/compare/v0.8.0...v0.8.1) (2026-11-27)
 
 
