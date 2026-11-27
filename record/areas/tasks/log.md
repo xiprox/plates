@@ -2,6 +2,20 @@
 
 What we found about keeping a task list for each session, for Plates to show in its tile, newest entry first.
 
+## 2026-11-27: `plates-hook stop-check` read a 35MB transcript in under 50ms
+
+**Asked:** how long does `plates-hook stop-check`, a `Stop` hook Claude Code waits for, hold up a turn's end on a long session?
+
+**Expected:** well under a second, since it parses only the transcript's lines that mention a background command, a `plates` call, or a prompt.
+
+**Found:** on this session's 35MB transcript, a release build of `plates-hook stop-check` took 360ms on its first run, then 50ms and 40ms (measured on macOS 26.5.2, 2026-11-27).
+The first run read the file from disk, and the later ones from the OS's cache.
+The turn had started no background command, so the check printed nothing, as it should.
+
+**Changed:** `Stop` runs the check with a 5s limit, as [02-waits-and-pings](02-waits-and-pings.md#catching-a-forgotten-wait) says.
+
+**Affects:** [02-waits-and-pings](02-waits-and-pings.md#catching-a-forgotten-wait).
+
 ## 2026-11-23: On Windows, Claude still often ended a turn waiting on a background command without calling wait
 
 **Asked:** does Claude call `wait` on its own since the server's rule for it was rewritten ([the no-wait-call entry](#2026-11-20-a-session-ended-a-turn-waiting-on-two-background-commands-without-calling-wait))?

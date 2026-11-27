@@ -9,8 +9,8 @@ use std::{
 use crate::{
     desktop::AppSession,
     session::{
-        COMPACTED, RECENT_TOOLS, Recent, Session, SessionEvent, SessionState, Step, finished,
-        first_line, prompt_title,
+        COMPACTED, CarriedWait, RECENT_TOOLS, Recent, Session, SessionEvent, SessionState, Step,
+        finished, first_line, prompt_title,
     },
     timer::{DEFAULT_MINUTES, Timer},
 };
@@ -457,7 +457,31 @@ impl Rack {
                 s.summary = s.message.as_deref().map(first_line);
                 s.background = background;
                 let ping = s.ping.take();
-                let wait = s.wait.take();
+                let mut wait = s.wait.take();
+                // A turn that calls `wait` keeps it past its end while a background command it
+                // left running still runs, so a later turn that ends without calling `wait`
+                // again, as after Claude asked you something and you answered, still waits on it
+                // (user, 2026-11-27; record/areas/tasks/02-waits-and-pings.md).
+                let commands: Vec<String> = s
+                    .background
+                    .iter()
+                    .filter(|t| t.kind == "shell" && !t.id.is_empty())
+                    .map(|t| t.id.clone())
+                    .collect();
+                match &wait {
+                    Some(on) => {
+                        s.carried_wait = (!commands.is_empty()).then(|| CarriedWait {
+                            on: on.clone(),
+                            commands,
+                        });
+                    }
+                    None => match &s.carried_wait {
+                        Some(carried) if carried.commands.iter().any(|c| commands.contains(c)) => {
+                            wait = Some(carried.on.clone());
+                        }
+                        _ => s.carried_wait = None,
+                    },
+                }
                 let to = match (&ping, s.asks, &wait) {
                     (Some(_), _, _) | (None, Some(true), _) => SessionState::YourTurn,
                     _ if s.waiting_on() > 0 => SessionState::Working,
@@ -1799,6 +1823,7 @@ mod tests {
     #[test]
     fn a_turn_that_leaves_agents_running_stays_working_until_they_report_back() {
         let task = |kind: &str| BackgroundTask {
+            id: format!("{kind}-1"),
             kind: kind.into(),
             description: "Search the app".into(),
         };
@@ -1871,6 +1896,52 @@ mod tests {
     }
 
     #[test]
+    fn a_wait_carries_over_while_its_command_runs_past_a_turn_that_asked_you_something() {
+        let ended = |shell: &[&str]| SessionEvent::TurnEnded {
+            last_message: Some("Done.".into()),
+            background: shell
+                .iter()
+                .map(|id| BackgroundTask {
+                    id: (*id).into(),
+                    kind: "shell".into(),
+                    description: "cargo test".into(),
+                })
+                .collect(),
+        };
+        let mut rack = Rack::new();
+        let id = apply(&mut rack, "a", prompt("Run the tests"), 0);
+        let on = SessionEvent::WaitCalled {
+            on: "test run".into(),
+        };
+        apply(&mut rack, "a", on, 1);
+        apply(&mut rack, "a", wrapped(false), 2);
+        apply(&mut rack, "a", ended(&["s1"]), 3);
+        assert_eq!(session(&rack, id).state, SessionState::Waiting);
+
+        // A turn that asks you something is your turn, however long the tests still run.
+        apply(&mut rack, "a", prompt("Which name?"), 10);
+        apply(&mut rack, "a", wrapped(true), 11);
+        apply(&mut rack, "a", ended(&["s1"]), 12);
+        assert_eq!(session(&rack, id).state, SessionState::YourTurn);
+
+        // Your answer's turn ends without a `wait`, and still waits on the tests.
+        apply(&mut rack, "a", prompt("The first"), 20);
+        apply(&mut rack, "a", wrapped(false), 21);
+        apply(&mut rack, "a", ended(&["s1", "s2"]), 22);
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::Waiting);
+        assert_eq!(s.summary.as_deref(), Some("test run"));
+
+        // Once the tests have finished, a turn's end waits on nothing.
+        apply(&mut rack, "a", prompt("Thanks"), 30);
+        apply(&mut rack, "a", wrapped(false), 31);
+        apply(&mut rack, "a", ended(&["s2"]), 32);
+        let s = session(&rack, id);
+        assert_eq!(s.state, SessionState::Unread);
+        assert_eq!(s.carried_wait, None);
+    }
+
+    #[test]
     fn a_turn_that_pings_is_your_turn_with_the_message_and_rings_at_once() {
         let mut rack = Rack::new();
         let id = apply(&mut rack, "a", prompt("Ping me once checks pass"), 0);
@@ -1926,6 +1997,7 @@ mod tests {
             SessionEvent::TurnEnded {
                 last_message: Some("Two agents are on it.".into()),
                 background: vec![BackgroundTask {
+                    id: "t1".into(),
                     kind: "subagent".into(),
                     description: "Review the diff".into(),
                 }],
@@ -2679,6 +2751,7 @@ mod tests {
             SessionEvent::TurnEnded {
                 last_message: Some("An agent is reviewing.".into()),
                 background: vec![BackgroundTask {
+                    id: "t1".into(),
                     kind: "subagent".into(),
                     description: "Review the diff".into(),
                 }],

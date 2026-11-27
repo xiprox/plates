@@ -220,6 +220,7 @@ On Windows, uninstalling Plates disconnects it first, from Velopack's uninstall 
 On macOS, moving Plates to the Trash runs nothing of Plates', so its hooks stay in Claude Code's settings until you disconnect.
 
 Each hook is an async command hook, which Claude Code starts and doesn't wait for, and which runs `plates-hook` directly, with no shell.
+`Stop` also runs `plates-hook stop-check`, the one hook Claude Code waits for, with a 5s limit, since an async hook can't keep Claude from ending a turn (documented, [hooks](https://code.claude.com/docs/en/hooks.md), "Run hooks in the background", as of 2026-11-27); [02-waits-and-pings](../tasks/02-waits-and-pings.md#catching-a-forgotten-wait) says what it does.
 `plates-hook` reads the event from stdin and forwards it to the receiver on `127.0.0.1:47231`.
 While Plates is closed, `plates-hook` gives up after 300ms, in the background, and exits without an error.
 An `http` hook straight to the receiver would cost a session about 2s for each event while Plates is closed, because Windows refuses a connection to a port nothing listens on only after about 2s ([hooks log](log.md#2026-11-15-desktop-sessions-fire-the-hooks-and-an-http-hook-would-stall-2s-per-event-while-plates-is-closed)).

@@ -16,7 +16,7 @@ use crate::{
         first_line,
     },
     tasks::{self, Field},
-    transcript::{self, Turn},
+    transcript::{self, Turn, TurnCalls},
 };
 
 /// Applies a hook message to the rack, and names a session Plates first sees after its first
@@ -515,7 +515,37 @@ fn plates_call(v: &Value) -> Option<SessionEvent> {
     }
 }
 
-// Each of Stop's `background_tasks` has a `type`, such as `subagent` or `shell`, and a
+/// The reason `plates-hook stop-check`, a `Stop` hook Claude Code waits for, gives Claude for
+/// not ending its turn yet: the turn started a command in the background that still runs, and
+/// called neither `wait` nor `ping`, so Plates would show the session as yours while Claude may
+/// only be waiting on the command (user, 2026-11-27). Claude decides whether it waits, since a
+/// command it left running for you, such as a dev server, waits on nothing. Claude Code sets
+/// `stop_hook_active` on the retry, which this never blocks, so a turn is blocked once at most
+/// (documented, https://code.claude.com/docs/en/hooks.md, "Stop input", as of 2026-11-27).
+pub fn stop_nudge(stop: &Value, turn: TurnCalls) -> Option<String> {
+    let retry = stop.get("stop_hook_active").and_then(Value::as_bool) == Some(true);
+    if retry || !turn.backgrounded || turn.waited {
+        return None;
+    }
+    let running: Vec<String> = background_tasks(stop)
+        .into_iter()
+        .filter(|t| t.kind == "shell")
+        .map(|t| format!("\"{}\"", t.description))
+        .collect();
+    if running.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "Plates: this turn left {} running in the background without calling wait. If you'll act \
+         on its result when it finishes, call the plates server's wait tool with what you're \
+         waiting on, then end your turn with no further message. If you won't, as for a dev \
+         server left running for the user, or if this turn asks the user something, end your turn \
+         again with no further message.",
+        running.join(", ")
+    ))
+}
+
+// Each of Stop's `background_tasks` has an `id`, a `type`, such as `subagent` or `shell`, and a
 // `description` of up to 1,000 characters, of which the card shows the first line.
 fn background_tasks(v: &Value) -> Vec<BackgroundTask> {
     v.get("background_tasks")
@@ -524,6 +554,11 @@ fn background_tasks(v: &Value) -> Vec<BackgroundTask> {
         .flatten()
         .filter_map(|t| {
             Some(BackgroundTask {
+                id: t
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
                 kind: t.get("type")?.as_str()?.to_string(),
                 description: t
                     .get("description")
@@ -942,6 +977,33 @@ mod tests {
     }
 
     #[test]
+    fn the_stop_nudge_blocks_once_a_turn_that_backgrounded_a_command_without_waiting() {
+        let stop = |active: bool| {
+            json!({ "stop_hook_active": active, "background_tasks": [
+                { "id": "b2", "type": "shell", "status": "running", "description": "Run the tests" },
+                { "id": "a1", "type": "subagent", "status": "running", "description": "Search" } ] })
+        };
+        let backgrounded = TurnCalls {
+            backgrounded: true,
+            waited: false,
+        };
+        let reason = stop_nudge(&stop(false), backgrounded).unwrap();
+        assert!(reason.contains("\"Run the tests\""), "{reason}");
+        assert!(!reason.contains("Search"), "{reason}");
+        assert_eq!(stop_nudge(&stop(true), backgrounded), None);
+        let waited = TurnCalls {
+            backgrounded: true,
+            waited: true,
+        };
+        assert_eq!(stop_nudge(&stop(false), waited), None);
+        assert_eq!(stop_nudge(&stop(false), TurnCalls::default()), None);
+        assert_eq!(
+            stop_nudge(&json!({ "background_tasks": [] }), backgrounded),
+            None
+        );
+    }
+
+    #[test]
     fn a_turn_ends_with_claudes_message_or_an_api_error() {
         let stop = with(
             "Stop",
@@ -958,10 +1020,12 @@ mod tests {
                 last_message: Some("Done.".into()),
                 background: vec![
                     BackgroundTask {
+                        id: "a1".into(),
                         kind: "subagent".into(),
                         description: "Search the app".into()
                     },
                     BackgroundTask {
+                        id: "b2".into(),
                         kind: "shell".into(),
                         description: "Dev server".into()
                     },

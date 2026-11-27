@@ -180,6 +180,50 @@ pub fn plan(path: &Path) -> io::Result<Vec<Step>> {
     Ok(plan)
 }
 
+/// What the transcript's newest turn did that the `Stop` nudge weighs: whether it started a
+/// command in the background, and whether it called the `plates` server's `wait` or `ping`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TurnCalls {
+    pub backgrounded: bool,
+    pub waited: bool,
+}
+
+/// What the newest turn called, from the prompt that started it to the end of the transcript. A
+/// turn can run long, so this reads the whole transcript, as `plan` does, and JSON-parses only
+/// the records that could matter.
+pub fn newest_turn_calls(path: &Path) -> io::Result<TurnCalls> {
+    let reader = BufReader::new(File::open(path)?);
+    let mut turn = TurnCalls::default();
+    for line in reader.split(b'\n').map_while(Result::ok) {
+        let line = String::from_utf8_lossy(&line);
+        if !line.contains("run_in_background")
+            && !line.contains("mcp__plates__")
+            && !line.contains("\"origin\"")
+            && !line.contains("queued_command")
+        {
+            continue;
+        }
+        let Ok(record) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if record.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        if starts_turn(&record) {
+            turn = TurnCalls::default();
+            continue;
+        }
+        let backgrounded = ["Bash", "PowerShell"].iter().any(|tool| {
+            calls(&record, tool)
+                .any(|input| input.get("run_in_background").and_then(Value::as_bool) == Some(true))
+        });
+        turn.backgrounded |= backgrounded;
+        turn.waited |= calls(&record, "mcp__plates__wait").next().is_some()
+            || calls(&record, "mcp__plates__ping").next().is_some();
+    }
+    Ok(turn)
+}
+
 // A prompt, which can start a turn: one you typed, a task notification's, or another agent's
 // report. Claude Code writes one as a `user` record whose `origin` has a `kind`, such as `human`
 // or `peer`, while a tool's result is a `user` record with no `origin`, and writes one that waited
@@ -326,6 +370,39 @@ mod tests {
         let text: Vec<String> = lines.iter().map(Value::to_string).collect();
         fs::write(&path, text.join("\n")).unwrap();
         path
+    }
+
+    #[test]
+    fn the_newest_turns_calls_say_whether_it_backgrounded_a_command_and_waited() {
+        use serde_json::json;
+        let prompt = json!({ "type": "user", "isSidechain": false, "origin": { "kind": "human" },
+                             "message": { "role": "user", "content": "Run the tests" } });
+        let call = |name: &str, input: Value| {
+            json!({ "type": "assistant", "isSidechain": false, "message": { "role": "assistant",
+                    "content": [ { "type": "tool_use", "name": name, "input": input } ] } })
+        };
+        let background = call(
+            "Bash",
+            json!({ "command": "cargo test", "run_in_background": true }),
+        );
+        let wait = call("mcp__plates__wait", json!({ "on": "test run" }));
+        let path = transcript(
+            "calls",
+            &[
+                prompt.clone(),
+                background.clone(),
+                wait,
+                prompt.clone(),
+                background,
+            ],
+        );
+        let turn = newest_turn_calls(&path).unwrap();
+        assert!(turn.backgrounded && !turn.waited);
+        let path = transcript(
+            "calls-plain",
+            &[prompt, call("Bash", json!({ "command": "ls" }))],
+        );
+        assert_eq!(newest_turn_calls(&path).unwrap(), TurnCalls::default());
     }
 
     #[test]

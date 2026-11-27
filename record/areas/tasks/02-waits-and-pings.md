@@ -9,8 +9,9 @@ Depends on:  01-task-list (01-task-list.md), for the server; 01-core (../core/01
              events that move a tile; 03-holding-pings (../rack/03-holding-pings.md), for when a
              tone waits.
 Decides:     The two tools and what Claude is told about them, how Plates learns of a call, where a
-             turn's end moves the tile, the waiting state and when it ends, and what a ping does to
-             a tile.
+             turn's end moves the tile, how a wait carries over to later turns, how Plates catches a
+             turn that forgot `wait`, the waiting state and when it ends, and what a ping does to a
+             tile.
 ```
 
 You can ask a session to tell you when something outside it happens, such as "once the PR is up and checks pass, ping me on Plates so I can merge it" (user, 2026-11-20).
@@ -65,12 +66,39 @@ At `Stop`, Plates moves the tile by the first of these that holds (user, 2026-11
 1. If the turn called `ping`, to your turn, as [What a ping does](#what-a-ping-does) says.
 2. If the turn's last wrap-up asked you something, to your turn.
 3. If a background task that counts still runs, to working, where it stays ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#background-tasks)).
-4. If the turn called `wait`, to waiting.
+4. If the turn called `wait`, or an earlier turn's `wait` still holds, as [A wait that carries over](#a-wait-that-carries-over) says, to waiting.
 5. If the turn had a wrap-up, to unread, and otherwise to your turn, such as in a terminal.
 
 Every move but item 3's starts the state over, even when the tile is already in it: your turn starts a new timer and brightens, unread brightens, and waiting counts from 0 again.
 A turn that begins with no `UserPromptSubmit` finds the tile where the last turn left it, and its own end still asks for you.
 `StopFailure`, an interrupt, and `SessionEnd` drop the turn's calls, and move the tile as they do for any turn.
+
+### A wait that carries over
+
+A `wait` holds past the turn that called it while a background command that turn left running still runs (user, 2026-11-27).
+At that turn's `Stop`, Plates keeps the `wait`'s `on` and the `id` of each `shell` task in `Stop`'s `background_tasks`.
+At a later turn's `Stop` that calls no `wait`, the tile goes to waiting on the same `on` while any of those `id`s is still in `background_tasks`, as long as the turn doesn't ping or ask you something.
+Once none of them runs, the wait ends.
+So a turn that starts a build, calls `wait`, and asks you something is your turn, and the turn your answer starts waits on the build again when it ends, though Claude, which already called `wait`, doesn't call it again.
+A `wait` whose turn left no command running holds for that turn only.
+Plates doesn't save a wait that carries over, so it's gone once Plates restarts.
+
+### Catching a forgotten wait
+
+Claude often ended a turn waiting on a background command without calling `wait` ([tasks log](log.md#2026-11-23-on-windows-claude-still-often-ended-a-turn-waiting-on-a-background-command-without-calling-wait)).
+So `Stop` runs a second hook, `plates-hook stop-check`, which Claude Code waits for, unlike Plates' other hooks ([01-claude-code-hooks](../hooks/01-claude-code-hooks.md#installing)).
+It reads the session's transcript from the prompt that started the turn, and keeps Claude from ending the turn once when all of these hold (user, 2026-11-27):
+
+- the turn ran a `Bash` or `PowerShell` command with `run_in_background`
+- `Stop`'s `background_tasks` holds a `shell` task
+- the turn called neither `wait` nor `ping`
+- `stop_hook_active` is false, so this isn't the turn's retry after an earlier block
+
+It prints `{"decision": "block", "reason": …}` on stdout and exits with 0, which keeps Claude going with the reason as its next input (documented, [hooks](https://code.claude.com/docs/en/hooks.md), "Stop decision control", as of 2026-11-27).
+The reason names the commands by their descriptions, such as "Run the tests", and tells Claude to call `wait` and end the turn with no further message if it'll act on a result, and otherwise, as for a dev server left running for you or a turn that asks you something, to end the turn again with no further message.
+Claude decides, since only Claude knows whether it waits on a command.
+Claude Code sets `stop_hook_active` on the retry, which the check never blocks, so it blocks a turn once at most (same page, "Stop input").
+On this session's 35MB transcript, the check took 40ms to 50ms, and 360ms on its first run (measured on macOS 26.5.2, 2026-11-27, [tasks log](log.md#2026-11-27-plates-hook-stop-check-read-a-35mb-transcript-in-under-50ms)).
 
 ## The waiting state
 
@@ -116,7 +144,8 @@ That list names no new turn for checks that pass, so Claude watches for those wi
 ## Known limits
 
 - If the Claude desktop app quits without sending `SessionEnd`, the tile stays waiting, its time counting up (unverified: closing a session sent `SessionEnd` on Windows ([hooks log](../hooks/log.md#2026-11-15-in-a-desktop-session-a-denial-and-an-interrupt-fire-nothing-until-the-next-prompt-and-clear-starts-a-new-session)), and quitting the app with a session waiting would settle it).
-- If Claude ends a turn with a background command running and doesn't call `wait`, the tile shows unread or your turn, and if it doesn't call `ping`, the news arrives with no tone.
+- If Claude ends a turn with a background command running and doesn't call `wait`, even after the stop check, the tile shows unread or your turn, and if it doesn't call `ping`, the news arrives with no tone.
+- The stop check catches only a command the turn itself started, so a turn that ends while an earlier turn's command runs, with no `wait` to carry over, isn't stopped.
 - A turn that ended while Plates was closed reaches the tile from the session's transcript, which Plates reads for the turn's last message and wrap-up but not for `wait` or `ping` (read in `src/plates-core/src/hooks.rs`, `catch_up`), so that turn moves the tile to unread or your turn.
 
 ## Left open
@@ -131,5 +160,9 @@ That list names no new turn for checks that pass, so Claude watches for those wi
   Asking a session to ping you once a pull request's checks pass, then watching its tile, would settle it for `ping`.
 - Whether the Claude desktop app starts a turn in a session when its pull request's checks pass.
   Opening a pull request from a session, ending the turn with nothing watching, and waiting for the checks to pass would settle it.
+- Whether the Claude desktop app keeps Claude going when `plates-hook stop-check` blocks a turn's end, and how the extra step shows in the app.
+  Ending a turn in a desktop session after starting a background command, without calling `wait`, would settle it.
+- Whether a `shell` task keeps the same `id` at each `Stop` while it runs, which [A wait that carries over](#a-wait-that-carries-over) depends on.
+  Reading two turns' `Stop` bodies while one background command runs, with `plates listen --log <file>`, would settle it.
 - Whether a background command's exit starts a new turn in a terminal session.
   Running `claude` in a terminal and ending a turn with a background command that exits a minute later would settle it.

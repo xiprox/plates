@@ -164,10 +164,22 @@ impl SessionEvent {
     }
 }
 
+/// What a turn's `wait` waited on, and the `id`s of the background commands the turn left
+/// running, which a later turn's end still waits on while any of them runs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CarriedWait {
+    pub on: String,
+    pub commands: Vec<String>,
+}
+
 /// A task still running when Claude ended its turn, one of `Stop`'s `background_tasks`
 /// (documented, https://code.claude.com/docs/en/hooks.md#stop-input, as of 2026-11-15).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackgroundTask {
+    /// The task's `id`, which stays the same at each `Stop` while the task runs, or empty when
+    /// `Stop` gave none.
+    #[serde(default)]
+    pub id: String,
     /// The task's `type`, such as `subagent`, `workflow`, or `shell`.
     pub kind: String,
     pub description: String,
@@ -492,6 +504,10 @@ pub struct Session {
     pub wrap_up: Option<WrapUp>,
     /// What the turn's `wait` call waits on, which its `Stop` turns into the waiting state.
     pub wait: Option<String>,
+    /// The last `wait`, kept past the turn that called it while a background command that turn
+    /// left running still runs, so a later turn that ends without calling `wait` again still
+    /// waits on it.
+    pub carried_wait: Option<CarriedWait>,
     /// The turn's `ping` message, which its `Stop` turns into your turn with a ring.
     pub ping: Option<String>,
     /// When a ping last moved the tile to your turn, which the app rings its tone for.
@@ -574,6 +590,7 @@ impl Session {
             recent: Vec::new(),
             plan: Vec::new(),
             background: Vec::new(),
+            carried_wait: None,
             status: None,
             status_at: now,
             activity: None,

@@ -3,6 +3,9 @@
 //!
 //! Each hook is an async command hook in exec form, which runs `plates-hook` with no shell and
 //! doesn't wait for it, so a closed Plates never slows a session (record/areas/hooks/log.md).
+//! `Stop` also runs `plates-hook stop-check`, which Claude Code waits for, since only a hook it
+//! waits for can keep Claude from ending a turn that forgot to call `wait`
+//! (record/areas/tasks/02-waits-and-pings.md).
 //! A hook is Plates' own when it runs a program named `plates-hook`, or when it's an `http` hook
 //! to `receiver::PATH` on `127.0.0.1` from an earlier install, so uninstalling leaves every other
 //! hook as it was.
@@ -37,6 +40,11 @@ pub const EVENTS: [(&str, Option<&str>); 14] = [
     ("Elicitation", None),
     ("ElicitationResult", None),
 ];
+
+/// The most seconds Claude Code waits for `plates-hook stop-check` before it lets the turn end.
+/// The check reads the session's transcript, which takes well under a second, so the limit only
+/// bounds a turn's end when something goes wrong.
+const STOP_CHECK_TIMEOUT: u64 = 5;
 
 fn is_ours(hook: &Value) -> bool {
     let field = |key: &str| hook.get(key).and_then(Value::as_str);
@@ -173,15 +181,22 @@ pub fn ours(hook_program: &Path) -> Map<String, Value> {
         if let Some(m) = matcher {
             group.insert("matcher".into(), json!(m));
         }
-        group.insert(
-            "hooks".into(),
-            json!([{
+        let program = hook_program.to_string_lossy();
+        let mut handlers = vec![json!({
+            "type": "command",
+            "command": program,
+            "args": [],
+            "async": true,
+        })];
+        if event == "Stop" {
+            handlers.push(json!({
                 "type": "command",
-                "command": hook_program.to_string_lossy(),
-                "args": [],
-                "async": true,
-            }]),
-        );
+                "command": program,
+                "args": ["stop-check"],
+                "timeout": STOP_CHECK_TIMEOUT,
+            }));
+        }
+        group.insert("hooks".into(), Value::Array(handlers));
         events.insert(event.into(), json!([Value::Object(group)]));
     }
     events
@@ -315,6 +330,10 @@ mod tests {
             "permission_prompt"
         );
         assert_eq!(s["hooks"].as_object().unwrap().len(), EVENTS.len());
+        assert_eq!(
+            s["hooks"]["Stop"][0]["hooks"][1],
+            json!({ "type": "command", "command": PROGRAM, "args": ["stop-check"], "timeout": 5 })
+        );
     }
 
     #[test]

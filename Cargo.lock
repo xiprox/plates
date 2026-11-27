@@ -5047,6 +5047,7 @@ name = "plates-hook"
 version = "0.7.1"
 dependencies = [
  "plates-core",
+ "serde_json",
 ]
 
 [[package]]

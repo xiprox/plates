@@ -101,6 +101,11 @@ The chip and its pop-out ran on macOS 26.5.2 on 2026-11-27, and we haven't yet s
 Plates taking a session's tile off the rack once the Claude desktop app archives the session, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#sessions-the-app-archives) designs it.
 Done when, on Windows and macOS, archiving a session in the app takes its tile off the rack within a second, and the session's later events bring no tile back.
 
+## 15. Waits that hold
+
+A `wait` that carries over to later turns while its command runs, and the `Stop` hook that catches a forgotten `wait`, as [02-waits-and-pings](../tasks/02-waits-and-pings.md#a-wait-that-carries-over) designs them.
+Done when a session that starts a build, calls `wait`, and asks you something waits on the build again once you've answered, and a session that ends a turn with a build running and no `wait` is stopped once and calls it.
+
 ## Later
 
 The questions [01-window](../rack/01-window.md#left-open) leaves open.
