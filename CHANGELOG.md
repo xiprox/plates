@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/xiprox/plates/compare/v0.8.2...v0.9.0) (2026-11-27)
+
+
+### Features
+
+* put an amber dot on the grip when the connection to Claude Code needs an update ([8fe0f61](https://github.com/xiprox/plates/commit/8fe0f61136642a3c7ada9ab31ff67729a8aa87e4))
+
 ## [0.8.2](https://github.com/xiprox/plates/compare/v0.8.1...v0.8.2) (2026-11-27)
 
 
