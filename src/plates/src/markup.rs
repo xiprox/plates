@@ -1,11 +1,12 @@
 //! The markdown Claude writes in a line a tile shows, such as `code` and **bold**, so the tile can
 //! style each span rather than show the marks around it, and the blocks of a whole message, for
-//! the hover card. It reads the forms Claude's messages use, counted over 20,211 of them
-//! (record/areas/rack/log.md), and leaves out the ones they don't, such as ~~strikethrough~~.
+//! the hover card. It reads the forms Claude's messages use, counted over 20,211 of them, and
+//! leaves out the ones they don't, such as ~~strikethrough~~ (record/areas/rack/log.md, "2026-11-27:
+//! Italics and code inside bold were the commonest Markdown the tiles drew as raw marks").
 
 use std::ops::Range;
 
-use plates_core::session::{Fence, is_rule, table_cells};
+use plates_core::session::{Fence, MARKS, is_rule, table_cells};
 
 /// One block of a message as the hover card draws it, with its inline marks still in its text.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -16,7 +17,7 @@ pub enum Block {
     Heading(String),
     /// A list item: its marker, how many levels it nests under the items above it, and its text.
     /// The marker is "•" for a - or * item, "▢" or "✓" for a task item's open or checked box, or
-    /// the number for a numbered one, such as "2.".
+    /// the number for a numbered one, with its own mark after it, such as "2." or "2)".
     Item {
         marker: String,
         depth: usize,
@@ -52,7 +53,7 @@ pub fn blocks(message: &str, budget: usize) -> Vec<Block> {
     let mut out: Vec<Block> = Vec::new();
     let mut left = budget;
     let mut fence: Option<Fence> = None;
-    // The indents of the list items above the line that it could nest under, outermost first.
+    // The indents of the items above, outermost first, that the next item could nest under.
     // An item nests one level under the nearest item indented less than it, so an item indented
     // 4 spaces under "1. " sits one level in, as one indented 2 spaces under "- " does.
     let mut indents: Vec<usize> = Vec::new();
@@ -122,7 +123,8 @@ pub fn blocks(message: &str, budget: usize) -> Vec<Block> {
             continue;
         }
         let (mut block, indent) = classify(line);
-        // A quote's blank line, a lone >, has nothing to draw.
+        // A quote's blank line, a lone >, and a heading with no text, a lone #, have nothing to
+        // draw.
         if matches!(&block, Block::Text(t) | Block::Heading(t) if t.is_empty()) {
             continue;
         }
@@ -188,13 +190,14 @@ fn classify(line: &str) -> (Block, usize) {
         let (marker, text) = task_box(text).unwrap_or(("•", text));
         return (item(marker, text), indent);
     }
+    // A numbered item keeps its own mark after the number, "2." or "2)".
     let digits = trimmed.chars().take_while(char::is_ascii_digit).count();
     if digits > 0
         && let Some(text) = trimmed[digits..]
             .strip_prefix(". ")
             .or_else(|| trimmed[digits..].strip_prefix(") "))
     {
-        return (item(&format!("{}.", &trimmed[..digits]), text), indent);
+        return (item(&trimmed[..digits + 1], text), indent);
     }
     (Block::Text(trimmed.to_string()), indent)
 }
@@ -212,7 +215,7 @@ fn unquote(line: &str) -> &str {
 // so a line that starts with an issue number, such as "#503 merged", is no heading. A run of #s
 // after a space closes one, and a # after a word, as in "C#", is the word's.
 fn heading(line: &str) -> Option<&str> {
-    let hashes = line.len() - line.trim_start_matches('#').len();
+    let hashes = run(line, '#');
     let rest = &line[hashes..];
     if !(1..=6).contains(&hashes) || !(rest.is_empty() || rest.starts_with(char::is_whitespace)) {
         return None;
@@ -227,7 +230,8 @@ fn heading(line: &str) -> Option<&str> {
 }
 
 // A task item's box and the text after it: "▢" for "[ ] text" and "✓" for "[x] text". Inter,
-// the rack's font, carries both glyphs and no ballot box, ☐.
+// the rack's font, carries both glyphs and no ballot box, ☐ (read in
+// src/plates/fonts/Inter-Regular.ttf, Inter 4.001, its cmap).
 fn task_box(text: &str) -> Option<(&'static str, &str)> {
     if let Some(rest) = text.strip_prefix("[ ] ") {
         return Some(("▢", rest));
@@ -299,14 +303,12 @@ pub enum Mark {
     Link,
 }
 
-/// The characters a backslash before them keeps from being read as a mark, such as the * in
-/// `\*`. A backslash before anything else stays, so a path such as C:\Users\ keeps its own.
-const ESCAPED: [char; 11] = ['`', '*', '_', '[', ']', '<', '>', '|', '#', '~', '!'];
-
 /// The line without its marks, and where each marked span sits in it, in bytes.
 /// Bold, italics, and a link's text can hold marks of their own, as in **`Dialog`:**, so spans
 /// can nest, and a span inside another comes before it.
 /// A mark with no partner, or with nothing between the pair, stays in the text as it is.
+/// A backslash before one of `MARKS`, as in `\*`, keeps the mark as text, and a backslash before
+/// anything else stays, so a path such as C:\Users\ keeps its own.
 pub fn parse(line: &str) -> (String, Vec<(Range<usize>, Mark)>) {
     let mut text = String::with_capacity(line.len());
     let mut spans = Vec::new();
@@ -314,7 +316,7 @@ pub fn parse(line: &str) -> (String, Vec<(Range<usize>, Mark)>) {
     while let Some(c) = line[i..].chars().next() {
         let rest = &line[i..];
         if c == '\\'
-            && let Some(next) = rest[1..].chars().next().filter(|n| ESCAPED.contains(n))
+            && let Some(next) = rest[1..].chars().next().filter(|n| MARKS.contains(n))
         {
             text.push(next);
             i += 1 + next.len_utf8();
@@ -423,9 +425,9 @@ fn trim_code(code: &str) -> &str {
 // Emphasis at the start of `rest`, whose character before is `before`: its marks, its text, and
 // how long it runs with its marks, in bytes. One * or _ is italic, two *s bold, and three both.
 // It opens only before a character that isn't a space, so "2 * 3" stays as it is, and a _ inside
-// a word opens or closes nothing, so tile_pulls keeps its underscore (documented,
-// https://spec.commonmark.org/0.31.2/#emphasis-and-strong-emphasis). Claude never writes __bold__
-// in our messages, and Python's __init__ would read as it.
+// a word opens or closes nothing, so tile_pulls keeps its underscore. `__` stays as typed, since
+// Python's __init__ would read as bold, and Claude wrote no __bold__ in the messages the rack log
+// counted (documented, https://spec.commonmark.org/0.31.2/#emphasis-and-strong-emphasis).
 fn emphasis(rest: &str, before: Option<char>) -> Option<(&'static [Mark], &str, usize)> {
     let c = rest.chars().next()?;
     let n = run(rest, c);
@@ -446,7 +448,7 @@ fn emphasis(rest: &str, before: Option<char>) -> Option<(&'static [Mark], &str, 
 }
 
 // Where the run of `n` `c`s that closes emphasis sits in `s`: the first run of exactly `n` after a
-// character other than a space, outside code spans, so the ** of bold inside *italics* stays
+// character other than a space, outside code spans and links, so the ** of bold inside *italics* stays
 // bold. Without one, the last `n` of a longer run close it, and the run's first ones close the
 // emphasis inside it, as the *** in **everything vs *exceptions*** closes both.
 fn closer(s: &str, c: char, n: usize) -> Option<usize> {
@@ -465,6 +467,12 @@ fn closing_run(s: &str, c: char, n: usize, fits: impl Fn(usize) -> bool) -> Opti
         }
         if ch == '\\' {
             j += 1 + rest[1..].chars().next().map_or(0, char::len_utf8);
+            continue;
+        }
+        // A link binds tighter than emphasis, so a * in its target, as in [x](a*b), closes
+        // nothing.
+        if let Some((_, len)) = link(rest) {
+            j += len;
             continue;
         }
         if ch == c {
@@ -613,6 +621,35 @@ mod tests {
     }
 
     #[test]
+    fn a_literal_line_draws_as_written() {
+        use plates_core::session::literal;
+        for line in [
+            "Wants to run: rm -rf build/*/cache/*",
+            "Wants to run: find . -name '*.rs' -o -name '*.md'",
+            r"Wants to run: Remove-Item C:\temp\*.log",
+            r"Wants to run: sed -i 's/\[x\]/[ ]/' plan.md",
+            "Searching for impl.*Display.*for",
+            "Finding src/*/*.rs",
+            "# Install the deps",
+            "- Keep the plan",
+            "result = a*b*c",
+            "**not bold** in `code` <br> [a](b) ![c](d) __init__ _x_",
+            r"a \* b \\ c",
+        ] {
+            let (text, spans) = parse(&summary_line(&literal(line)));
+            assert_eq!(text, line);
+            assert!(spans.is_empty(), "{line} took marks");
+        }
+    }
+
+    #[test]
+    fn a_link_binds_tighter_than_emphasis() {
+        let (text, spans) = parse("*see [x](https://a.b/c*d)*");
+        assert_eq!(text, "see x");
+        assert_eq!(spans, vec![(4..5, Mark::Link), (0..5, Mark::Italic)]);
+    }
+
+    #[test]
     fn a_line_break_becomes_a_space() {
         assert_eq!(parse("one<br>two<BR />three").0, "one two three");
         assert_eq!(parse("a <b> c").0, "a <b> c");
@@ -725,6 +762,7 @@ mod tests {
         assert_eq!(summary_line("> Quoted"), "Quoted");
         assert_eq!(summary_line("- First **bold**"), "• First **bold**");
         assert_eq!(summary_line("2. Second"), "2. Second");
+        assert_eq!(summary_line("3) Third"), "3) Third");
         assert_eq!(summary_line("- [x] Shipped"), "✓ Shipped");
         assert_eq!(summary_line("Plain text."), "Plain text.");
         assert_eq!(

@@ -169,7 +169,7 @@ fn listen(log: Option<PathBuf>) -> Result<(), String> {
                         s.map(|s| s.state),
                         tile.title(),
                         s.and_then(|s| s.summary.as_deref())
-                            .map(|summary| format!(", {summary}"))
+                            .map(|summary| format!(", {}", crate::markup::parse(summary).0))
                             .unwrap_or_default()
                     );
                 }

@@ -1,0 +1,18 @@
+# Lines built with `literal` draw exactly as written, 2026-11-27, macOS 26.5.2
+#
+# For each random line s, the probe checked that markup::parse(markup::summary_line(literal(s)))
+# gives back s, trimmed, with no marked spans. It ran on abb1593 with the uncommitted changes
+# the rack log's entry "The Markdown rules read commands and search patterns as Markdown too"
+# describes.
+#
+# Lines: 1 to 24 characters, each drawn from
+#   ` * _ [ ] ( ) < > | # ~ ! - + \ space a 1 . : / ğ 日 🙂 b r B R
+# with an xorshift generator seeded 0x2545F4914F6CDD1D, then trimmed; empty lines were skipped.
+# The probe included src/plates/src/markup.rs by its absolute path on this Mac, so it isn't kept.
+
+Before the numbered-item fix, a line starting "1) " drew as "1. ":
+"1) `." -> "1. `." []
+1997008 lines, 98 drew differently
+
+After it:
+1997008 lines, 0 drew differently

@@ -744,7 +744,7 @@ fn message_blocks(message: &str, color: u32) -> Div {
                     text,
                 } => {
                     // A number, such as "2.", takes more room than a bullet or a task's box.
-                    let bullet = !marker.ends_with('.');
+                    let bullet = !marker.starts_with(|c: char| c.is_ascii_digit());
                     div()
                         .flex()
                         .pl(px(depth as f32 * 14.))

@@ -69,6 +69,9 @@ On every tile, the marker on the left is its status, and the timer slot on the r
   A line that's a table row, such as `| Width | First row |`, shows its cells joined by " · ", as "Width · First row".
   A `<br>` outside code, in a summary line or in a cell of the hover card's table, is a space.
   A message that opens with a code fence shows the first line inside the fence, and one that opens with a horizontal rule shows the line after it (user, 2026-11-27).
+  The line from inside the fence shows as written, marks included, since it's code ([rack log](log.md#2026-11-27-the-markdown-rules-read-commands-and-search-patterns-as-markdown-too)).
+  A summary line Plates builds from a tool call, such as `Wants to run: rm -rf build/*/cache/*` or `Searching for impl.*Display.*for`, shows what it takes from the call as written, marks included, so backticks in a description stay backticks.
+  Plates puts a backslash before each mark in it that would start Markdown, and the tile drops the backslash as it draws the line ([rack log](log.md#2026-11-27-the-markdown-rules-read-commands-and-search-patterns-as-markdown-too)).
 - Session tiles can't be renamed ([01-aims](../product/01-aims.md#non-goals)).
 - A session with a pull request shows it as a chip at the end of its title, as [04-pull-requests](04-pull-requests.md) describes.
 - A session whose task list has any tasks has a bar under the tile's top that counts them by who holds each, and clicking the bar opens the list inside the tile ([01-task-list](../tasks/01-task-list.md)).
@@ -125,11 +128,11 @@ From the top, the card shows:
 
 - The card shows at most 12,000 characters of Claude's last message, cut at a space, with "…" where it stops, and draws it as paragraphs: a heading loses its #s and is 12.5px semibold, and a fenced code block is in the monospace font.
   A heading takes one to six #s and a space, so a line that starts with an issue number, such as "#503 merged", is a paragraph.
-  A fence closes at a line of only backticks, at least as many as opened it, so a fence of four can hold a line of three.
+  A fence of backticks closes at a line of only backticks, at least as many as opened it, so a fence of four can hold a line of three, and a fence of tildes, `~~~`, closes the same way at tildes.
   A quote loses its >s and keeps the headings and list items inside it, so a quoted numbered item is a numbered item.
   A fence or a table inside a quote draws as paragraphs, since Claude's messages held none ([rack log](log.md#2026-11-27-italics-and-code-inside-bold-were-the-commonest-markdown-the-tiles-drew-as-raw-marks)).
 - A list item's marker sits in a gutter of its own, so the item's wrapped lines line up with its text, as the Claude desktop app draws a list (user, 2026-11-16).
-  The marker is a • for a `-`, `*`, or `+` item, the item's number, such as "2.", or for a task item, ▢ for an open box and ✓ for a checked one.
+  The marker is a • for a `-`, `*`, or `+` item, the item's number and the period or parenthesis after it, as written, such as "2." or "2)", or for a task item, ▢ for an open box and ✓ for a checked one.
   An item nests one level under the nearest item above it that's indented less, by any number of spaces, and each level sits 14px further in, to at most 28px.
 - A table is a grid of one-line cells, with its header in semibold in the secondary text color over a rule of 14% white, and a rule of 6% white between rows (user, 2026-11-23).
   It has 6px more room above and below it than a paragraph has, so two tables in a row read as two (user, 2026-11-23).

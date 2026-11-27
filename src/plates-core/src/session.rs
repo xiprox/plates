@@ -447,20 +447,21 @@ impl Tool {
         format!("Wants to {verb}: {}", self.subject())
     }
 
-    /// What an approval is for: the command's first line, the file, or the tool's name.
+    /// What an approval is for: the command's first line, the file, or the tool's name, each
+    /// `literal`, since a tile draws the line as Markdown.
     pub fn subject(&self) -> String {
-        if let Some(command) = &self.command {
-            first_line(command)
-        } else if let Some(file) = &self.file {
-            file.clone()
-        } else {
-            self.name.clone()
-        }
+        literal(&match (&self.command, &self.file) {
+            (Some(command), _) => plain_line(command),
+            (None, Some(file)) => file.clone(),
+            (None, None) => self.name.clone(),
+        })
     }
 
     /// What a working tile shows Claude doing with the tool, such as "Reading plan.md".
+    /// Its target and the tool's name are `literal`, since a tile draws the line as Markdown.
     pub fn activity(&self) -> String {
-        let target = self.target.as_deref();
+        let target = self.target.as_deref().map(literal);
+        let target = target.as_deref();
         match (self.name.as_str(), target) {
             ("Read", Some(t)) => format!("Reading {t}"),
             ("Edit" | "MultiEdit" | "NotebookEdit", Some(t)) => format!("Editing {t}"),
@@ -473,7 +474,10 @@ impl Tool {
             ("Bash" | "PowerShell" | "Agent" | "Task", Some(t)) => t.to_string(),
             ("Bash" | "PowerShell", None) => format!("Running {}", self.subject()),
             // An MCP tool's name is mcp__<server>__<tool>, and its last part reads best.
-            (name, _) => format!("Using {}", name.rsplit("__").next().unwrap_or(name)),
+            (name, _) => format!(
+                "Using {}",
+                literal(name.rsplit("__").next().unwrap_or(name))
+            ),
         }
     }
 }
@@ -724,6 +728,33 @@ pub fn prompt_title(prompt: &str) -> String {
 /// "Width · First row" for `| Width | First row |`, since a tile shows the line without the table
 /// around it.
 pub fn first_line(text: &str) -> String {
+    let (line, fenced) = first_text(text);
+    if fenced {
+        return line.to_string();
+    }
+    match table_cells(line) {
+        Some(cells) => cells
+            .into_iter()
+            .filter(|c| !c.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · "),
+        None => line.to_string(),
+    }
+}
+
+/// The first line of a message Claude wrote, as a tile shows it: `first_line`, except that a line
+/// from inside a code fence is `literal`, since it's code, and the tile would read the * in
+/// "result = a*b*c" as italics.
+pub fn message_line(text: &str) -> String {
+    match first_text(text) {
+        (line, true) => literal(line),
+        _ => first_line(text),
+    }
+}
+
+// The first line of `text` past blank lines, horizontal rules, and the line that opens a code
+// fence, trimmed, and whether it's inside the fence.
+fn first_text(text: &str) -> (&str, bool) {
     let mut fence: Option<Fence> = None;
     let line = text
         .lines()
@@ -740,17 +771,52 @@ pub fn first_line(text: &str) -> String {
             }
         })
         .unwrap_or("");
-    if fence.is_some() {
-        return line.to_string();
+    (line, fence.is_some())
+}
+
+/// The first non-empty line of `text`, trimmed, for text that isn't Markdown, such as a command or
+/// a search pattern, where a line of ```` ``` ```` or `---` is what Claude searches for.
+pub fn plain_line(text: &str) -> String {
+    text.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+        .to_string()
+}
+
+/// The marks a backslash before them keeps as text in a line a tile draws, as `\*` keeps a star.
+/// The rack's parser, `markup::parse` in the plates crate, reads this list, and `literal` writes
+/// it, so when you add a mark the parser reads, add it here.
+pub const MARKS: [char; 14] = [
+    '`', '*', '_', '[', ']', '<', '>', '|', '#', '~', '!', '-', '+', '\\',
+];
+
+/// `text` with a backslash before each mark that would start Markdown in it, so a tile draws it
+/// as written. A tool call's line is built this way, since a command such as `rm -rf build/*/x/*`
+/// or a pattern such as `impl.*Display` would otherwise lose its stars to italics. A mark that
+/// opens an inline span takes a backslash wherever it could open one, and a mark that opens a
+/// block, such as a list item's -, only at the start, which keeps "cargo test -p collector" as it
+/// reads. A backslash takes one
+/// only before a mark, so `s/\[x\]/` keeps both of its own and `C:\temp` reads as it is.
+pub fn literal(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 8);
+    let mut chars = text.chars().peekable();
+    let mut before: Option<char> = None;
+    while let Some(c) = chars.next() {
+        let escape = match c {
+            '`' | '*' | '[' | '<' => true,
+            // A _ inside a word opens nothing, so open_menu keeps its underscore as it reads.
+            '_' => !before.is_some_and(char::is_alphanumeric),
+            '\\' => chars.peek().is_some_and(|next| MARKS.contains(next)),
+            _ => before.is_none() && MARKS.contains(&c),
+        };
+        if escape {
+            out.push('\\');
+        }
+        out.push(c);
+        before = Some(c);
     }
-    match table_cells(line) {
-        Some(cells) => cells
-            .into_iter()
-            .filter(|c| !c.is_empty())
-            .collect::<Vec<_>>()
-            .join(" · "),
-        None => line.to_string(),
-    }
+    out
 }
 
 /// The cells of a markdown table row, trimmed, such as `["a", "b|c"]` for `| a | b\|c |`, or None
@@ -1083,6 +1149,31 @@ mod tests {
         );
         assert_eq!(first_line("```a``` is inline"), "```a``` is inline");
         assert_eq!(first_line("```"), "");
+    }
+
+    #[test]
+    fn a_messages_line_from_a_fence_is_literal_and_a_commands_line_is_plain() {
+        assert_eq!(
+            message_line("```python\nresult = a*b*c\n```"),
+            r"result = a\*b\*c"
+        );
+        assert_eq!(
+            message_line("- Item"),
+            "- Item",
+            "outside a fence, Markdown stays"
+        );
+        assert_eq!(plain_line("\n```\n"), "```");
+        assert_eq!(plain_line("---"), "---");
+        assert_eq!(plain_line("| a |"), "| a |");
+        assert_eq!(literal("cargo test -p x"), "cargo test -p x");
+        assert_eq!(literal("-p x"), r"\-p x");
+        let tool = Tool {
+            name: "Glob".into(),
+            command: None,
+            file: None,
+            target: Some("src/*/*.rs".into()),
+        };
+        assert_eq!(tool.activity(), r"Finding src/\*/\*.rs");
     }
 
     #[test]

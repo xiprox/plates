@@ -2,6 +2,34 @@
 
 What we found about the rack's window and tiles, newest entry first.
 
+## 2026-11-27: The Markdown rules read commands and search patterns as Markdown too
+
+**Asked:** the code review of the Markdown change asked which lines run through `markup::parse` besides Claude's messages.
+
+**Expected:** only Claude's messages, since the [entry below](#2026-11-27-italics-and-code-inside-bold-were-the-commonest-markdown-the-tiles-drew-as-raw-marks) checked the change over Claude's messages alone.
+
+**Found:** a tile draws its summary line through `markup::parse`, whether Claude wrote the line or Plates built it from a tool call, so the italics and backslash escapes the entry below added rewrote tool calls' lines too.
+`Wants to run: rm -rf build/*/cache/*` drew as "Wants to run: rm -rf build//cache/" with "/cache/" in italics, and `Searching for impl.*Display.*for` as "Searching for impl.Display.for" with "Display." in italics.
+`Wants to run: Remove-Item C:\temp\*.log` drew as "Wants to run: Remove-Item C:\temp*.log".
+Before the entry below's change, the parser left all three as typed, since it read only code, bold, and links.
+A line from inside a message's opening fence went through the tile's Markdown rules too, so `result = a*b*c` in a fence drew as "result = abc" with "b" in italics.
+`first_line` also dropped a search pattern that's a fence or a rule, such as a Grep for ```` ``` ```` or `---`, and the working tile's summary line said "Using Grep" in place of the pattern.
+A * in a link's target closed italics opened before the link, so `*see [x](https://a.b/c*d)*` drew as `see [x](https://a.b/cd)*`, with the link left as raw Markdown.
+The code reviewer ran each of these lines, except the `first_line` case, on a copy of `markup.rs` at abb1593, and the `first_line` case has a test in session.rs, `assert_eq!(first_line("```"), "")`.
+The first random-lines run, below, found that a line starting "1) " drew as "1. ".
+
+**Changed:** `literal`, in plates-core's session.rs, puts a backslash before each mark that would start Markdown.
+`Tool::subject` and `Tool::activity` run every part of a tool call's line through it: the command, path, pattern, query, host, skill, description, and tool name.
+The rack builds the summary line for `TurnEnded`, `TurnFailed`, and `set_status` with `message_line`, which runs a line from inside an opening fence through `literal`.
+`markup::parse` drops the backslash before any of these marks, so `\*` draws as `*`.
+`literal` and `parse` read the marks from one list, `MARKS`.
+A command and every tool's target take their first line through `plain_line`, which skips no fence or rule and joins no table row, so a Grep for `| a |` shows `| a |`, where `first_line` showed "a".
+`closing_run` skips over a link, since links group more tightly than emphasis (documented, [CommonMark 0.31.2, rule 17](https://spec.commonmark.org/0.31.2/#emphasis-and-strong-emphasis)), so a * in a link's target closes nothing.
+A numbered item keeps the period or parenthesis after its number.
+All 1,997,008 random lines of 1 to 24 characters, drawn from `MARKS`, `( ) . : /`, a space, the letters and digits `a 1 b r B R ğ 日`, and an emoji, drew exactly as written after `literal`, `summary_line`, and `markup::parse` ([results](results/2026-11-27-literal-lines.txt)).
+
+**Affects:** [02-tiles](02-tiles.md#session-tiles): its summary line, and the numbered items in [the hover card](02-tiles.md#the-hover-card).
+
 ## 2026-11-27: Italics and code inside bold were the commonest Markdown the tiles drew as raw marks
 
 **Asked:** a tile showed "```text" as its summary line, for a message that opened with a code fence (seen by the user on macOS 26.5.2, 2026-11-27).

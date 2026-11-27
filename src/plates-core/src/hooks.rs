@@ -13,7 +13,7 @@ use crate::{
     rack::{Rack, TileId},
     session::{
         BackgroundTask, PlanChange, SessionEvent, SessionState, Tool, UPDATE_PLAN, WrapUp,
-        first_line,
+        first_line, plain_line,
     },
     tasks::{self, Field},
     transcript::{self, Turn, TurnCalls},
@@ -486,7 +486,7 @@ fn tool(v: &Value, cwd: &Path) -> Option<Tool> {
         "Bash" | "PowerShell" | "Agent" | "Task" => input("description").map(str::to_string),
         _ => None,
     }
-    .map(|t| first_line(&t))
+    .map(|t| plain_line(&t))
     .filter(|t| !t.is_empty());
     Some(Tool {
         name,

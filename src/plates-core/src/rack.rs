@@ -10,7 +10,7 @@ use crate::{
     desktop::AppSession,
     session::{
         COMPACTED, CarriedWait, RECENT_TOOLS, Recent, Session, SessionEvent, SessionState, Step,
-        finished, first_line, prompt_title,
+        finished, first_line, message_line, prompt_title,
     },
     timer::{DEFAULT_MINUTES, Timer},
 };
@@ -454,7 +454,7 @@ impl Rack {
                 s.message = last_message
                     .map(|m| m.trim().to_string())
                     .filter(|m| !m.is_empty());
-                s.summary = s.message.as_deref().map(first_line);
+                s.summary = s.message.as_deref().map(message_line);
                 s.background = background;
                 let ping = s.ping.take();
                 let mut wait = s.wait.take();
@@ -539,7 +539,7 @@ impl Rack {
                 s.pending_tool = None;
                 s.background.clear();
                 s.message = text.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
-                s.summary = Some(s.message.as_deref().map(first_line).unwrap_or(error));
+                s.summary = Some(s.message.as_deref().map(message_line).unwrap_or(error));
                 set_state(s, &mut tile.timer, SessionState::YourTurn);
             }
             SessionEvent::Ended => {
@@ -783,7 +783,7 @@ impl Rack {
     /// Sets a session's status line, the first line of the newest text Claude wrote in the turn,
     /// which a working tile shows.
     pub fn set_status(&mut self, session_id: &str, text: &str, now: SystemTime) {
-        let line = first_line(text);
+        let line = message_line(text);
         if line.is_empty() {
             return;
         }
