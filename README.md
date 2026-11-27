@@ -9,7 +9,7 @@ An always-on-top rack of your Claude Code sessions, and anything else you're jug
 - **A tile per session.**
   Each Claude Code session gets a tile on the rack, Plates' floating window.
   The tile shows what Claude is doing, and when Claude asks you something or wants a tool approved, it turns amber or orange and starts a timer.
-  Click it to open the session in the Claude desktop app.
+  Click it to open the session in the Claude desktop app, and archive the session there to take its tile off the rack.
 - **A hover card.**
   Hover a tile to read Claude's last message, or its plan while it works, and to answer the choices Claude offers at the end of a turn.
 - **Task lists.**

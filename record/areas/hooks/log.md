@@ -2,6 +2,22 @@
 
 What we found about Claude Code's hooks and the Claude desktop app, newest entry first.
 
+## 2026-11-27: The Claude desktop app's file says whether the app archived the session
+
+**Asked:** can Plates tell that the Claude desktop app archived a session, so a session's tile can leave the rack when you, or another session, archive it in the app?
+
+**Expected:** yes, since [the entry on the app's files](#2026-11-15-the-claude-desktop-app-keeps-a-file-per-session-with-its-title-and-its-claude-code-session-ids) lists `isArchived` among their fields.
+
+**Found:** of the 239 session files on our Mac, `isArchived` was true in 210, false in 26, and missing from 3 (measured on macOS 26.5.2, 2026-11-27).
+Of the 20 sessions Plates had saved, one had `isArchived` true, and Plates held it dismissed.
+We take `isArchived` to be what archiving a session in the app sets (unverified).
+We haven't archived a session while watching its file, so we don't know how soon the app writes `isArchived`, or whether archiving ends the Claude Code session with a `SessionEnd`.
+With the change in place, Plates dropped the archived session it held within 4s of starting, and its saved sessions went from 20 to 19 (measured on macOS 26.5.2, 2026-11-27).
+
+**Changed:** a session whose file says it's archived leaves the rack for good, and its events bring no tile back while it stays archived.
+
+**Affects:** [01-claude-code-hooks](01-claude-code-hooks.md#sessions-the-app-archives), which leaves these questions open.
+
 ## 2026-11-27: The Claude desktop app's file for a session lists its pull requests
 
 **Asked:** does the Claude desktop app keep which pull requests each session opened, where Plates could read them rather than have Claude report them?

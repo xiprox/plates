@@ -1051,6 +1051,20 @@ impl Rack {
         app.parent.is_some()
     }
 
+    /// Takes the tile of a session the Claude desktop app archived off the rack for good, from
+    /// among the shown or the dismissed, and returns it. Its sub-sessions stay, each until the app
+    /// archives it too.
+    pub fn archived_in_app(&mut self, session_id: &str) -> Option<TileId> {
+        let of = |t: &Tile| t.session().is_some_and(|s| s.id == session_id);
+        let tile = match self.tiles.iter().position(of) {
+            Some(i) => self.tiles.remove(i),
+            None => self.hidden.remove(self.hidden.iter().position(of)?),
+        };
+        self.gone
+            .extend(tile.session().map(|s| s.list_key().to_string()));
+        Some(tile.id)
+    }
+
     /// Whether the rack shows the session, or holds it dismissed.
     pub fn knows(&self, session_id: &str) -> bool {
         self.session(session_id).is_some()
@@ -3288,5 +3302,18 @@ mod tests {
         // A timer that's already set stays as it is.
         assert!(!rack.pull_broke("a", at(4)));
         assert!(!rack.pull_broke("unknown", at(4)));
+    }
+
+    #[test]
+    fn an_archived_session_leaves_for_good_whether_shown_or_dismissed() {
+        let mut rack = Rack::new();
+        let shown = apply(&mut rack, "shown", prompt("Go"), 0);
+        let dismissed = apply(&mut rack, "dismissed", prompt("Go"), 0);
+        rack.remove(dismissed, at(1));
+        assert_eq!(rack.archived_in_app("shown"), Some(shown));
+        assert_eq!(rack.archived_in_app("dismissed"), Some(dismissed));
+        assert!(!rack.knows("shown") && !rack.knows("dismissed"));
+        assert_eq!(rack.take_gone().len(), 2);
+        assert_eq!(rack.archived_in_app("shown"), None);
     }
 }

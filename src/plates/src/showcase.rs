@@ -105,6 +105,7 @@ pub fn rack(now: SystemTime) -> (Rack, TileId) {
                 parent: parent.map(|p| format!("local_{p}")),
                 cli_id: Some(id.to_string()),
                 pulls: Vec::new(),
+                archived: false,
             },
         );
         rack.place_under_parent(id);

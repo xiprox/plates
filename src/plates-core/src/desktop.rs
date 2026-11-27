@@ -71,8 +71,10 @@ pub struct AppSession {
     /// session to a new Claude Code session, and then lists the earlier one in
     /// `priorCliSessionIds` (measured on Windows 11 25H2, 2026-11-16, record/areas/hooks/log.md).
     pub cli_id: Option<String>,
-    /// The pull requests the app links to the session, oldest first.
+    /// The pull requests the app links to the session, in the order the app linked them.
     pub pulls: Vec<PullLink>,
+    /// Whether the app archived the session, its `isArchived`.
+    pub archived: bool,
 }
 
 /// The link that opens a session in the app by its own ID:
@@ -238,6 +240,7 @@ fn read_session(file: &Path, session_id: &str) -> Option<AppSession> {
             .map(str::to_string),
         cli_id: text("cliSessionId"),
         pulls: pulls::links(v.get("prs")),
+        archived: v.get("isArchived").and_then(Value::as_bool) == Some(true),
     })
 }
 

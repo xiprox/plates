@@ -96,6 +96,11 @@ The pull request chip on a session's tile, its pop-out, and `pr_link`, as [04-pu
 Done when, on Windows and macOS, a session that opens a pull request shows its chip within a second, the chip's icon turns red within a minute of a check failing, and the tile's timer starts if the session isn't working.
 The chip and its pop-out ran on macOS 26.5.2 on 2026-11-27, and we haven't yet seen a check fail under a watched tile.
 
+## 14. Archived sessions leave the rack
+
+Plates taking a session's tile off the rack once the Claude desktop app archives the session, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#sessions-the-app-archives) designs it.
+Done when, on Windows and macOS, archiving a session in the app takes its tile off the rack within a second, and the session's later events bring no tile back.
+
 ## Later
 
 The questions [01-window](../rack/01-window.md#left-open) leaves open.

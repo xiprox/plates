@@ -3,7 +3,7 @@
 ```text
 Purpose:     How Plates learns what each Claude Code session is doing, and how it opens and answers one.
 Depends on:  02-tiles (../rack/02-tiles.md), for the states a session tile shows.
-Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, how Plates follows the app's plan for a request, where a tile's title and summary come from, which session started a session, which tile a session keeps when the app moves it to a new Claude Code session, how Plates answers a wrap-up's choice, how the hooks get installed and reach Plates, and what clicking a session tile opens.
+Decides:     Which hook events Plates listens to and what each does to a tile, which background tasks keep a tile working, how Plates follows the app's plan for a request, where a tile's title and summary come from, which session started a session, which tile a session keeps when the app moves it to a new Claude Code session, what happens to a session the app archives, how Plates answers a wrap-up's choice, how the hooks get installed and reach Plates, and what clicking a session tile opens.
 ```
 
 Claude Code runs a small program, `plates-hook`, for each session's hook events, and `plates-hook` forwards each event to a receiver Plates runs on `127.0.0.1`, which turns it into a change to a session tile.
@@ -188,6 +188,17 @@ Until Plates reads the file for the new session, it keeps the app's title and pa
 A dismissed tile that isn't snoozed goes instead, since the new session's events have brought the session back to the rack, as they would have brought the dismissed tile back.
 An event from a Claude Code session the app has moved away from, which the app's file lists in `priorCliSessionIds`, adds no tile while a tile holds the app's session.
 
+## Sessions the app archives
+
+The app's file for a session holds `isArchived` on Windows and macOS (measured on Windows 11 25H2, 2026-11-15, [hooks log](log.md#2026-11-15-the-claude-desktop-app-keeps-a-file-per-session-with-its-title-and-its-claude-code-session-ids), and on macOS 26.5.2, 2026-11-27, [hooks log](log.md#2026-11-27-the-claude-desktop-apps-file-says-whether-the-app-archived-the-session)).
+In the once-a-second read of each session's file that [Events](#events) describes, an `isArchived` of true takes the session's tile off the rack for good, whether it's shown, dismissed, or snoozed, since the app still keeps the session (user, 2026-11-27).
+Its task list's file goes with it ([01-task-list](../tasks/01-task-list.md#saving)), and the tiles of its sub-sessions stay until the app archives each of them.
+While the file says the session is archived, its events bring no tile back, so an event it sends after it's archived, such as a `SessionEnd`, adds no ended tile (unverified whether archiving sends any).
+A session you unarchive gets a new tile with its next event that brings one, as a session you cleared does.
+
+A session in the app can archive other sessions with the app's `archive_session` tool (read in the tool list the Claude desktop app gives a session, as of 2026-11-27), as an orchestrating session might archive its sub-sessions once their work lands.
+Their tiles leave the rack at Plates' next read of their files after the app writes `isArchived` (unverified that the tool sets it as archiving in the app does).
+
 ## Installing
 
 `plates hooks install` adds Plates' hooks to Claude Code's user settings file, `~/.claude/settings.json`.
@@ -277,4 +288,5 @@ If a client's walk is what makes the app build the tree, the app keeps it built 
 - What Plates does when another program holds port 47231, which `receiver::PORT` sets.
 - Sessions that started while Plates was closed, whose tiles appear only at their next event, since Plates restores only the sessions it had.
 - Whether the app's file for a desktop session names the session a `/clear` starts as its `cliSessionId`. If it does, the new session's tile takes the ended tile's place, as [Sessions the app moves](#sessions-the-app-moves) says, rather than an ended tile staying beside a new one, as [Events](#events) says; typing `/clear` in a desktop session and reading the app's file for it would settle it.
+- Whether, and how soon, the app writes `isArchived` after you archive a session, whether archiving ends the Claude Code session with a `SessionEnd`, and whether a session archiving another with `archive_session` sets `isArchived` the same way ([Sessions the app archives](#sessions-the-app-archives)); archiving a session by hand and from another session, while running `plates listen --log <file>` with Plates closed, and reading the session's file, would settle all three.
 - Whether the old Claude Code session sends any event after the app's file names the new one, which Plates drops while a tile holds the app's session ([Sessions the app moves](#sessions-the-app-moves)); its `SessionEnd` comes before ([hooks log](log.md#2026-11-20-on-macos-a-rewind-splits-a-sessions-tile-for-about-6s-before-it-merges-back)), and running `plates listen --log <file>` with Plates closed, while rewinding a session as Claude replies, would settle the rest.

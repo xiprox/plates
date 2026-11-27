@@ -235,6 +235,7 @@ The archive holds your own tiles you remove and the sessions you dismiss, from t
 While it holds any, its badge sits in the grip band: an archive-box icon and the count, in the muted color, left of the moon, or in the moon's place while no tile is snoozed.
 
 - An ended session's tile you clear goes for good, with no Undo.
+- A session archived in the Claude desktop app goes for good, whether its tile is on the rack, in Plates' archive, or snoozed, as [01-claude-code-hooks](../hooks/01-claude-code-hooks.md#sessions-the-app-archives) says.
 - Your own tile waits there without its timer, and an Undo in its 5s puts it back with the timer it had.
 - A dismissed session's events keep its marker current, and it leaves the archive when it comes back on its own, as [Session tiles](#session-tiles) says, or when it ends, which drops it for good.
 - A dismissed sub-session has no row of its own while its parent is dismissed too, and comes back with the parent's row, under it.

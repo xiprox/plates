@@ -27,6 +27,14 @@ pub fn apply(rack: &mut Rack, message: HookMessage, now: SystemTime) -> Option<T
     let session_id = message.session_id.as_str();
     let app = message.app.as_ref();
     let transcript = message.transcript_path.as_deref();
+    // A session the Claude desktop app archived leaves the rack for good, whether its tile is
+    // shown or dismissed, since the app still keeps the session (user, 2026-11-27). While the app
+    // keeps it archived, none of its events bring a tile back, as an event it sent after it was
+    // archived, such as a `SessionEnd`, would otherwise add one (unverified whether archiving
+    // sends any).
+    if app.is_some_and(|a| a.archived) {
+        return rack.archived_in_app(session_id);
+    }
     match &event {
         SessionEvent::Continued { from } => {
             return follow(rack, from, session_id, transcript, app, now);
@@ -1138,6 +1146,33 @@ mod tests {
             ..AppSession::default()
         });
         m
+    }
+
+    #[test]
+    fn a_session_the_app_archived_leaves_and_its_events_bring_no_tile_back() {
+        let now = some_time();
+        let mut rack = Rack::new();
+        let prompt = || json!({ "prompt": "Go" });
+        apply(
+            &mut rack,
+            with_app("UserPromptSubmit", prompt(), "abc123", "abc123"),
+            now,
+        );
+        assert!(rack.knows("abc123"));
+        let archived = |hook: &str, extra: Value| {
+            let mut m = with_app(hook, extra, "abc123", "abc123");
+            m.app.as_mut().unwrap().archived = true;
+            m
+        };
+        let mut changed = archived("AppFile", json!({}));
+        changed.event = Some(SessionEvent::AppChanged);
+        assert!(apply(&mut rack, changed, now).is_some());
+        assert!(!rack.knows("abc123"));
+        assert_eq!(
+            apply(&mut rack, archived("SessionEnd", json!({})), now),
+            None
+        );
+        assert!(!rack.knows("abc123"));
     }
 
     #[test]
